@@ -1,0 +1,115 @@
+groups:
+  - name: apptrack_build_alerts
+    rules:
+      - alert: HighBuildFailureRate
+        expr: rate(apptrack_builds_completed_total{status="failed"}[15m]) / rate(apptrack_builds_completed_total[15m]) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Build failure rate exceeds 50%"
+          description: "More than 50% of builds are failing in the last 15 minutes."
+
+      - alert: BuildDurationSpike
+        expr: histogram_quantile(0.95, rate(apptrack_build_duration_seconds_bucket[30m])) > 1800
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Build duration P95 exceeds 30 minutes"
+
+      - alert: StaleBuildDetected
+        expr: sum(apptrack_builds_completed_total{status="timeout"}) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Stale/timeout builds detected"
+
+  - name: apptrack_deploy_alerts
+    rules:
+      - alert: HighDeployFailureRate
+        expr: rate(apptrack_deploys_completed_total{status="failed"}[15m]) / rate(apptrack_deploys_completed_total[15m]) > 0.3
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Deploy failure rate exceeds 30%"
+
+      - alert: DeployBacklog
+        expr: sum(rate(apptrack_deploys_triggered_total[5m])) - sum(rate(apptrack_deploys_completed_total[5m])) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Deploy backlog growing — triggers outpacing completions"
+
+  - name: apptrack_infrastructure_alerts
+    rules:
+      - alert: GatewayHighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Gateway 5xx error rate exceeds 5%"
+
+      - alert: GatewayHighLatency
+        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gateway P99 latency exceeds 5 seconds"
+
+      - alert: RateLimitSpike
+        expr: rate(http_requests_total{status="429"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate of 429 responses — possible abuse"
+
+      - alert: QuotaExceededSpike
+        expr: rate(apptrack_quota_exceeded_total[10m]) > 5
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "Users hitting quota limits frequently"
+
+  - name: apptrack_webhook_alerts
+    rules:
+      - alert: WebhookFailureSpike
+        expr: rate(apptrack_webhooks_received_total{status="rejected"}[10m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High webhook rejection rate — possible replay attack or misconfiguration"
+
+      - alert: WebhookDropped
+        expr: rate(apptrack_webhooks_received_total{status="error"}[10m]) > 2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Webhooks being dropped due to errors"
+
+  - name: apptrack_queue_alerts
+    rules:
+      - alert: QueueBacklogHigh
+        expr: rabbitmq_queue_messages_ready > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RabbitMQ queue backlog exceeds 100 messages"
+
+      - alert: DeadLetterQueueGrowing
+        expr: rabbitmq_queue_messages{queue="dead_letter_queue"} > 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Dead letter queue has unprocessed messages"

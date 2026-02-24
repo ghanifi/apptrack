@@ -1,0 +1,96 @@
+import { useState, useEffect } from 'react'
+import { useAuthStore } from '@/store/authStore'
+
+interface UsageSummary {
+  plan: string
+  period: string
+  usage: {
+    projects: { current: number; limit: number }
+    builds_this_month: { current: number; limit: number }
+    deploys_this_month: { current: number; limit: number }
+    concurrent_builds: { current: number; limit: number }
+    storage_mb: { current: number; limit: number }
+    build_minutes: { current: number }
+  }
+}
+
+function ProgressBar({ current, limit, label }: { current: number; limit: number; label: string }) {
+  const pct = limit > 0 ? Math.min((current / limit) * 100, 100) : 0
+  const color = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-500' : 'bg-blue-500'
+  return (
+    <div className="mb-4">
+      <div className="flex justify-between text-sm text-zinc-300 mb-1">
+        <span>{label}</span>
+        <span>{current} / {limit}</span>
+      </div>
+      <div className="w-full h-2 bg-zinc-700 rounded-full overflow-hidden">
+        <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+export default function UsagePage() {
+  const { token } = useAuthStore()
+  const [data, setData] = useState<UsageSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/usage/summary', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(setData)
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [token])
+
+  if (loading) return <div className="p-6 text-zinc-400">Loading usage data...</div>
+  if (!data) return <div className="p-6 text-red-400">Failed to load usage data</div>
+
+  const planColors: Record<string, string> = {
+    free: 'bg-zinc-600',
+    pro: 'bg-blue-600',
+    enterprise: 'bg-purple-600',
+  }
+
+  return (
+    <div className="p-6 max-w-4xl">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-white">Usage & Billing</h1>
+        <span className={`px-3 py-1 rounded-full text-sm font-medium text-white ${planColors[data.plan] || 'bg-zinc-600'}`}>
+          {data.plan.toUpperCase()} Plan
+        </span>
+      </div>
+
+      <p className="text-zinc-400 text-sm mb-6">Period: {data.period}</p>
+
+      <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-white mb-4">Resource Usage</h2>
+        <ProgressBar current={data.usage.projects.current} limit={data.usage.projects.limit} label="Projects" />
+        <ProgressBar current={data.usage.builds_this_month.current} limit={data.usage.builds_this_month.limit} label="Builds This Month" />
+        <ProgressBar current={data.usage.deploys_this_month.current} limit={data.usage.deploys_this_month.limit} label="Deploys This Month" />
+        <ProgressBar current={data.usage.concurrent_builds.current} limit={data.usage.concurrent_builds.limit} label="Concurrent Builds" />
+        <ProgressBar current={data.usage.storage_mb.current} limit={data.usage.storage_mb.limit} label="Storage (MB)" />
+        <div className="mt-4 text-sm text-zinc-400">
+          Build Minutes Used: <span className="text-white font-medium">{data.usage.build_minutes.current}</span>
+        </div>
+      </div>
+
+      <div className="mt-6 bg-zinc-800/50 border border-zinc-700 rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-white mb-3">Plan Comparison</h2>
+        <div className="grid grid-cols-3 gap-4 text-sm">
+          {(['free', 'pro', 'enterprise'] as const).map(plan => (
+            <div key={plan} className={`p-4 rounded-lg border ${data.plan === plan ? 'border-blue-500 bg-blue-500/10' : 'border-zinc-600'}`}>
+              <h3 className="text-white font-bold capitalize mb-2">{plan}</h3>
+              <ul className="text-zinc-400 space-y-1">
+                <li>{plan === 'free' ? '3' : plan === 'pro' ? '20' : '999'} projects</li>
+                <li>{plan === 'free' ? '10' : plan === 'pro' ? '100' : '999'} builds/mo</li>
+                <li>{plan === 'free' ? '500MB' : plan === 'pro' ? '5GB' : '50GB'} storage</li>
+              </ul>
+              {data.plan === plan && <span className="mt-2 inline-block text-blue-400 text-xs font-medium">Current Plan</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}

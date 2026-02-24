@@ -1,0 +1,220 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Request Rate (req/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(http_requests_total{job=\"gateway\"}[5m])",
+          "legendFormat": "{{method}} {{handler}} {{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Request Latency (p95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"gateway\"}[5m]))",
+          "legendFormat": "p95 {{handler}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Builds Triggered",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(apptrack_builds_triggered_total)",
+          "legendFormat": "Total Builds",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 100 }] } },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Builds by Status",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (status) (apptrack_builds_completed_total)",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Deploys Triggered",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(apptrack_deploys_triggered_total)",
+          "legendFormat": "Total Deploys",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 20 }, { "color": "red", "value": 50 }] } },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Deploy Results by Target & Status",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (target, status) (apptrack_deploys_completed_total)",
+          "legendFormat": "{{target}} / {{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Build Duration by Provider",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(apptrack_build_duration_seconds_bucket[5m]))",
+          "legendFormat": "p95 {{provider}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(apptrack_build_duration_seconds_bucket[5m]))",
+          "legendFormat": "p50 {{provider}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Build Rate (per 5m)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "rate(apptrack_builds_triggered_total[5m])",
+          "legendFormat": "{{framework}} / {{provider}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Error Rate (5xx)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "rate(http_requests_total{job=\"gateway\", status=~\"5..\"}[5m])",
+          "legendFormat": "{{handler}} {{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "color": { "mode": "fixed", "fixedColor": "red" } },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Rate Limit Hits",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "expr": "rate(http_requests_total{job=\"gateway\", status=\"429\"}[5m])",
+          "legendFormat": "429 Rate Limited",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "color": { "mode": "fixed", "fixedColor": "orange" } },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Deploy Failure Rate",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 32 },
+      "targets": [
+        {
+          "expr": "sum(apptrack_deploys_completed_total{status=\"failed\"}) / sum(apptrack_deploys_completed_total) * 100",
+          "legendFormat": "Failure %",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 25 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Build Failure Rate",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 32 },
+      "targets": [
+        {
+          "expr": "sum(apptrack_builds_completed_total{status=\"failed\"}) / sum(apptrack_builds_completed_total) * 100",
+          "legendFormat": "Failure %",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 25 }] }
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["apptrack", "cicd", "mobile"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "AppTrack Platform Dashboard",
+  "uid": "apptrack-main",
+  "version": 1
+}

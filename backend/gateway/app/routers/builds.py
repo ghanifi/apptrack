@@ -1,0 +1,74 @@
+from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from app.dependencies import get_current_user
+from app.database import get_db
+from app.models import Build, Project
+
+router = APIRouter()
+
+
+def _serialize_build(b: Build) -> dict:
+    return {
+        "id": b.id,
+        "project_id": b.project_id,
+        "platform": b.platform,
+        "provider": b.provider,
+        "status": b.status,
+        "artifact_url": b.artifact_url,
+        "external_build_id": b.external_build_id,
+        "idempotency_key": b.idempotency_key,
+        "started_at": b.started_at.isoformat() if b.started_at else None,
+        "finished_at": b.finished_at.isoformat() if b.finished_at else None,
+        "created_at": b.created_at.isoformat(),
+    }
+
+
+@router.get("")
+async def list_builds(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    project_id: Optional[str] = Query(None),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    base_q = (
+        select(Build)
+        .join(Project, Build.project_id == Project.id)
+        .where(Project.owner_id == current_user["id"])
+    )
+    if status_filter:
+        base_q = base_q.where(Build.status == status_filter)
+    if project_id:
+        base_q = base_q.where(Build.project_id == project_id)
+    base_q = base_q.order_by(Build.created_at.desc())
+
+    count_result = await db.execute(select(func.count()).select_from(base_q.subquery()))
+    total = count_result.scalar() or 0
+
+    offset = (page - 1) * size
+    result = await db.execute(base_q.offset(offset).limit(size))
+    builds = result.scalars().all()
+
+    return {
+        "items": [_serialize_build(b) for b in builds],
+        "total": total,
+        "page": page,
+        "size": size,
+        "pages": max(1, (total + size - 1) // size),
+    }
+
+
+@router.get("/{build_id}")
+async def get_build(build_id: str, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Build).where(Build.id == build_id))
+    build = result.scalar_one_or_none()
+    if not build:
+        raise HTTPException(status_code=404, detail="Build not found")
+    proj = await db.execute(select(Project).where(Project.id == build.project_id))
+    project = proj.scalar_one_or_none()
+    if not project or project.owner_id != current_user["id"]:
+        raise HTTPException(status_code=404, detail="Build not found")
+    return _serialize_build(build)

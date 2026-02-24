@@ -1,0 +1,49 @@
+apptrack/
+├── frontend/                         # React + Vite + Tailwind + TypeScript
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── layout/DashboardLayout.tsx
+│   │   │   └── ui/
+│   │   ├── pages/
+│   │   │   ├── LoginPage.tsx
+│   │   │   ├── DashboardPage.tsx
+│   │   │   ├── ProjectsPage.tsx
+│   │   │   └── NewProjectPage.tsx
+│   │   ├── store/authStore.ts        # Zustand auth state
+│   │   ├── lib/api.ts                # Axios instance
+│   │   ├── types/index.ts
+│   │   ├── App.tsx
+│   │   └── main.tsx
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tailwind.config.js
+│   └── tsconfig.json
+│
+├── backend/
+│   ├── gateway/                      # API Gateway — port 8000
+│   │   └── app/
+│   │       ├── main.py
+│   │       ├── config.py
+│   │       ├── dependencies.py       # JWT auth dep
+│   │       └── routers/
+│   │           ├── auth.py
+│   │           ├── projects.py
+│   │           ├── builds.py
+│   │           └── deployments.py
+│   └── services/
+│       ├── auth/                     # port 8001
+│       ├── project/                  # port 8002
+│       ├── repo-sync/                # port 8003
+│       ├── framework-detection/      # port 8004
+│       ├── preview/                  # port 8005
+│       ├── build/                    # port 8006
+│       ├── artifact/                 # port 8007
+│       └── store-deploy/             # port 8008
+│
+├── infra/
+│   ├── postgres/init.sql
+│   ├── nginx/nginx.conf
+│   └── rabbitmq/
+│
+├── docker-compose.yml
+└── env.example

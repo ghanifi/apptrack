@@ -1,0 +1,289 @@
+version: "3.9"
+
+services:
+  # ─── Infrastructure ───────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-apptrack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-apptrack}
+      POSTGRES_DB: ${POSTGRES_DB:-apptrack}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apptrack"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-apptrack}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-apptrack_secret}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── API Gateway ──────────────────────────────────────────────────────────
+  gateway:
+    build: ./backend/gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      - SECRET_KEY_OLD=${SECRET_KEY_OLD:-}
+      - FERNET_SALT=${FERNET_SALT:-apptrack-fernet-salt-change-me}
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - PROJECT_SERVICE_URL=http://project-service:8002
+      - REPO_SYNC_SERVICE_URL=http://repo-sync-service:8003
+      - FRAMEWORK_DETECTION_SERVICE_URL=http://framework-detection-service:8004
+      - PREVIEW_SERVICE_URL=http://preview-service:8005
+      - BUILD_SERVICE_URL=http://build-service:8006
+      - ARTIFACT_SERVICE_URL=http://artifact-service:8007
+      - STORE_DEPLOY_SERVICE_URL=http://store-deploy-service:8008
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-}
+      - GATEWAY_URL=${GATEWAY_URL:-http://localhost:8000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ./backend/gateway:/app
+
+  # ─── Microservices ────────────────────────────────────────────────────────
+  auth-service:
+    build: ./backend/services/auth
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-apptrack}:${POSTGRES_PASSWORD:-apptrack}@postgres:5432/${POSTGRES_DB:-apptrack}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/services/auth:/app
+
+  project-service:
+    build: ./backend/services/project
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-apptrack}:${POSTGRES_PASSWORD:-apptrack}@postgres:5432/${POSTGRES_DB:-apptrack}
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ./backend/services/project:/app
+
+  repo-sync-service:
+    build: ./backend/services/repo-sync
+    ports:
+      - "8003:8003"
+    environment:
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
+      - CLONE_BASE_DIR=/tmp/repos
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ./backend/services/repo-sync:/app
+      - repo_clones:/tmp/repos
+
+  framework-detection-service:
+    build: ./backend/services/framework-detection
+    ports:
+      - "8004:8004"
+    environment:
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
+      - CLONE_BASE_DIR=/tmp/repos
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ./backend/services/framework-detection:/app
+      - repo_clones:/tmp/repos
+
+  build-service:
+    build: ./backend/services/build
+    ports:
+      - "8006:8006"
+    environment:
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
+      - EAS_WEBHOOK_SECRET=${EAS_WEBHOOK_SECRET:-}
+      - CODEMAGIC_WEBHOOK_SECRET=${CODEMAGIC_WEBHOOK_SECRET:-}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ./backend/services/build:/app
+
+  artifact-service:
+    build: ./backend/services/artifact
+    ports:
+      - "8007:8007"
+    environment:
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_BUCKET=artifacts
+      - MINIO_PUBLIC_URL=http://localhost:9000
+    depends_on:
+      minio:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ./backend/services/artifact:/app
+
+  store-deploy-service:
+    build: ./backend/services/store-deploy
+    ports:
+      - "8008:8008"
+    environment:
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
+      - GATEWAY_URL=http://gateway:8000
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ./backend/services/store-deploy:/app
+
+  preview-service:
+    build: ./backend/services/preview
+    ports:
+      - "8005:8005"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      docker-socket-proxy:
+        condition: service_started
+    volumes:
+      - ./backend/services/preview:/app
+      - repo_clones:/tmp/repos
+    environment:
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
+      - PREVIEW_BASE_URL=http://localhost:8005
+      - PREVIEW_HOST=${PREVIEW_HOST:-localhost}
+      - CLONE_BASE_DIR=/tmp/repos
+      - APPETIZE_API_TOKEN=${APPETIZE_API_TOKEN:-}
+      - DOCKER_ANDROID_URL=${DOCKER_ANDROID_URL:-http://localhost:6080}
+      - ENABLE_LIVE_PREVIEW=${ENABLE_LIVE_PREVIEW:-true}
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
+
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      POST: 1
+      VOLUMES: 0
+      EXEC: 0
+      SWARM: 0
+      AUTH: 0
+      SECRETS: 0
+    ports:
+      - "2375"
+
+  docker-android:
+    image: budtmo/docker-android:emulator_13.0
+    ports:
+      - "6080:6080"
+    environment:
+      - EMULATOR_DEVICE=Samsung Galaxy S10
+      - WEB_VNC=true
+      - APPIUM=false
+    devices:
+      - /dev/kvm:/dev/kvm
+    profiles:
+      - android-emu
+
+  # ─── Monitoring ───────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+
+  # ─── Frontend ─────────────────────────────────────────────────────────────
+  frontend:
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+
+volumes:
+  postgres_data:
+  minio_data:
+  repo_clones:
+  prometheus_data:
+  grafana_data:
