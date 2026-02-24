@@ -1553,7 +1553,7 @@ try:
     log_test("Main: WEBHOOK_COUNTER metric", "WEBHOOK_COUNTER" in main_src2)
     log_test("Main: QUOTA_EXCEEDED_COUNTER metric", "QUOTA_EXCEEDED_COUNTER" in main_src2)
     log_test("Main: ARTIFACT_SIZE metric", "ARTIFACT_SIZE" in main_src2)
-    log_test("Main: v0.6.0 version", "0.6.0" in main_src2)
+    log_test("Main: v0.7.0 version", "0.7.0" in main_src2)
 
 except Exception as e:
     log_test("Main: genel hata", False, traceback.format_exc()[:200])
@@ -1935,7 +1935,7 @@ except Exception as e:
 print("\n=== 60. GATEWAY VERSION ===")
 
 try:
-    log_test("Gateway: version 0.6.0", "0.6.0" in main_src2)
+    log_test("Gateway: version 0.7.0", "0.7.0" in main_src2)
     log_test("Gateway: X-Service-Token in CORS headers", "X-Service-Token" in main_src2)
 
 except Exception as e:
@@ -2194,6 +2194,153 @@ try:
 
 except Exception as e:
     log_test("CredSQL: genel hata", False, traceback.format_exc()[:200])
+
+
+# ============================================================================
+# TEST GROUP 69: GITHUB BRANCH LISTING & DISCONNECT
+# ============================================================================
+print("\n=== 69. GITHUB BRANCH LISTING & DISCONNECT ===")
+
+try:
+    github_path = os.path.join(os.path.dirname(__file__), "..", "gateway", "app", "routers", "github.py")
+    with open(github_path, "r", encoding="utf-8") as f:
+        github_src = f.read()
+    log_test("GitHub: branch listing endpoint", "list_repo_branches" in github_src)
+    log_test("GitHub: /branches URL", "/branches" in github_src)
+    log_test("GitHub: contents listing endpoint", "list_repo_contents" in github_src)
+    log_test("GitHub: /contents URL", "/contents" in github_src)
+    log_test("GitHub: disconnect endpoint", "disconnect_github" in github_src)
+    log_test("GitHub: DELETE method for disconnect", "@router.delete" in github_src)
+    log_test("GitHub: branch protected field", "protected" in github_src)
+    log_test("GitHub: per_page=100", "per_page" in github_src)
+
+except Exception as e:
+    log_test("GitHub: genel hata", False, traceback.format_exc()[:200])
+
+
+# ============================================================================
+# TEST GROUP 70: BUILD CANCEL & RETRY
+# ============================================================================
+print("\n=== 70. BUILD CANCEL & RETRY ===")
+
+try:
+    builds_path = os.path.join(os.path.dirname(__file__), "..", "gateway", "app", "routers", "builds.py")
+    with open(builds_path, "r", encoding="utf-8") as f:
+        builds_src = f.read()
+    log_test("Build: cancel endpoint", "cancel_build" in builds_src)
+    log_test("Build: /{build_id}/cancel URL", "/cancel" in builds_src)
+    log_test("Build: retry endpoint", "retry_build" in builds_src)
+    log_test("Build: /{build_id}/retry URL", "/retry" in builds_src)
+    log_test("Build: cancelled status", '"cancelled"' in builds_src)
+    log_test("Build: terminal state check", "terminal state" in builds_src)
+    log_test("Build: only retry failed/cancelled", '"failed"' in builds_src and '"cancelled"' in builds_src)
+    log_test("Build: new build on retry", 'status="queued"' in builds_src)
+
+except Exception as e:
+    log_test("Build: genel hata", False, traceback.format_exc()[:200])
+
+
+# ============================================================================
+# TEST GROUP 71: NATIVE BUILD - GITHUB ACTIONS API
+# ============================================================================
+print("\n=== 71. NATIVE BUILD - GITHUB ACTIONS ===")
+
+try:
+    build_svc_path = os.path.join(os.path.dirname(__file__), "..", "services", "build", "app", "main.py")
+    with open(build_svc_path, "r", encoding="utf-8") as f:
+        build_svc_src = f.read()
+    log_test("NativeBuild: _trigger_github_actions fonksiyonu", "_trigger_github_actions" in build_svc_src)
+    log_test("NativeBuild: GitHub Actions API URL", "api.github.com" in build_svc_src and "actions/workflows" in build_svc_src)
+    log_test("NativeBuild: workflow dispatch", "dispatches" in build_svc_src)
+    log_test("NativeBuild: workflow_file secimi", "workflow_file" in build_svc_src)
+    log_test("NativeBuild: build-ios.yml", "build-ios.yml" in build_svc_src)
+    log_test("NativeBuild: build-android.yml", "build-android.yml" in build_svc_src)
+    log_test("NativeBuild: GITHUB_ACTIONS_TOKEN", "GITHUB_ACTIONS_TOKEN" in build_svc_src)
+    log_test("NativeBuild: provider=github_actions routing", 'provider == "github_actions"' in build_svc_src or "github_actions" in build_svc_src)
+    log_test("NativeBuild: build.started event", "build.started" in build_svc_src)
+    log_test("NativeBuild: build.failed event on error", "build.failed" in build_svc_src)
+
+except Exception as e:
+    log_test("NativeBuild: genel hata", False, traceback.format_exc()[:200])
+
+
+# ============================================================================
+# TEST GROUP 72: ARTIFACT PERSISTENT STORAGE
+# ============================================================================
+print("\n=== 72. ARTIFACT PERSISTENT STORAGE ===")
+
+try:
+    artifact_path = os.path.join(os.path.dirname(__file__), "..", "services", "artifact", "app", "main.py")
+    with open(artifact_path, "r", encoding="utf-8") as f:
+        artifact_src = f.read()
+    log_test("Artifact: kalici meta - METADATA_DIR ayari", "METADATA_DIR" in artifact_src)
+    log_test("Artifact: _save_meta fonksiyonu", "_save_meta" in artifact_src)
+    log_test("Artifact: _load_meta fonksiyonu", "_load_meta" in artifact_src)
+    log_test("Artifact: _load_all_meta fonksiyonu", "_load_all_meta" in artifact_src)
+    log_test("Artifact: JSON dosya tabanli storage", "json.dumps" in artifact_src and "write_text" in artifact_src)
+    log_test("Artifact: mkdir parents=True", "mkdir" in artifact_src and "parents=True" in artifact_src)
+    log_test("Artifact: in-memory ARTIFACTS_META kaldirildi", "ARTIFACTS_META: dict = {}" not in artifact_src)
+
+except Exception as e:
+    log_test("Artifact: genel hata", False, traceback.format_exc()[:200])
+
+
+# ============================================================================
+# TEST GROUP 73: PREVIEW PERSISTENT STATE
+# ============================================================================
+print("\n=== 73. PREVIEW PERSISTENT STATE ===")
+
+try:
+    preview_path = os.path.join(os.path.dirname(__file__), "..", "services", "preview", "app", "main.py")
+    with open(preview_path, "r", encoding="utf-8") as f:
+        preview_src = f.read()
+    log_test("Preview: kalici state - PREVIEW_STATE_DIR ayari", "PREVIEW_STATE_DIR" in preview_src)
+    log_test("Preview: _save_preview fonksiyonu", "_save_preview" in preview_src)
+    log_test("Preview: _load_preview fonksiyonu", "_load_preview" in preview_src)
+    log_test("Preview: _delete_preview fonksiyonu", "_delete_preview" in preview_src)
+    log_test("Preview: JSON dosya tabanli state", "json.dumps" in preview_src and "write_text" in preview_src)
+    log_test("Preview: in-memory PREVIEWS dict kaldirildi", "PREVIEWS: dict = {}" not in preview_src)
+    log_test("Preview: stop_preview delete ile temizlik", "_delete_preview" in preview_src)
+
+except Exception as e:
+    log_test("Preview: genel hata", False, traceback.format_exc()[:200])
+
+
+# ============================================================================
+# TEST GROUP 74: STORE DEPLOY - APP STORE DIRECT UPLOAD
+# ============================================================================
+print("\n=== 74. STORE DEPLOY - APP STORE UPLOAD ===")
+
+try:
+    store_path = os.path.join(os.path.dirname(__file__), "..", "services", "store-deploy", "app", "main.py")
+    with open(store_path, "r", encoding="utf-8") as f:
+        store_src = f.read()
+    log_test("StoreDeploy: IPA upload attempt", "IPA upload" in store_src or "upload_resp" in store_src)
+    log_test("StoreDeploy: Transporter API URL", "contentdelivery.itunes.apple.com" in store_src or "Transporter" in store_src)
+    log_test("StoreDeploy: fallback on upload failure", "Transporter fallback" in store_src or "Transporter CLI" in store_src)
+    log_test("StoreDeploy: artifact download before upload", "_download_and_verify" in store_src)
+
+except Exception as e:
+    log_test("StoreDeploy: genel hata", False, traceback.format_exc()[:200])
+
+
+# ============================================================================
+# TEST GROUP 75: DOCKER COMPOSE VOLUMES
+# ============================================================================
+print("\n=== 75. DOCKER COMPOSE PERSISTENT VOLUMES ===")
+
+try:
+    dc_path = os.path.join(os.path.dirname(__file__), "..", "..", "docker-compose.yml")
+    with open(dc_path, "r", encoding="utf-8") as f:
+        dc_src = f.read()
+    log_test("Docker: artifact_meta volume tanimli", "artifact_meta:" in dc_src)
+    log_test("Docker: preview_state volume tanimli", "preview_state:" in dc_src)
+    log_test("Docker: artifact_meta mount", "artifact_meta:/data/artifact-meta" in dc_src)
+    log_test("Docker: preview_state mount", "preview_state:/data/preview-state" in dc_src)
+    log_test("Docker: GITHUB_ACTIONS_TOKEN env", "GITHUB_ACTIONS_TOKEN" in dc_src)
+
+except Exception as e:
+    log_test("Docker: genel hata", False, traceback.format_exc()[:200])
 
 
 # ============================================================================

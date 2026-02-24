@@ -140,7 +140,7 @@ async def lifespan(app: FastAPI):
     _nonce_cleanup_task = asyncio.create_task(cleanup_expired_nonces())
     logger.info("Webhook nonce cleanup task started")
 
-    logger.info("AppTrack gateway started (v0.6.0)")
+    logger.info("AppTrack gateway started (v0.7.0)")
     yield
 
     logger.info("Shutting down gracefully...")
@@ -161,7 +161,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AppTrack API Gateway",
-    version="0.6.0",
+    version="0.7.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
@@ -224,7 +224,7 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_sch
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "gateway", "version": "0.6.0"}
+    return {"status": "ok", "service": "gateway", "version": "0.7.0"}
 
 
 @app.get("/api/health/deep")
@@ -237,7 +237,7 @@ async def deep_health():
         content={
             "status": "healthy" if all_ok else "degraded",
             "service": "gateway",
-            "version": "0.6.0",
+            "version": "0.7.0",
             "checks": {
                 "database": "ok" if db_ok else "unreachable",
                 "rabbitmq": "ok" if mq_ok else "unreachable",

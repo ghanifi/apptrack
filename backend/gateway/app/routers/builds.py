@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
+from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.dependencies import get_current_user
@@ -72,3 +73,52 @@ async def get_build(build_id: str, current_user: dict = Depends(get_current_user
     if not project or project.owner_id != current_user["id"]:
         raise HTTPException(status_code=404, detail="Build not found")
     return _serialize_build(build)
+
+
+@router.post("/{build_id}/cancel")
+async def cancel_build(build_id: str, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Build).where(Build.id == build_id))
+    build = result.scalar_one_or_none()
+    if not build:
+        raise HTTPException(status_code=404, detail="Build not found")
+    proj = await db.execute(select(Project).where(Project.id == build.project_id))
+    project = proj.scalar_one_or_none()
+    if not project or project.owner_id != current_user["id"]:
+        raise HTTPException(status_code=404, detail="Build not found")
+
+    if build.status in ("success", "failed", "cancelled"):
+        raise HTTPException(status_code=400, detail=f"Build already in terminal state: {build.status}")
+
+    build.status = "cancelled"
+    build.finished_at = datetime.utcnow()
+    await db.commit()
+    return _serialize_build(build)
+
+
+@router.post("/{build_id}/retry")
+async def retry_build(build_id: str, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Build).where(Build.id == build_id))
+    build = result.scalar_one_or_none()
+    if not build:
+        raise HTTPException(status_code=404, detail="Build not found")
+    proj = await db.execute(select(Project).where(Project.id == build.project_id))
+    project = proj.scalar_one_or_none()
+    if not project or project.owner_id != current_user["id"]:
+        raise HTTPException(status_code=404, detail="Build not found")
+
+    if build.status not in ("failed", "cancelled"):
+        raise HTTPException(status_code=400, detail=f"Can only retry failed or cancelled builds, current: {build.status}")
+
+    import uuid
+    new_build = Build(
+        id=str(uuid.uuid4()),
+        project_id=build.project_id,
+        platform=build.platform,
+        provider=build.provider,
+        status="queued",
+        created_at=datetime.utcnow(),
+    )
+    db.add(new_build)
+    await db.commit()
+    await db.refresh(new_build)
+    return _serialize_build(new_build)

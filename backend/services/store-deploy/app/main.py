@@ -186,7 +186,25 @@ async def _deploy_app_store(deployment_id: str, payload: dict, channel: aio_pika
             else:
                 logger.warning("EAS Submit API returned %s: %s — marking as in_review", submit_resp.status_code, submit_resp.text[:200])
         else:
-            logger.info("App Store credentials valid — artifact upload requires Transporter CLI (credentials verified for deploy %s)", deployment_id)
+            if artifact_url:
+                logger.info("Attempting direct IPA upload via App Store Connect Transporter API for deploy %s", deployment_id)
+                try:
+                    tmp_path = await _download_and_verify(artifact_url, ".ipa", payload.get("artifact_checksum"))
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        upload_resp = await client.post(
+                            "https://contentdelivery.itunes.apple.com/WebObjects/MZLabelService.woa/wa/validateAssets",
+                            headers={"Authorization": f"Bearer {jwt_token}"},
+                            files={"file": ("app.ipa", open(tmp_path, "rb"), "application/octet-stream")},
+                        )
+                    os.unlink(tmp_path)
+                    if upload_resp.status_code in (200, 201):
+                        logger.info("IPA uploaded to App Store Connect for deploy %s", deployment_id)
+                    else:
+                        logger.warning("App Store upload returned %s — marking as in_review (manual Transporter fallback)", upload_resp.status_code)
+                except Exception as upload_exc:
+                    logger.warning("Direct upload failed: %s — marking as in_review (use Transporter CLI)", upload_exc)
+            else:
+                logger.info("App Store credentials verified — no artifact to upload for deploy %s", deployment_id)
 
         await publish_event(channel, "deploy.completed", {
             "deployment_id": deployment_id,

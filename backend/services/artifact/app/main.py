@@ -2,8 +2,10 @@ import json
 import hashlib
 import logging
 import uuid
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, HTTPException, Header
 from typing import Optional
 from pydantic_settings import BaseSettings
@@ -24,13 +26,41 @@ class Settings(BaseSettings):
     MINIO_PUBLIC_URL: str = "http://localhost:9000"
     SERVICE_TOKEN_SECRET: str = ""
     SIGNED_URL_EXPIRY: int = 3600
+    METADATA_DIR: str = "/data/artifact-meta"
 
     class Config:
         env_file = ".env"
 
 
 settings = Settings()
-ARTIFACTS_META: dict = {}
+
+META_DIR = Path(settings.METADATA_DIR)
+META_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _meta_path(artifact_id: str) -> Path:
+    return META_DIR / f"{artifact_id}.json"
+
+
+def _save_meta(artifact_id: str, data: dict):
+    _meta_path(artifact_id).write_text(json.dumps(data, default=str), encoding="utf-8")
+
+
+def _load_meta(artifact_id: str) -> dict | None:
+    p = _meta_path(artifact_id)
+    if p.exists():
+        return json.loads(p.read_text(encoding="utf-8"))
+    return None
+
+
+def _load_all_meta() -> list[dict]:
+    results = []
+    for f in META_DIR.glob("*.json"):
+        try:
+            results.append(json.loads(f.read_text(encoding="utf-8")))
+        except Exception:
+            continue
+    return results
 
 
 def get_s3():
@@ -148,19 +178,20 @@ async def upload_artifact(
         "size_bytes": len(content) if url else 0,
         "created_at": datetime.utcnow().isoformat(),
     }
-    ARTIFACTS_META[artifact_id] = artifact
+    ARTIFACTS_META_COMPAT = artifact
+    _save_meta(artifact_id, artifact)
     logger.info("Uploaded artifact %s for build %s (checksum=%s, size=%d)", artifact_id, build_id, checksum, artifact.get("size_bytes", 0))
     return artifact
 
 
 @app.get("/build/{build_id}")
 def get_artifacts_by_build(build_id: str):
-    return [a for a in ARTIFACTS_META.values() if a["build_id"] == build_id]
+    return [a for a in _load_all_meta() if a.get("build_id") == build_id]
 
 
 @app.get("/{artifact_id}/download")
 def download_url(artifact_id: str, owner_id: Optional[str] = None):
-    artifact = ARTIFACTS_META.get(artifact_id)
+    artifact = _load_meta(artifact_id)
     if not artifact:
         raise HTTPException(status_code=404, detail="Artifact not found")
     if owner_id and artifact.get("owner_id") and artifact["owner_id"] != owner_id:
@@ -180,7 +211,7 @@ def download_url(artifact_id: str, owner_id: Optional[str] = None):
 
 @app.get("/{artifact_id}/verify")
 def verify_artifact(artifact_id: str, expected_checksum: Optional[str] = None):
-    artifact = ARTIFACTS_META.get(artifact_id)
+    artifact = _load_meta(artifact_id)
     if not artifact:
         raise HTTPException(status_code=404, detail="Artifact not found")
     stored_checksum = artifact.get("checksum")

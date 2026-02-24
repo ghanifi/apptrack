@@ -147,6 +147,7 @@ services:
       - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
       - EAS_WEBHOOK_SECRET=${EAS_WEBHOOK_SECRET:-}
       - CODEMAGIC_WEBHOOK_SECRET=${CODEMAGIC_WEBHOOK_SECRET:-}
+      - GITHUB_ACTIONS_TOKEN=${GITHUB_ACTIONS_TOKEN:-}
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -171,6 +172,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/services/artifact:/app
+      - artifact_meta:/data/artifact-meta
 
   store-deploy-service:
     build: ./backend/services/store-deploy
@@ -197,6 +199,7 @@ services:
     volumes:
       - ./backend/services/preview:/app
       - repo_clones:/tmp/repos
+      - preview_state:/data/preview-state
     environment:
       - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
       - PREVIEW_BASE_URL=http://localhost:8005
@@ -287,3 +290,5 @@ volumes:
   repo_clones:
   prometheus_data:
   grafana_data:
+  artifact_meta:
+  preview_state:

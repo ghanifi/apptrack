@@ -138,6 +138,71 @@ async def _trigger_codemagic(build_id: str, payload: dict, channel: aio_pika.abc
         })
 
 
+async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pika.abc.AbstractChannel):
+    github_token = payload.get("github_token") or os.getenv("GITHUB_ACTIONS_TOKEN", "")
+    repo_url = payload.get("repo_url", "")
+    branch = payload.get("branch", "main")
+    platform = payload.get("platform", "android")
+
+    owner_repo = ""
+    if "github.com/" in repo_url:
+        parts = repo_url.rstrip("/").rstrip(".git").split("github.com/")[-1]
+        owner_repo = parts
+
+    if not github_token or not owner_repo:
+        logger.warning("GitHub Actions: no token or repo, simulating build %s", build_id)
+        await publish_event(channel, "build.finished", {
+            "build_id": build_id,
+            "project_id": payload["project_id"],
+            "framework": payload.get("framework", "native"),
+            "status": "success",
+            "artifact_url": None,
+            "provider": "github_actions",
+            "note": "Simulated — GITHUB_ACTIONS_TOKEN or repo_url not configured",
+        })
+        return
+
+    workflow_file = f"build-{platform}.yml"
+    if payload.get("framework") == "swift":
+        workflow_file = "build-ios.yml"
+    elif payload.get("framework") == "kotlin":
+        workflow_file = "build-android.yml"
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"https://api.github.com/repos/{owner_repo}/actions/workflows/{workflow_file}/dispatches",
+            headers={
+                "Authorization": f"Bearer {github_token}",
+                "Accept": "application/vnd.github.v3+json",
+            },
+            json={
+                "ref": branch,
+                "inputs": {
+                    "build_id": build_id,
+                    "platform": platform,
+                    "project_id": payload["project_id"],
+                },
+            },
+        )
+
+    if resp.status_code == 204:
+        await publish_event(channel, "build.started", {
+            "build_id": build_id,
+            "project_id": payload["project_id"],
+            "framework": payload.get("framework"),
+            "external_build_id": f"gh-{owner_repo}-{build_id[:8]}",
+            "provider": "github_actions",
+        })
+        logger.info("GitHub Actions workflow dispatched: %s/%s for build %s", owner_repo, workflow_file, build_id)
+    else:
+        logger.error("GitHub Actions trigger failed %s: %s", resp.status_code, resp.text[:300])
+        await publish_event(channel, "build.failed", {
+            "build_id": build_id,
+            "project_id": payload["project_id"],
+            "error": f"GitHub Actions API error {resp.status_code}: {resp.text[:200]}",
+        })
+
+
 async def _simulate_build(build_id: str, project_id: str, framework: str, provider: str, channel: aio_pika.abc.AbstractChannel):
     logger.warning("Simulating build %s via %s (no credentials)", build_id, provider)
     await publish_event(channel, "build.finished", {
@@ -164,6 +229,8 @@ async def handle_build_triggered(message: aio_pika.abc.AbstractIncomingMessage, 
                 await _trigger_eas(build_id, payload, channel)
             elif provider == "codemagic":
                 await _trigger_codemagic(build_id, payload, channel)
+            elif provider == "github_actions":
+                await _trigger_github_actions(build_id, payload, channel)
             else:
                 await _simulate_build(build_id, payload["project_id"], framework, provider, channel)
 

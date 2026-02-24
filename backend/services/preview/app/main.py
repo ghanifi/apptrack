@@ -2,7 +2,9 @@ import asyncio
 import json
 import logging
 import time
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
@@ -21,17 +23,45 @@ class Settings(BaseSettings):
     APPETIZE_API_TOKEN: str = ""
     DOCKER_ANDROID_URL: str = ""
     ENABLE_LIVE_PREVIEW: bool = True
+    PREVIEW_STATE_DIR: str = "/data/preview-state"
 
     class Config:
         env_file = ".env"
 
 
 settings = Settings()
-PREVIEWS: dict = {}
+
+STATE_DIR = Path(settings.PREVIEW_STATE_DIR)
+STATE_DIR.mkdir(parents=True, exist_ok=True)
+
 CONTAINERS: dict = {}
 APPETIZE_API_URL = "https://api.appetize.io/apps"
 
 _channel = None
+
+
+def _state_path(project_id: str) -> Path:
+    return STATE_DIR / f"{project_id}.json"
+
+
+def _save_preview(project_id: str, data: dict):
+    _state_path(project_id).write_text(json.dumps(data, default=str), encoding="utf-8")
+
+
+def _load_preview(project_id: str) -> dict | None:
+    p = _state_path(project_id)
+    if p.exists():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+    return None
+
+
+def _delete_preview(project_id: str):
+    p = _state_path(project_id)
+    if p.exists():
+        p.unlink(missing_ok=True)
 
 try:
     import docker as docker_sdk
@@ -133,20 +163,24 @@ async def _wait_for_ready(url: str, project_id: str, framework: str, timeout: in
             try:
                 resp = await client.get(url)
                 if resp.status_code < 500:
-                    PREVIEWS[project_id]["status"] = "ready"
+                    PREVIEWS_data = _load_preview(project_id) or {}
+                    PREVIEWS_data["status"] = "ready"
+                    _save_preview(project_id, PREVIEWS_data)
                     if _channel:
                         await _publish_event(_channel, "preview.ready", {
                             "project_id": project_id,
                             "framework": framework,
                             "preview_url": url,
-                            "type": PREVIEWS[project_id].get("type"),
+                            "type": PREVIEWS_data.get("type"),
                         })
                     logger.info("Live preview ready for %s: %s", project_id, url)
                     return
             except Exception:
                 pass
     logger.warning("Preview server timed out for project %s", project_id)
-    PREVIEWS[project_id]["status"] = "timeout"
+    pdata = _load_preview(project_id) or {}
+    pdata["status"] = "timeout"
+    _save_preview(project_id, pdata)
 
 
 async def _launch_live_preview(project_id: str, framework: str) -> bool:
@@ -180,12 +214,14 @@ async def _launch_live_preview(project_id: str, framework: str) -> bool:
     CONTAINERS[project_id] = container_id
     preview_url = f"http://{settings.PREVIEW_HOST}:{host_port}"
 
-    PREVIEWS[project_id].update({
+    pdata = _load_preview(project_id) or {}
+    pdata.update({
         "type": "live",
         "status": "starting",
         "preview_url": preview_url,
         "instructions": "Live dev server is starting, please wait...",
     })
+    _save_preview(project_id, pdata)
 
     asyncio.create_task(_wait_for_ready(preview_url, project_id, framework))
     return True
@@ -239,7 +275,7 @@ async def handle_framework_detected(
                 return
 
             info = _static_preview_info(project_id, framework)
-            PREVIEWS[project_id] = {"project_id": project_id, "framework": framework, **info}
+            _save_preview(project_id, {"project_id": project_id, "framework": framework, **info})
 
             if settings.ENABLE_LIVE_PREVIEW and framework in ("expo", "react_native", "flutter"):
                 launched = await _launch_live_preview(project_id, framework)
@@ -280,7 +316,7 @@ async def handle_build_finished(
             embed_url = await _upload_to_appetize(artifact_url, platform)
 
             if embed_url:
-                PREVIEWS[project_id] = {
+                _save_preview(project_id, {
                     "project_id": project_id,
                     "framework": framework,
                     "status": "ready",
@@ -288,7 +324,7 @@ async def handle_build_finished(
                     "preview_url": embed_url,
                     "embed_url": embed_url,
                     "instructions": "Interactive native device preview powered by Appetize.io.",
-                }
+                })
                 await _publish_event(channel, "preview.ready", {
                     "project_id": project_id,
                     "framework": framework,
@@ -296,23 +332,23 @@ async def handle_build_finished(
                     "type": "appetize",
                 })
             elif framework == "kotlin" and settings.DOCKER_ANDROID_URL:
-                PREVIEWS[project_id] = {
+                _save_preview(project_id, {
                     "project_id": project_id,
                     "framework": framework,
                     "status": "ready",
                     "type": "docker_android",
                     "preview_url": settings.DOCKER_ANDROID_URL,
                     "instructions": f"Android emulator in browser. Download APK: {artifact_url}",
-                }
+                })
             else:
-                PREVIEWS[project_id] = {
+                _save_preview(project_id, {
                     "project_id": project_id,
                     "framework": framework,
                     "status": "download_only",
                     "type": "download_only",
                     "preview_url": artifact_url,
                     "instructions": "Build complete. Download and install on your device.",
-                }
+                })
         except Exception as exc:
             logger.error("handle_build_finished error: %s", exc)
 
@@ -361,7 +397,7 @@ def health():
 
 @app.get("/preview/{project_id}")
 def get_preview(project_id: str):
-    p = PREVIEWS.get(project_id)
+    p = _load_preview(project_id)
     if not p:
         return {"project_id": project_id, "status": "not_ready", "preview_url": None}
     return p
@@ -370,10 +406,11 @@ def get_preview(project_id: str):
 @app.post("/start")
 async def start_preview(req: PreviewRequest):
     info = _static_preview_info(req.project_id, req.framework)
-    PREVIEWS[req.project_id] = {"project_id": req.project_id, "framework": req.framework, **info}
+    preview_data = {"project_id": req.project_id, "framework": req.framework, **info}
+    _save_preview(req.project_id, preview_data)
     if settings.ENABLE_LIVE_PREVIEW and req.framework in ("expo", "react_native", "flutter"):
         asyncio.create_task(_launch_live_preview(req.project_id, req.framework))
-    return PREVIEWS[req.project_id]
+    return _load_preview(req.project_id) or preview_data
 
 
 @app.delete("/{project_id}")
@@ -381,5 +418,5 @@ async def stop_preview(project_id: str):
     if DOCKER_AVAILABLE and project_id in CONTAINERS:
         await asyncio.to_thread(_stop_container_sync, project_id)
         del CONTAINERS[project_id]
-    PREVIEWS.pop(project_id, None)
+    _delete_preview(project_id)
     return {"project_id": project_id, "status": "stopped"}
