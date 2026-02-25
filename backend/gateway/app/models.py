@@ -313,6 +313,33 @@ class DeployApproval(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class StoreMetadata(Base):
+    __tablename__ = "store_metadata"
+    __table_args__ = (
+        UniqueConstraint("project_id", "platform", name="uq_store_meta_project_platform"),
+        Index("idx_store_meta_project", "project_id"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    platform: Mapped[str] = mapped_column(String(20), nullable=False)
+    app_name: Mapped[str | None] = mapped_column(String(255))
+    short_description: Mapped[str | None] = mapped_column(String(80))
+    full_description: Mapped[str | None] = mapped_column(Text)
+    keywords: Mapped[str | None] = mapped_column(Text)
+    privacy_url: Mapped[str | None] = mapped_column(Text)
+    support_url: Mapped[str | None] = mapped_column(Text)
+    marketing_url: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(String(100))
+    bundle_id: Mapped[str | None] = mapped_column(String(255))
+    version: Mapped[str | None] = mapped_column(String(50))
+    icon_url: Mapped[str | None] = mapped_column(Text)
+    screenshots: Mapped[dict | None] = mapped_column(JSONB)
+    feature_graphic_url: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class BackupJob(Base):
     __tablename__ = "backup_jobs"
     __table_args__ = (

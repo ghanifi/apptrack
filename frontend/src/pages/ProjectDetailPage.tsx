@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, RefreshCw, Play, GitBranch, Clock, CheckCircle,
   XCircle, Loader, Package, Rocket, ExternalLink, QrCode,
-  Upload, Eye, ChevronDown, ChevronUp,
+  Upload, Eye, ChevronDown, ChevronUp, Store,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Project, Build, Deployment } from '@/types'
@@ -235,6 +235,7 @@ export default function ProjectDetailPage() {
             <span>{project.branch}</span>
           </div>
         </div>
+        <div className="flex items-center gap-2">
         <button
           onClick={() => syncMutation.mutate()}
           disabled={syncMutation.isPending || isAnalyzing}
@@ -243,6 +244,14 @@ export default function ProjectDetailPage() {
           <RefreshCw size={14} className={syncMutation.isPending || isAnalyzing ? 'animate-spin' : ''} />
           Re-sync
         </button>
+        <Link
+          to={`/dashboard/projects/${id}/store`}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary-600/20 hover:bg-primary-600/30 border border-primary-500/30 text-primary-300 text-sm transition-colors"
+        >
+          <Store size={14} />
+          Store Config
+        </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-6">

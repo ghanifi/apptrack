@@ -33,3 +33,24 @@ export interface Deployment {
   created_at: string
   updated_at: string
 }
+
+export interface StoreMetadata {
+  id: string
+  project_id: string
+  platform: 'android' | 'ios'
+  app_name: string | null
+  short_description: string | null
+  full_description: string | null
+  keywords: string | null
+  privacy_url: string | null
+  support_url: string | null
+  marketing_url: string | null
+  category: string | null
+  bundle_id: string | null
+  version: string | null
+  icon_url: string | null
+  screenshots: Record<string, string[]> | null
+  feature_graphic_url: string | null
+  created_at: string
+  updated_at: string
+}

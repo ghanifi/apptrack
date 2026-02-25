@@ -19,6 +19,7 @@ from app.routers import ota
 from app.routers import admin as admin_router
 from app.routers import billing as billing_router
 from app.routers import credential_validation, deploy_simulator, metrics_kpi, canary, compliance
+from app.routers import store_metadata
 from app.config import settings
 from app.database import engine, Base
 from app import events
@@ -232,6 +233,7 @@ app.include_router(deploy_simulator.router)
 app.include_router(metrics_kpi.router)
 app.include_router(canary.router)
 app.include_router(compliance.router)
+app.include_router(store_metadata.router, prefix="/api/projects", tags=["store-metadata"])
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
