@@ -84,7 +84,7 @@ try:
 
     result = health()
     log_test("G1: health returns ok status", result.get("status") == "ok")
-    log_test("G1: health returns version", "version" in result and result["version"] == "0.7.0")
+    log_test("G1: health returns version", "version" in result and result["version"] == "0.8.0")
     log_test("G1: health returns service name", result.get("service") == "gateway")
 
     log_test("G1: deep_health is async", asyncio.iscoroutinefunction(deep_health))
@@ -738,7 +738,7 @@ print("=" * 70)
 print("\n--- 6.1 Version Consistency ---")
 try:
     from app.main import app as fastapi_app
-    log_test("G6: API version in FastAPI app", fastapi_app.version == "0.7.0")
+    log_test("G6: API version in FastAPI app", fastapi_app.version == "0.8.0")
     log_test("G6: API title set", "AppTrack" in fastapi_app.title)
 
     health_result = health()

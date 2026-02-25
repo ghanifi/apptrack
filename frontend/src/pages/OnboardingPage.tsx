@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import clsx from 'clsx'
+import Confetti from '@/components/ui/Confetti'
 
 interface GithubRepo {
   id: number
@@ -690,6 +691,7 @@ export default function OnboardingPage() {
                 </>
               ) : (
                 <>
+                  <Confetti duration={5000} />
                   <Rocket size={48} className="mx-auto mb-4 text-primary-400 animate-bounce" />
                   <h2 className="text-xl font-bold mb-2">Your app is on the way to the stores!</h2>
                   <p className="text-gray-400 text-sm mb-2">

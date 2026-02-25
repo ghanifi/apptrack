@@ -1,0 +1,14 @@
+apiVersion: v2
+name: apptrack
+description: Mobile App Publishing Automation Platform
+type: application
+version: 0.8.0
+appVersion: "0.8.0"
+keywords:
+  - mobile
+  - ci-cd
+  - app-store
+  - google-play
+  - build-automation
+maintainers:
+  - name: AppTrack Team

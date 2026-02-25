@@ -1,0 +1,219 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: build-service
+  labels:
+    app: apptrack
+    component: build-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: apptrack
+      component: build-service
+  template:
+    metadata:
+      labels:
+        app: apptrack
+        component: build-service
+    spec:
+      containers:
+        - name: build-service
+          image: apptrack/build-service:latest
+          ports:
+            - containerPort: 8006
+          env:
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: apptrack-secrets
+                  key: rabbitmq-url
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8006
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: build-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8006
+      targetPort: 8006
+  selector:
+    app: apptrack
+    component: build-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: store-deploy-service
+  labels:
+    app: apptrack
+    component: store-deploy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: apptrack
+      component: store-deploy
+  template:
+    metadata:
+      labels:
+        app: apptrack
+        component: store-deploy
+    spec:
+      containers:
+        - name: store-deploy
+          image: apptrack/store-deploy:latest
+          ports:
+            - containerPort: 8008
+          env:
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: apptrack-secrets
+                  key: rabbitmq-url
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8008
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: store-deploy-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8008
+      targetPort: 8008
+  selector:
+    app: apptrack
+    component: store-deploy
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: artifact-service
+  labels:
+    app: apptrack
+    component: artifact
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: apptrack
+      component: artifact
+  template:
+    metadata:
+      labels:
+        app: apptrack
+        component: artifact
+    spec:
+      containers:
+        - name: artifact
+          image: apptrack/artifact-service:latest
+          ports:
+            - containerPort: 8007
+          env:
+            - name: MINIO_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: apptrack-config
+                  key: minio-endpoint
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: apptrack-secrets
+                  key: minio-access-key
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: apptrack-secrets
+                  key: minio-secret-key
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: artifact-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8007
+      targetPort: 8007
+  selector:
+    app: apptrack
+    component: artifact
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: preview-service
+  labels:
+    app: apptrack
+    component: preview
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: apptrack
+      component: preview
+  template:
+    metadata:
+      labels:
+        app: apptrack
+        component: preview
+    spec:
+      containers:
+        - name: preview
+          image: apptrack/preview-service:latest
+          ports:
+            - containerPort: 8005
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: preview-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8005
+      targetPort: 8005
+  selector:
+    app: apptrack
+    component: preview

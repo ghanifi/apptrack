@@ -1,8 +1,10 @@
+import hashlib
 import logging
 from datetime import datetime
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import AuditLog
+from sqlalchemy import select, func
+from app.models import AuditLog, ImmutableAuditEntry
 from app.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
@@ -73,3 +75,45 @@ async def record_audit_with_db(
         db.add(log)
     except Exception as exc:
         logger.error("Failed to record audit log: %s", exc)
+
+
+def _compute_hash(sequence: int, action: str, resource_type: str, resource_id: str, details: dict, previous_hash: str) -> str:
+    data = f"{sequence}:{action}:{resource_type}:{resource_id}:{details}:{previous_hash}"
+    return hashlib.sha256(data.encode()).hexdigest()
+
+
+async def create_immutable_audit(
+    db: AsyncSession,
+    user_id: str,
+    action: str,
+    resource_type: str,
+    resource_id: str = None,
+    details: dict = None,
+    ip_address: str = None,
+) -> ImmutableAuditEntry:
+    max_seq = await db.execute(select(func.max(ImmutableAuditEntry.sequence_number)))
+    last_seq = max_seq.scalar() or 0
+    new_seq = last_seq + 1
+
+    last_entry = await db.execute(
+        select(ImmutableAuditEntry).where(ImmutableAuditEntry.sequence_number == last_seq)
+    )
+    prev = last_entry.scalar_one_or_none()
+    previous_hash = prev.entry_hash if prev else "0" * 64
+
+    entry_hash = _compute_hash(new_seq, action, resource_type, resource_id or "", details or {}, previous_hash)
+
+    entry = ImmutableAuditEntry(
+        sequence_number=new_seq,
+        user_id=user_id,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        details=details,
+        ip_address=ip_address,
+        previous_hash=previous_hash,
+        entry_hash=entry_hash,
+    )
+    db.add(entry)
+    await db.flush()
+    return entry

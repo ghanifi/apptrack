@@ -11,5 +11,6 @@ sqlalchemy==2.0.30
 asyncpg==0.29.0
 alembic==1.13.1
 cryptography==42.0.8
+PyJWT[crypto]==2.11.0
 slowapi==0.1.9
 prometheus-fastapi-instrumentator==7.0.0

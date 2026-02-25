@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  labels:
+    app: apptrack
+    component: gateway
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: apptrack
+      component: gateway
+  template:
+    metadata:
+      labels:
+        app: apptrack
+        component: gateway
+    spec:
+      serviceAccountName: apptrack-gateway
+      containers:
+        - name: gateway
+          image: apptrack/gateway:latest
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: apptrack-secrets
+                  key: database-url
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: apptrack-secrets
+                  key: rabbitmq-url
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: apptrack-secrets
+                  key: secret-key
+            - name: FERNET_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: apptrack-secrets
+                  key: fernet-salt
+            - name: SERVICE_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: apptrack-secrets
+                  key: service-token-secret
+            - name: STRIPE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: apptrack-secrets
+                  key: stripe-api-key
+            - name: GITHUB_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: apptrack-config
+                  key: github-client-id
+            - name: GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: apptrack-secrets
+                  key: github-client-secret
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  labels:
+    app: apptrack
+    component: gateway
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: apptrack
+    component: gateway
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

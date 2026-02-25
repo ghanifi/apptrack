@@ -1,0 +1,107 @@
+replicaCount:
+  gateway: 2
+  buildService: 2
+  storeDeployService: 2
+  artifactService: 1
+  previewService: 1
+  frontend: 2
+
+image:
+  registry: ghcr.io/apptrack
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+gateway:
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+buildService:
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+storeDeployService:
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: api.apptrack.io
+      paths:
+        - path: /api
+          pathType: Prefix
+    - host: app.apptrack.io
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: apptrack-tls
+      hosts:
+        - api.apptrack.io
+        - app.apptrack.io
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilization: 70
+  targetMemoryUtilization: 80
+
+postgresql:
+  enabled: true
+  auth:
+    database: apptrack
+    username: apptrack
+
+rabbitmq:
+  enabled: true
+  auth:
+    username: apptrack
+
+minio:
+  enabled: true
+  mode: standalone
+  defaultBuckets: "artifacts"
+
+redis:
+  enabled: true
+
+monitoring:
+  prometheus:
+    enabled: true
+    serviceMonitor: true
+  grafana:
+    enabled: false
+
+secrets:
+  secretKey: ""
+  fernetSalt: ""
+  serviceTokenSecret: ""
+  githubClientId: ""
+  githubClientSecret: ""
+  stripeApiKey: ""
+  stripeWebhookSecret: ""
+
+featureFlags:
+  canaryDeploy: true
+  blueGreenDeploy: false
+  otaUpdates: true
+  credentialValidation: true

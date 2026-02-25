@@ -18,12 +18,14 @@ from app.routers import secrets, rbac, immutable_audit, deploy_policies, backups
 from app.routers import ota
 from app.routers import admin as admin_router
 from app.routers import billing as billing_router
+from app.routers import credential_validation, deploy_simulator, metrics_kpi, canary, compliance
 from app.config import settings
 from app.database import engine, Base
 from app import events
 from app.worker import start_event_worker
 from app.cleanup import cleanup_stale_builds
 from app.webhook_guard import cleanup_expired_nonces
+from app.waf import WAFMiddleware
 
 setup_logging(level="INFO", json_output=True)
 logger = logging.getLogger(__name__)
@@ -143,7 +145,7 @@ async def lifespan(app: FastAPI):
     _nonce_cleanup_task = asyncio.create_task(cleanup_expired_nonces())
     logger.info("Webhook nonce cleanup task started")
 
-    logger.info("AppTrack gateway started (v0.7.0)")
+    logger.info("AppTrack gateway started (v0.8.0)")
     yield
 
     logger.info("Shutting down gracefully...")
@@ -164,7 +166,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AppTrack API Gateway",
-    version="0.7.0",
+    version="0.8.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
@@ -173,6 +175,7 @@ app = FastAPI(
 
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(WAFMiddleware)
 app.add_middleware(TracingMiddleware)
 app.add_middleware(RequestSizeGuardMiddleware)
 app.add_middleware(TenantIsolationMiddleware)
@@ -224,19 +227,30 @@ app.include_router(backups.router)
 app.include_router(ota.router, prefix="/api/ota", tags=["ota-updates"])
 app.include_router(admin_router.router)
 app.include_router(billing_router.router)
+app.include_router(credential_validation.router)
+app.include_router(deploy_simulator.router)
+app.include_router(metrics_kpi.router)
+app.include_router(canary.router)
+app.include_router(compliance.router)
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "gateway", "version": "0.7.0"}
+    return {"status": "ok", "service": "gateway", "version": "0.8.0"}
 
 
 @app.get("/api/errors/{error_code}")
 def get_error_detail(error_code: str):
     from app.error_messages import get_error_message
     return get_error_message(error_code)
+
+
+@app.get("/api/deploy-errors/{error_code}")
+def get_deploy_error_detail(error_code: str):
+    from app.deploy_error_guide import get_deploy_error_guide
+    return get_deploy_error_guide(error_code)
 
 
 @app.get("/api/health/deep")

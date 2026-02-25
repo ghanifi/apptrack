@@ -1,0 +1,112 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: apptrack-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rate-limit-connections: "50"
+    nginx.ingress.kubernetes.io/rate-limit-rps: "100"
+    nginx.ingress.kubernetes.io/proxy-body-size: 10m
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.apptrack.io
+        - app.apptrack.io
+      secretName: apptrack-tls
+  rules:
+    - host: api.apptrack.io
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 8000
+          - path: /metrics
+            pathType: Exact
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 8000
+    - host: app.apptrack.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apptrack-network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: apptrack
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: apptrack
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8005
+        - protocol: TCP
+          port: 8006
+        - protocol: TCP
+          port: 8007
+        - protocol: TCP
+          port: 8008
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: apptrack
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 5672
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apptrack-config
+data:
+  github-client-id: ""
+  minio-endpoint: "minio:9000"
+  frontend-url: "https://app.apptrack.io"
+  gateway-url: "https://api.apptrack.io"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: apptrack-secrets
+type: Opaque
+stringData:
+  database-url: "postgresql+asyncpg://apptrack:CHANGE_ME@postgres:5432/apptrack"
+  rabbitmq-url: "amqp://apptrack:CHANGE_ME@rabbitmq:5672/"
+  secret-key: "CHANGE-ME-TO-RANDOM-64-CHAR-STRING"
+  fernet-salt: "CHANGE-ME-TO-RANDOM-SALT"
+  service-token-secret: "CHANGE-ME-SERVICE-TOKEN"
+  github-client-secret: ""
+  stripe-api-key: ""
+  minio-access-key: "minioadmin"
+  minio-secret-key: "CHANGE_ME"
