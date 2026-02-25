@@ -140,6 +140,28 @@ async def _process_build_finished(payload: dict):
             build_id, status, artifact_url, artifact_checksum, payload.get("trace_id"),
         )
 
+        if status == "success" and build_id:
+            try:
+                from app.cost_guard import record_build_cost
+                result = await db.execute(select(Build).where(Build.id == build_id))
+                finished_build = result.scalar_one_or_none()
+                if finished_build:
+                    proj_result = await db.execute(
+                        select(Project).where(Project.id == finished_build.project_id)
+                    )
+                    proj = proj_result.scalar_one_or_none()
+                    if proj:
+                        actual_minutes = payload.get("duration_minutes")
+                        await record_build_cost(
+                            db, proj.owner_id,
+                            finished_build.provider, finished_build.platform,
+                            actual_minutes,
+                        )
+                        await db.commit()
+                        logger.info("Recorded build cost for user %s build %s", proj.owner_id, build_id)
+            except Exception as cost_exc:
+                logger.warning("Failed to record build cost: %s", cost_exc)
+
         try:
             from app.main import BUILD_RESULT_COUNTER, BUILD_DURATION
             provider = payload.get("provider", "unknown")

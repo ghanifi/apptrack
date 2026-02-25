@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models import Build, Project, Credential
 from app.crypto import decrypt
 from app.config import settings as app_settings
+from app.cost_guard import estimate_build_cost, get_monthly_spend
 
 router = APIRouter()
 
@@ -178,3 +179,16 @@ async def retry_build(build_id: str, current_user: dict = Depends(get_current_us
     await db.commit()
     await db.refresh(new_build)
     return _serialize_build(new_build)
+
+
+@router.get("/cost/estimate")
+async def cost_estimate(
+    provider: str = Query("eas"),
+    platform: str = Query("android"),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    estimate = await estimate_build_cost(provider, platform)
+    monthly_spend = await get_monthly_spend(db, current_user["id"])
+    estimate["current_monthly_spend_usd"] = round(monthly_spend, 2)
+    return estimate

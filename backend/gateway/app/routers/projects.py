@@ -20,6 +20,7 @@ from app.validators import validate_repo_url, validate_branch, AppError
 from app.audit import record_audit_with_db
 from app.quotas import check_project_quota, check_build_quota, track_usage
 from app.abuse_guard import check_build_spam
+from app.cost_guard import estimate_build_cost, check_budget_limit
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -301,6 +302,9 @@ async def trigger_build(
     }
     provider = provider_map.get(project.framework, "github_actions")
 
+    cost_estimate = await estimate_build_cost(provider, platform)
+    await check_budget_limit(db, current_user["id"], cost_estimate["estimated_cost_usd"])
+
     idem_key = hashlib.sha256(f"{project.id}:{project.branch}:{platform}".encode()).hexdigest()
     existing = await db.execute(
         select(Build).where(
@@ -364,6 +368,7 @@ async def trigger_build(
         "status": "queued",
         "provider": provider,
         "platform": platform,
+        "cost_estimate": cost_estimate,
     }
 
 

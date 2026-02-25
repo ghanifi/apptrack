@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     MAX_REQUEST_SIZE_MB: int = 10
     DEVICE_FINGERPRINT_ENABLED: bool = True
 
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_API_KEY: str = ""
+
     class Config:
         env_file = ".env"
 
