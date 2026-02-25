@@ -316,13 +316,15 @@ class DeployApproval(Base):
 class StoreMetadata(Base):
     __tablename__ = "store_metadata"
     __table_args__ = (
-        UniqueConstraint("project_id", "platform", name="uq_store_meta_project_platform"),
+        UniqueConstraint("project_id", "platform", "locale", name="uq_store_meta_project_platform_locale"),
         Index("idx_store_meta_project", "project_id"),
+        Index("idx_store_meta_locale", "project_id", "locale"),
     )
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
     project_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     platform: Mapped[str] = mapped_column(String(20), nullable=False)
+    locale: Mapped[str] = mapped_column(String(10), nullable=False, default="en-US")
     app_name: Mapped[str | None] = mapped_column(String(255))
     short_description: Mapped[str | None] = mapped_column(String(80))
     full_description: Mapped[str | None] = mapped_column(Text)

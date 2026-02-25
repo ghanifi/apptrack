@@ -1,16 +1,35 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Smartphone, Monitor, Image, FileText, Save, Upload,
-  Check, AlertCircle, Globe, Star, X, Plus, Eye,
+  Check, AlertCircle, Globe, Star, X, Plus, Eye, Shield,
+  Languages, ArrowUp, ArrowDown, Clock, XCircle, CheckCircle,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { Project, StoreMetadata } from '@/types'
+import type { Project, StoreMetadata, ComplianceResult, ReviewSimulation } from '@/types'
 import clsx from 'clsx'
 
 type Platform = 'android' | 'ios'
-type Tab = 'preview' | 'metadata' | 'assets'
+type Tab = 'preview' | 'metadata' | 'assets' | 'compliance'
+
+const LOCALES = [
+  { code: 'en-US', label: 'English (US)', flag: 'US' },
+  { code: 'tr-TR', label: 'Turkce', flag: 'TR' },
+  { code: 'de-DE', label: 'Deutsch', flag: 'DE' },
+  { code: 'fr-FR', label: 'Francais', flag: 'FR' },
+  { code: 'es-ES', label: 'Espanol', flag: 'ES' },
+  { code: 'it-IT', label: 'Italiano', flag: 'IT' },
+  { code: 'pt-BR', label: 'Portugues (BR)', flag: 'BR' },
+  { code: 'ja-JP', label: 'Japanese', flag: 'JP' },
+  { code: 'ko-KR', label: 'Korean', flag: 'KR' },
+  { code: 'zh-CN', label: 'Chinese (Simplified)', flag: 'CN' },
+  { code: 'zh-TW', label: 'Chinese (Traditional)', flag: 'TW' },
+  { code: 'ar-SA', label: 'Arabic', flag: 'SA' },
+  { code: 'nl-NL', label: 'Dutch', flag: 'NL' },
+  { code: 'ru-RU', label: 'Russian', flag: 'RU' },
+  { code: 'hi-IN', label: 'Hindi', flag: 'IN' },
+]
 
 const ANDROID_CATEGORIES = [
   'Art & Design', 'Auto & Vehicles', 'Beauty', 'Books & Reference',
@@ -40,10 +59,7 @@ function PhoneMockup({ platform, meta }: { platform: Platform; meta: StoreMetada
   const screenshots = meta?.screenshots?.phone || []
 
   return (
-    <div className={clsx(
-      'relative mx-auto',
-      isIos ? 'w-[280px]' : 'w-[270px]'
-    )}>
+    <div className={clsx('relative mx-auto', isIos ? 'w-[280px]' : 'w-[270px]')}>
       <div className={clsx(
         'bg-gray-950 border-2 rounded-[2.5rem] p-2 shadow-2xl',
         isIos ? 'border-gray-600' : 'border-gray-700'
@@ -51,11 +67,7 @@ function PhoneMockup({ platform, meta }: { platform: Platform; meta: StoreMetada
         {isIos && (
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-6 bg-gray-950 rounded-b-2xl z-10 border-b-2 border-x-2 border-gray-600" />
         )}
-
-        <div className={clsx(
-          'bg-white rounded-[2rem] overflow-hidden',
-          isIos ? 'pt-8' : 'pt-6'
-        )}>
+        <div className={clsx('bg-white rounded-[2rem] overflow-hidden', isIos ? 'pt-8' : 'pt-6')}>
           {!isIos && (
             <div className="flex items-center justify-between px-4 py-1 bg-gray-100">
               <span className="text-[9px] text-gray-500">9:41</span>
@@ -65,7 +77,6 @@ function PhoneMockup({ platform, meta }: { platform: Platform; meta: StoreMetada
               </div>
             </div>
           )}
-
           <div className="px-4 py-3 border-b border-gray-100">
             <div className="flex items-start gap-3">
               <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -92,7 +103,6 @@ function PhoneMockup({ platform, meta }: { platform: Platform; meta: StoreMetada
               </button>
             </div>
           </div>
-
           {screenshots.length > 0 ? (
             <div className="px-4 py-3 flex gap-2 overflow-x-auto">
               {screenshots.slice(0, 3).map((url, i) => (
@@ -110,22 +120,16 @@ function PhoneMockup({ platform, meta }: { platform: Platform; meta: StoreMetada
               ))}
             </div>
           )}
-
           <div className="px-4 py-3 border-t border-gray-100">
-            <p className="text-[11px] text-gray-600 leading-relaxed line-clamp-3">
-              {shortDesc}
-            </p>
+            <p className="text-[11px] text-gray-600 leading-relaxed line-clamp-3">{shortDesc}</p>
           </div>
-
           <div className="px-4 py-2 border-t border-gray-100 flex items-center justify-between">
             <span className="text-[9px] text-gray-400">Version {version}</span>
             <span className="text-[9px] text-gray-400">{meta?.bundle_id || 'com.example.app'}</span>
           </div>
-
           <div className="h-4" />
         </div>
       </div>
-
       <div className="text-center mt-3">
         <span className={clsx(
           'text-xs font-medium px-3 py-1 rounded-full',
@@ -138,16 +142,38 @@ function PhoneMockup({ platform, meta }: { platform: Platform; meta: StoreMetada
   )
 }
 
-function MetadataForm({
-  platform,
-  meta,
-  onSave,
-  isSaving,
+function LocaleSelector({
+  locale,
+  onChange,
+  configuredLocales,
 }: {
-  platform: Platform
-  meta: StoreMetadata | null
-  onSave: (data: Partial<StoreMetadata>) => void
-  isSaving: boolean
+  locale: string
+  onChange: (l: string) => void
+  configuredLocales: Record<string, string[]>
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Languages size={14} className="text-gray-500" />
+      <select
+        value={locale}
+        onChange={e => onChange(e.target.value)}
+        className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-primary-500 transition-colors"
+      >
+        {LOCALES.map(l => (
+          <option key={l.code} value={l.code}>
+            {l.flag} {l.label} {configuredLocales[l.code] ? ' *' : ''}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+function MetadataForm({
+  platform, meta, onSave, isSaving,
+}: {
+  platform: Platform; meta: StoreMetadata | null
+  onSave: (data: Partial<StoreMetadata>) => void; isSaving: boolean
 }) {
   const [form, setForm] = useState({
     app_name: meta?.app_name || '',
@@ -161,139 +187,89 @@ function MetadataForm({
     bundle_id: meta?.bundle_id || '',
     version: meta?.version || '',
   })
-
   const categories = platform === 'ios' ? IOS_CATEGORIES : ANDROID_CATEGORIES
   const maxShort = platform === 'ios' ? 30 : 80
-
-  const handleSave = () => {
-    onSave(form)
-  }
 
   return (
     <div className="space-y-5">
       <div className="grid md:grid-cols-2 gap-4">
         <div>
           <label className="block text-xs text-gray-400 mb-1.5">App Name *</label>
-          <input
-            value={form.app_name}
-            onChange={e => setForm(f => ({ ...f, app_name: e.target.value }))}
-            placeholder={platform === 'ios' ? 'My Amazing App' : 'My Amazing App'}
-            maxLength={50}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors"
-          />
+          <input value={form.app_name} onChange={e => setForm(f => ({ ...f, app_name: e.target.value }))}
+            placeholder="My Amazing App" maxLength={50}
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors" />
           <p className="text-[10px] text-gray-600 mt-1">{form.app_name.length}/50</p>
         </div>
         <div>
           <label className="block text-xs text-gray-400 mb-1.5">Bundle ID / Package Name *</label>
-          <input
-            value={form.bundle_id}
-            onChange={e => setForm(f => ({ ...f, bundle_id: e.target.value }))}
-            placeholder={platform === 'ios' ? 'com.company.appname' : 'com.company.appname'}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors"
-          />
+          <input value={form.bundle_id} onChange={e => setForm(f => ({ ...f, bundle_id: e.target.value }))}
+            placeholder="com.company.appname"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors" />
         </div>
       </div>
-
       <div>
         <label className="block text-xs text-gray-400 mb-1.5">
           {platform === 'ios' ? 'Subtitle' : 'Short Description'} *
         </label>
-        <input
-          value={form.short_description}
-          onChange={e => setForm(f => ({ ...f, short_description: e.target.value }))}
-          placeholder="A brief description of your app"
-          maxLength={maxShort}
-          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors"
-        />
+        <input value={form.short_description} onChange={e => setForm(f => ({ ...f, short_description: e.target.value }))}
+          placeholder="A brief description of your app" maxLength={maxShort}
+          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors" />
         <p className="text-[10px] text-gray-600 mt-1">{form.short_description.length}/{maxShort}</p>
       </div>
-
       <div>
         <label className="block text-xs text-gray-400 mb-1.5">Full Description *</label>
-        <textarea
-          value={form.full_description}
-          onChange={e => setForm(f => ({ ...f, full_description: e.target.value }))}
-          placeholder="Detailed description of your app features and benefits..."
-          rows={5}
-          maxLength={4000}
-          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors resize-none"
-        />
+        <textarea value={form.full_description} onChange={e => setForm(f => ({ ...f, full_description: e.target.value }))}
+          placeholder="Detailed description of your app features and benefits..." rows={5} maxLength={4000}
+          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors resize-none" />
         <p className="text-[10px] text-gray-600 mt-1">{form.full_description.length}/4000</p>
       </div>
-
       <div className="grid md:grid-cols-2 gap-4">
         <div>
           <label className="block text-xs text-gray-400 mb-1.5">Category</label>
-          <select
-            value={form.category}
-            onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors"
-          >
+          <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors">
             <option value="">Select category</option>
             {categories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div>
           <label className="block text-xs text-gray-400 mb-1.5">Version</label>
-          <input
-            value={form.version}
-            onChange={e => setForm(f => ({ ...f, version: e.target.value }))}
+          <input value={form.version} onChange={e => setForm(f => ({ ...f, version: e.target.value }))}
             placeholder="1.0.0"
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors"
-          />
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors" />
         </div>
       </div>
-
       {platform === 'ios' && (
         <div>
           <label className="block text-xs text-gray-400 mb-1.5">Keywords (comma separated)</label>
-          <input
-            value={form.keywords}
-            onChange={e => setForm(f => ({ ...f, keywords: e.target.value }))}
-            placeholder="productivity, task, management, planner"
-            maxLength={100}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors"
-          />
+          <input value={form.keywords} onChange={e => setForm(f => ({ ...f, keywords: e.target.value }))}
+            placeholder="productivity, task, management, planner" maxLength={100}
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors" />
           <p className="text-[10px] text-gray-600 mt-1">{form.keywords.length}/100</p>
         </div>
       )}
-
       <div className="grid md:grid-cols-2 gap-4">
         <div>
           <label className="block text-xs text-gray-400 mb-1.5">Privacy Policy URL *</label>
-          <input
-            value={form.privacy_url}
-            onChange={e => setForm(f => ({ ...f, privacy_url: e.target.value }))}
+          <input value={form.privacy_url} onChange={e => setForm(f => ({ ...f, privacy_url: e.target.value }))}
             placeholder="https://yoursite.com/privacy"
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors"
-          />
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors" />
         </div>
         <div>
           <label className="block text-xs text-gray-400 mb-1.5">Support URL</label>
-          <input
-            value={form.support_url}
-            onChange={e => setForm(f => ({ ...f, support_url: e.target.value }))}
+          <input value={form.support_url} onChange={e => setForm(f => ({ ...f, support_url: e.target.value }))}
             placeholder="https://yoursite.com/support"
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors"
-          />
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors" />
         </div>
       </div>
-
       <div>
         <label className="block text-xs text-gray-400 mb-1.5">Marketing URL</label>
-        <input
-          value={form.marketing_url}
-          onChange={e => setForm(f => ({ ...f, marketing_url: e.target.value }))}
+        <input value={form.marketing_url} onChange={e => setForm(f => ({ ...f, marketing_url: e.target.value }))}
           placeholder="https://yoursite.com"
-          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors"
-        />
+          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors" />
       </div>
-
-      <button
-        onClick={handleSave}
-        disabled={isSaving}
-        className="flex items-center gap-2 px-5 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
-      >
+      <button onClick={() => onSave(form)} disabled={isSaving}
+        className="flex items-center gap-2 px-5 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors">
         {isSaving ? <Save size={14} className="animate-spin" /> : <Save size={14} />}
         Save Metadata
       </button>
@@ -302,51 +278,46 @@ function MetadataForm({
 }
 
 function AssetManager({
-  platform,
-  meta,
-  onIconSave,
-  onScreenshotsSave,
-  isSaving,
+  platform, meta, onIconSave, onScreenshotsSave, isSaving,
 }: {
-  platform: Platform
-  meta: StoreMetadata | null
+  platform: Platform; meta: StoreMetadata | null
   onIconSave: (url: string) => void
   onScreenshotsSave: (screenshots: Record<string, string[]>) => void
   isSaving: boolean
 }) {
   const [iconInput, setIconInput] = useState(meta?.icon_url || '')
   const [newScreenshot, setNewScreenshot] = useState('')
-  const screenshots = meta?.screenshots || { phone: [], tablet: [] }
-  const phoneScreenshots = screenshots.phone || []
+  const screenshots = meta?.screenshots || { phone: [] }
+  const phoneScreenshots: string[] = screenshots.phone || []
 
   const addScreenshot = (type: 'phone' | 'tablet') => {
     if (!newScreenshot.trim()) return
-    const updated = {
-      ...screenshots,
-      [type]: [...(screenshots[type] || []), newScreenshot.trim()],
-    }
+    const updated = { ...screenshots, [type]: [...(screenshots[type] || []), newScreenshot.trim()] }
     onScreenshotsSave(updated)
     setNewScreenshot('')
   }
-
   const removeScreenshot = (type: 'phone' | 'tablet', index: number) => {
     const list = [...(screenshots[type] || [])]
     list.splice(index, 1)
     onScreenshotsSave({ ...screenshots, [type]: list })
   }
+  const moveScreenshot = (type: 'phone' | 'tablet', from: number, to: number) => {
+    const list = [...(screenshots[type] || [])]
+    if (to < 0 || to >= list.length) return
+    const [item] = list.splice(from, 1)
+    list.splice(to, 0, item)
+    onScreenshotsSave({ ...screenshots, [type]: list })
+  }
+
+  const iconSpec = platform === 'ios'
+    ? { w: 1024, h: 1024, note: '1024x1024px PNG, no alpha, no rounded corners' }
+    : { w: 512, h: 512, note: '512x512px PNG, 32-bit with alpha' }
 
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-          <Image size={14} />
-          App Icon
-        </h3>
-        <p className="text-xs text-gray-500 mb-3">
-          {platform === 'ios'
-            ? '1024x1024px PNG, no alpha, no rounded corners (Apple rounds automatically)'
-            : '512x512px PNG, 32-bit with alpha'}
-        </p>
+        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Image size={14} /> App Icon</h3>
+        <p className="text-xs text-gray-500 mb-3">{iconSpec.note}</p>
         <div className="flex items-end gap-3">
           <div className="w-20 h-20 rounded-2xl bg-gray-800 border border-gray-700 flex items-center justify-center overflow-hidden flex-shrink-0">
             {iconInput ? (
@@ -356,67 +327,78 @@ function AssetManager({
             )}
           </div>
           <div className="flex-1">
-            <input
-              value={iconInput}
-              onChange={e => setIconInput(e.target.value)}
+            <input value={iconInput} onChange={e => setIconInput(e.target.value)}
               placeholder="Paste icon image URL..."
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors"
-            />
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors" />
           </div>
-          <button
-            onClick={() => onIconSave(iconInput)}
-            disabled={isSaving}
-            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm rounded-lg transition-colors flex-shrink-0"
-          >
+          <button onClick={() => onIconSave(iconInput)} disabled={isSaving}
+            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm rounded-lg transition-colors flex-shrink-0">
             <Upload size={14} />
           </button>
         </div>
+        {iconInput && !iconInput.toLowerCase().endsWith('.png') && (
+          <div className="flex items-center gap-2 mt-2 text-xs text-yellow-400">
+            <AlertCircle size={12} /> Icon should be PNG format for store compatibility
+          </div>
+        )}
       </div>
 
       <div>
         <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-          <Monitor size={14} />
-          Screenshots — Phone
+          <Monitor size={14} /> Screenshots — Phone
+          <span className="text-xs text-gray-500 font-normal ml-1">
+            ({phoneScreenshots.length}/{platform === 'ios' ? 10 : 8}) — First screenshot = hero image
+          </span>
         </h3>
         <p className="text-xs text-gray-500 mb-3">
           {platform === 'ios'
-            ? 'iPhone 6.7": 1290x2796px (required). Min 2, max 10.'
-            : 'Phone: 1080x1920px recommended. Min 2, max 8.'}
+            ? 'iPhone 6.7": 1290x2796px (required). Min 2, max 10. Drag to reorder.'
+            : 'Phone: 1080x1920px recommended. Min 2, max 8. Drag to reorder.'}
         </p>
         <div className="flex flex-wrap gap-3 mb-3">
           {phoneScreenshots.map((url, i) => (
-            <div key={i} className="relative group w-20 h-36 rounded-lg overflow-hidden bg-gray-800 border border-gray-700">
-              <img src={url} alt={`phone ${i + 1}`} className="w-full h-full object-cover" />
-              <button
-                onClick={() => removeScreenshot('phone', i)}
-                className="absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <X size={10} className="text-white" />
-              </button>
+            <div key={`${url}-${i}`} className="relative group">
+              <div className="w-20 h-36 rounded-lg overflow-hidden bg-gray-800 border border-gray-700">
+                <img src={url} alt={`phone ${i + 1}`} className="w-full h-full object-cover" />
+              </div>
+              <div className="absolute top-1 right-1 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={() => removeScreenshot('phone', i)}
+                  className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                  <X size={10} className="text-white" />
+                </button>
+              </div>
+              <div className="absolute top-1 left-1 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                {i > 0 && (
+                  <button onClick={() => moveScreenshot('phone', i, i - 1)}
+                    className="w-5 h-5 bg-gray-700 rounded flex items-center justify-center">
+                    <ArrowUp size={10} className="text-white" />
+                  </button>
+                )}
+                {i < phoneScreenshots.length - 1 && (
+                  <button onClick={() => moveScreenshot('phone', i, i + 1)}
+                    className="w-5 h-5 bg-gray-700 rounded flex items-center justify-center">
+                    <ArrowDown size={10} className="text-white" />
+                  </button>
+                )}
+              </div>
               <span className="absolute bottom-1 left-1 text-[8px] bg-black/60 text-white px-1 rounded">
-                {i + 1}
+                {i === 0 ? 'Hero' : i + 1}
               </span>
             </div>
           ))}
-          {phoneScreenshots.length < 10 && (
+          {phoneScreenshots.length < (platform === 'ios' ? 10 : 8) && (
             <div className="w-20 h-36 rounded-lg border-2 border-dashed border-gray-700 flex items-center justify-center">
               <Plus size={16} className="text-gray-600" />
             </div>
           )}
         </div>
         <div className="flex gap-2">
-          <input
-            value={newScreenshot}
-            onChange={e => setNewScreenshot(e.target.value)}
+          <input value={newScreenshot} onChange={e => setNewScreenshot(e.target.value)}
             placeholder="Paste screenshot URL..."
             className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors"
-            onKeyDown={e => e.key === 'Enter' && addScreenshot('phone')}
-          />
-          <button
-            onClick={() => addScreenshot('phone')}
-            disabled={!newScreenshot.trim() || isSaving}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm rounded-lg transition-colors"
-          >
+            onKeyDown={e => e.key === 'Enter' && addScreenshot('phone')} />
+          <button onClick={() => addScreenshot('phone')} disabled={!newScreenshot.trim() || isSaving}
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm rounded-lg transition-colors">
             Add
           </button>
         </div>
@@ -425,8 +407,7 @@ function AssetManager({
       {platform === 'android' && (
         <div>
           <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <Image size={14} />
-            Feature Graphic
+            <Image size={14} /> Feature Graphic
           </h3>
           <p className="text-xs text-gray-500 mb-3">
             1024x500px. Displayed at the top of your store listing on Google Play.
@@ -444,10 +425,133 @@ function AssetManager({
   )
 }
 
+function CompliancePanel({
+  compliance, simulation, isLoadingCompliance, isLoadingSimulation, onRunCheck,
+}: {
+  compliance: ComplianceResult | undefined
+  simulation: ReviewSimulation | undefined
+  isLoadingCompliance: boolean
+  isLoadingSimulation: boolean
+  onRunCheck: () => void
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold flex items-center gap-2"><Shield size={14} /> Store Compliance Check</h3>
+        <button onClick={onRunCheck}
+          disabled={isLoadingCompliance || isLoadingSimulation}
+          className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm rounded-lg transition-colors">
+          <Shield size={14} /> Run Check
+        </button>
+      </div>
+
+      {compliance && (
+        <div>
+          <div className="flex items-center gap-4 mb-4">
+            <div className={clsx(
+              'text-4xl font-bold',
+              compliance.score >= 80 ? 'text-green-400' : compliance.score >= 50 ? 'text-yellow-400' : 'text-red-400'
+            )}>
+              {compliance.score}
+            </div>
+            <div>
+              <p className="text-sm font-medium">
+                {compliance.ready ? 'Ready to submit' : 'Not ready — fix errors first'}
+              </p>
+              <p className="text-xs text-gray-500">
+                {compliance.errors.length} errors, {compliance.warnings.length} warnings
+              </p>
+            </div>
+          </div>
+
+          {compliance.errors.length > 0 && (
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-red-400 mb-2 uppercase tracking-wide">Errors (will cause rejection)</p>
+              <div className="space-y-2">
+                {compliance.errors.map((e, i) => (
+                  <div key={i} className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                    <XCircle size={14} className="text-red-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs text-red-300">{e.message}</p>
+                      <p className="text-[10px] text-red-500/60 mt-0.5">Field: {e.field}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {compliance.warnings.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-yellow-400 mb-2 uppercase tracking-wide">Warnings (may hurt performance)</p>
+              <div className="space-y-2">
+                {compliance.warnings.map((w, i) => (
+                  <div key={i} className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">
+                    <AlertCircle size={14} className="text-yellow-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs text-yellow-300">{w.message}</p>
+                      <p className="text-[10px] text-yellow-500/60 mt-0.5">Field: {w.field}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {simulation && (
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-5">
+          <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+            <Eye size={14} /> Simulated Review Result
+          </h3>
+          <div className={clsx(
+            'text-center py-3 mb-4 rounded-lg font-semibold text-sm',
+            simulation.verdict === 'likely_approved' ? 'bg-green-500/10 text-green-400' :
+            simulation.verdict === 'needs_improvement' ? 'bg-yellow-500/10 text-yellow-400' :
+            'bg-red-500/10 text-red-400'
+          )}>
+            {simulation.verdict === 'likely_approved' && 'Likely Approved'}
+            {simulation.verdict === 'needs_improvement' && 'Needs Improvement'}
+            {simulation.verdict === 'likely_rejected' && 'Likely Rejected'}
+          </div>
+
+          <div className="space-y-2 mb-4">
+            {simulation.checks.map((c, i) => (
+              <div key={i} className="flex items-center justify-between text-xs py-1.5 border-b border-gray-700/50">
+                <span className="text-gray-300">{c.check}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-500">{c.detail}</span>
+                  {c.status === 'pass' && <CheckCircle size={12} className="text-green-400" />}
+                  {c.status === 'warning' && <AlertCircle size={12} className="text-yellow-400" />}
+                  {c.status === 'fail' && <XCircle size={12} className="text-red-400" />}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between text-xs pt-2">
+            <span className="text-gray-400">
+              {simulation.pass_count}/{simulation.total} checks passed
+            </span>
+            {simulation.estimated_review_time && (
+              <span className="flex items-center gap-1 text-gray-400">
+                <Clock size={12} />
+                Est. review: {simulation.estimated_review_time}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ProjectStorePage() {
   const { id } = useParams<{ id: string }>()
   const queryClient = useQueryClient()
   const [platform, setPlatform] = useState<Platform>('android')
+  const [locale, setLocale] = useState('en-US')
   const [activeTab, setActiveTab] = useState<Tab>('preview')
 
   const { data: project } = useQuery<Project>({
@@ -456,34 +560,60 @@ export default function ProjectStorePage() {
   })
 
   const { data: allMeta = [], isLoading } = useQuery<StoreMetadata[]>({
-    queryKey: ['store-metadata', id],
-    queryFn: () => api.get(`/projects/${id}/store-metadata`).then(r => r.data),
+    queryKey: ['store-metadata', id, locale],
+    queryFn: () => api.get(`/projects/${id}/store-metadata?locale=${locale}`).then(r => r.data),
+  })
+
+  const { data: localeData } = useQuery<{ configured: Record<string, string[]>; supported: string[] }>({
+    queryKey: ['store-metadata-locales', id],
+    queryFn: () => api.get(`/projects/${id}/store-metadata/locales`).then(r => r.data),
   })
 
   const meta = allMeta.find(m => m.platform === platform) || null
 
+  const { data: compliance, isLoading: isLoadingCompliance, refetch: refetchCompliance } = useQuery<ComplianceResult>({
+    queryKey: ['store-compliance', id, platform, locale],
+    queryFn: () => api.get(`/projects/${id}/store-metadata/${platform}/compliance?locale=${locale}`).then(r => r.data),
+    enabled: activeTab === 'compliance',
+  })
+
+  const { data: simulation, isLoading: isLoadingSimulation, refetch: refetchSimulation } = useQuery<ReviewSimulation>({
+    queryKey: ['store-simulation', id, platform, locale],
+    queryFn: () => api.get(`/projects/${id}/store-metadata/${platform}/simulate-review?locale=${locale}`).then(r => r.data),
+    enabled: activeTab === 'compliance',
+  })
+
   const saveMutation = useMutation({
     mutationFn: (data: Partial<StoreMetadata>) =>
-      api.put(`/projects/${id}/store-metadata/${platform}`, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['store-metadata', id] }),
+      api.put(`/projects/${id}/store-metadata/${platform}?locale=${locale}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['store-metadata', id] })
+      queryClient.invalidateQueries({ queryKey: ['store-metadata-locales', id] })
+    },
   })
 
   const iconMutation = useMutation({
     mutationFn: (url: string) =>
-      api.post(`/projects/${id}/store-metadata/${platform}/icon`, { icon_url: url }),
+      api.post(`/projects/${id}/store-metadata/${platform}/icon?locale=${locale}`, { icon_url: url }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['store-metadata', id] }),
   })
 
   const screenshotMutation = useMutation({
     mutationFn: (screenshots: Record<string, string[]>) =>
-      api.post(`/projects/${id}/store-metadata/${platform}/screenshots`, { screenshots }),
+      api.post(`/projects/${id}/store-metadata/${platform}/screenshots?locale=${locale}`, { screenshots }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['store-metadata', id] }),
   })
+
+  const runComplianceCheck = useCallback(() => {
+    refetchCompliance()
+    refetchSimulation()
+  }, [refetchCompliance, refetchSimulation])
 
   const tabs: { key: Tab; label: string; icon: typeof Eye }[] = [
     { key: 'preview', label: 'Store Preview', icon: Eye },
     { key: 'metadata', label: 'Metadata', icon: FileText },
     { key: 'assets', label: 'Assets', icon: Image },
+    { key: 'compliance', label: 'Compliance', icon: Shield },
   ]
 
   const readiness = {
@@ -496,15 +626,13 @@ export default function ProjectStorePage() {
   }
   const readinessCount = Object.values(readiness).filter(Boolean).length
   const readinessTotal = Object.keys(readiness).length
+  const configuredLocales = localeData?.configured || {}
 
   return (
     <div className="p-8 max-w-6xl">
-      <Link
-        to={`/dashboard/projects/${id}`}
-        className="flex items-center gap-2 text-sm text-gray-400 hover:text-white mb-6 transition-colors"
-      >
-        <ArrowLeft size={16} />
-        Back to {project?.name || 'Project'}
+      <Link to={`/dashboard/projects/${id}`}
+        className="flex items-center gap-2 text-sm text-gray-400 hover:text-white mb-6 transition-colors">
+        <ArrowLeft size={16} /> Back to {project?.name || 'Project'}
       </Link>
 
       <div className="flex items-center justify-between mb-6">
@@ -519,37 +647,43 @@ export default function ProjectStorePage() {
               </span>
             )}
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Configure how your app appears on the stores
-          </p>
+          <p className="text-sm text-gray-500 mt-1">Configure how your app appears on the stores</p>
         </div>
+        <div className="flex items-center gap-3">
+          <LocaleSelector locale={locale} onChange={setLocale} configuredLocales={configuredLocales} />
+          <div className="flex bg-gray-800 rounded-lg p-0.5">
+            {(['android', 'ios'] as Platform[]).map(p => (
+              <button key={p} onClick={() => setPlatform(p)}
+                className={clsx('px-4 py-2 text-sm font-medium rounded-md transition-colors',
+                  platform === p
+                    ? p === 'android' ? 'bg-green-600 text-white' : 'bg-gray-600 text-white'
+                    : 'text-gray-400 hover:text-white')}>
+                {p === 'android' ? 'Android' : 'iOS'}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
-        <div className="flex bg-gray-800 rounded-lg p-0.5">
-          {(['android', 'ios'] as Platform[]).map(p => (
-            <button
-              key={p}
-              onClick={() => setPlatform(p)}
-              className={clsx(
-                'px-4 py-2 text-sm font-medium rounded-md transition-colors',
-                platform === p
-                  ? p === 'android' ? 'bg-green-600 text-white' : 'bg-gray-600 text-white'
-                  : 'text-gray-400 hover:text-white'
-              )}
-            >
-              {p === 'android' ? 'Android' : 'iOS'}
+      {Object.keys(configuredLocales).length > 1 && (
+        <div className="flex items-center gap-2 mb-4 text-xs text-gray-500">
+          <Languages size={12} />
+          <span>Configured languages:</span>
+          {Object.keys(configuredLocales).map(l => (
+            <button key={l} onClick={() => setLocale(l)}
+              className={clsx('px-2 py-0.5 rounded', locale === l ? 'bg-primary-600 text-white' : 'bg-gray-800 hover:bg-gray-700')}>
+              {LOCALES.find(loc => loc.code === l)?.flag || l}
             </button>
           ))}
         </div>
-      </div>
+      )}
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6">
         <p className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wide">Readiness Checklist</p>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
           {Object.entries(readiness).map(([key, ok]) => (
-            <div key={key} className={clsx(
-              'flex items-center gap-2 px-3 py-2 rounded-lg text-xs',
-              ok ? 'bg-green-500/10 text-green-300' : 'bg-gray-800 text-gray-500'
-            )}>
+            <div key={key} className={clsx('flex items-center gap-2 px-3 py-2 rounded-lg text-xs',
+              ok ? 'bg-green-500/10 text-green-300' : 'bg-gray-800 text-gray-500')}>
               {ok ? <Check size={12} /> : <AlertCircle size={12} />}
               <span className="capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
             </div>
@@ -559,18 +693,10 @@ export default function ProjectStorePage() {
 
       <div className="flex gap-1 mb-6 bg-gray-900 border border-gray-800 rounded-xl p-1">
         {tabs.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => setActiveTab(key)}
-            className={clsx(
-              'flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-colors flex-1 justify-center',
-              activeTab === key
-                ? 'bg-primary-600 text-white'
-                : 'text-gray-400 hover:text-white hover:bg-gray-800'
-            )}
-          >
-            <Icon size={14} />
-            {label}
+          <button key={key} onClick={() => setActiveTab(key)}
+            className={clsx('flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-colors flex-1 justify-center',
+              activeTab === key ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800')}>
+            <Icon size={14} /> {label}
           </button>
         ))}
       </div>
@@ -590,32 +716,32 @@ export default function ProjectStorePage() {
               <div className="text-center mb-6">
                 <p className="text-sm text-gray-400">
                   This is how your app will appear on the {platform === 'ios' ? 'App Store' : 'Google Play Store'}
+                  <span className="text-gray-600 ml-1">
+                    ({LOCALES.find(l => l.code === locale)?.label || locale})
+                  </span>
                 </p>
               </div>
               <div className="grid md:grid-cols-2 gap-8 items-start">
                 <PhoneMockup platform={platform} meta={meta} />
                 <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
                   <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                    <Globe size={14} />
-                    Store Listing Preview
+                    <Globe size={14} /> Store Listing Preview
                   </h3>
                   <div className="space-y-4">
-                    <div>
-                      <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">App Name</p>
-                      <p className="text-sm font-medium">{meta?.app_name || <span className="text-gray-600 italic">Not set</span>}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Bundle ID</p>
-                      <p className="text-sm font-mono text-gray-400">{meta?.bundle_id || <span className="text-gray-600 italic">Not set</span>}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Category</p>
-                      <p className="text-sm">{meta?.category || <span className="text-gray-600 italic">Not set</span>}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Version</p>
-                      <p className="text-sm">{meta?.version || <span className="text-gray-600 italic">1.0.0</span>}</p>
-                    </div>
+                    {[
+                      { label: 'App Name', value: meta?.app_name },
+                      { label: 'Bundle ID', value: meta?.bundle_id, mono: true },
+                      { label: 'Category', value: meta?.category },
+                      { label: 'Version', value: meta?.version || '1.0.0' },
+                      { label: 'Locale', value: `${locale} (${LOCALES.find(l => l.code === locale)?.label || ''})` },
+                    ].map(({ label, value, mono }) => (
+                      <div key={label}>
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">{label}</p>
+                        <p className={clsx('text-sm', mono && 'font-mono text-gray-400')}>
+                          {value || <span className="text-gray-600 italic">Not set</span>}
+                        </p>
+                      </div>
+                    ))}
                     <div>
                       <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Description</p>
                       <p className="text-xs text-gray-400 leading-relaxed">
@@ -627,7 +753,6 @@ export default function ProjectStorePage() {
                       <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Screenshots</p>
                       <p className="text-sm">
                         {((meta?.screenshots?.phone || []) as string[]).length} phone
-                        {meta?.screenshots?.tablet && `, ${(meta.screenshots.tablet as string[]).length} tablet`}
                       </p>
                     </div>
                     <div>
@@ -649,8 +774,12 @@ export default function ProjectStorePage() {
               <h3 className="text-sm font-semibold mb-5 flex items-center gap-2">
                 <FileText size={14} />
                 {platform === 'ios' ? 'App Store' : 'Google Play'} Metadata
+                <span className="text-xs text-gray-500 font-normal ml-2">
+                  ({LOCALES.find(l => l.code === locale)?.label || locale})
+                </span>
               </h3>
               <MetadataForm
+                key={`${platform}-${locale}-${meta?.id || 'new'}`}
                 platform={platform}
                 meta={meta}
                 onSave={(data) => saveMutation.mutate(data)}
@@ -662,11 +791,24 @@ export default function ProjectStorePage() {
           {activeTab === 'assets' && (
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
               <AssetManager
+                key={`${platform}-${locale}-${meta?.id || 'new'}`}
                 platform={platform}
                 meta={meta}
                 onIconSave={(url) => iconMutation.mutate(url)}
                 onScreenshotsSave={(s) => screenshotMutation.mutate(s)}
                 isSaving={iconMutation.isPending || screenshotMutation.isPending}
+              />
+            </div>
+          )}
+
+          {activeTab === 'compliance' && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+              <CompliancePanel
+                compliance={compliance}
+                simulation={simulation}
+                isLoadingCompliance={isLoadingCompliance}
+                isLoadingSimulation={isLoadingSimulation}
+                onRunCheck={runComplianceCheck}
               />
             </div>
           )}

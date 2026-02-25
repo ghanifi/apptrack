@@ -38,6 +38,7 @@ export interface StoreMetadata {
   id: string
   project_id: string
   platform: 'android' | 'ios'
+  locale: string
   app_name: string | null
   short_description: string | null
   full_description: string | null
@@ -53,4 +54,23 @@ export interface StoreMetadata {
   feature_graphic_url: string | null
   created_at: string
   updated_at: string
+}
+
+export interface ComplianceResult {
+  ready: boolean
+  score: number
+  errors: { field: string; severity: string; message: string }[]
+  warnings: { field: string; severity: string; message: string }[]
+  platform: string
+  locale: string
+}
+
+export interface ReviewSimulation {
+  verdict: 'likely_approved' | 'needs_improvement' | 'likely_rejected'
+  checks: { check: string; status: 'pass' | 'warning' | 'fail'; detail: string }[]
+  pass_count: number
+  fail_count: number
+  total: number
+  estimated_review_time: string | null
+  platform: string
 }
