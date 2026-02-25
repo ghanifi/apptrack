@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Rocket, Github, Smartphone, Store, Shield, Zap, ArrowRight, Check, Globe, BarChart3, Clock, Lock, Star, Users, Timer, ChevronRight } from 'lucide-react'
+import { Rocket, Github, Smartphone, Store, Shield, Zap, ArrowRight, Check, Globe, BarChart3, Clock, Lock, Star, Users, Timer, ChevronRight, RefreshCw, ShieldCheck, RotateCcw, Play } from 'lucide-react'
 
 const FEATURES = [
   { icon: Github, title: 'GitHub Import', desc: 'Connect your repo and we auto-detect your framework.' },
@@ -155,6 +155,129 @@ export default function LandingPage() {
         <a href="#how-it-works" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-300 transition-colors">
           See how it works in 4 steps <ChevronRight size={14} />
         </a>
+      </section>
+
+      <section className="border-t border-gray-800 py-16 bg-gray-900/50">
+        <div className="max-w-5xl mx-auto px-6">
+          <p className="text-center text-sm text-gray-500 uppercase tracking-widest mb-10">See it in action</p>
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="relative bg-gray-900 border border-gray-800 rounded-2xl p-1 group hover:border-primary-600/30 transition-all">
+              <div className="bg-gray-950 rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-3 h-3 rounded-full bg-red-500/60" />
+                  <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
+                  <div className="w-3 h-3 rounded-full bg-green-500/60" />
+                  <span className="text-[10px] text-gray-600 ml-2">apptrack.io/connect</span>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3">
+                    <Github size={20} className="text-gray-400" />
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-300 font-medium">my-mobile-app</p>
+                      <p className="text-[10px] text-gray-600">React Native</p>
+                    </div>
+                    <Check size={14} className="text-green-400" />
+                  </div>
+                  <div className="flex items-center gap-3 bg-gray-800/30 rounded-lg p-3">
+                    <Github size={20} className="text-gray-500" />
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-400">flutter-shop</p>
+                      <p className="text-[10px] text-gray-600">Flutter</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 bg-primary-600 text-white text-xs font-bold px-4 py-1.5 rounded-full z-10">
+                Step 1: Connect
+              </div>
+            </div>
+
+            <div className="relative bg-gray-900 border border-gray-800 rounded-2xl p-1 group hover:border-primary-600/30 transition-all">
+              <div className="bg-gray-950 rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-3 h-3 rounded-full bg-red-500/60" />
+                  <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
+                  <div className="w-3 h-3 rounded-full bg-green-500/60" />
+                  <span className="text-[10px] text-gray-600 ml-2">apptrack.io/build</span>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Check size={12} className="text-green-400" />
+                    <span className="text-gray-400">Repo cloned</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <Check size={12} className="text-green-400" />
+                    <span className="text-gray-400">Dependencies installed</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <Check size={12} className="text-green-400" />
+                    <span className="text-gray-400">Framework: React Native</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <RefreshCw size={12} className="text-primary-400 animate-spin" />
+                    <span className="text-white font-medium">Building for iOS & Android...</span>
+                  </div>
+                  <div className="w-full bg-gray-800 rounded-full h-1.5 mt-2">
+                    <div className="bg-primary-500 h-1.5 rounded-full" style={{ width: '72%' }} />
+                  </div>
+                </div>
+              </div>
+              <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 bg-primary-600 text-white text-xs font-bold px-4 py-1.5 rounded-full z-10">
+                Step 2: Build
+              </div>
+            </div>
+
+            <div className="relative bg-gray-900 border border-gray-800 rounded-2xl p-1 group hover:border-green-600/30 transition-all">
+              <div className="bg-gray-950 rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-3 h-3 rounded-full bg-red-500/60" />
+                  <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
+                  <div className="w-3 h-3 rounded-full bg-green-500/60" />
+                  <span className="text-[10px] text-gray-600 ml-2">apptrack.io/deploy</span>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs bg-green-500/5 border border-green-500/10 rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <Play size={12} className="text-green-400" />
+                      <span className="text-gray-300">Google Play</span>
+                    </div>
+                    <span className="text-green-400 font-medium">LIVE</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs bg-green-500/5 border border-green-500/10 rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <Store size={12} className="text-green-400" />
+                      <span className="text-gray-300">App Store</span>
+                    </div>
+                    <span className="text-green-400 font-medium">LIVE</span>
+                  </div>
+                  <p className="text-center text-[11px] text-green-400 font-semibold mt-2">Your app is live!</p>
+                </div>
+              </div>
+              <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 bg-green-600 text-white text-xs font-bold px-4 py-1.5 rounded-full z-10">
+                Step 3: Live!
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-t border-gray-800 py-6 bg-gray-950">
+        <div className="max-w-4xl mx-auto px-6">
+          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-sm text-gray-500">
+            <span className="flex items-center gap-2">
+              <ShieldCheck size={16} className="text-green-400" />
+              <span>Credentials encrypted at rest</span>
+            </span>
+            <span className="flex items-center gap-2">
+              <RotateCcw size={16} className="text-primary-400" />
+              <span>Every deploy is tracked & rollback ready</span>
+            </span>
+            <span className="flex items-center gap-2">
+              <Users size={16} className="text-blue-400" />
+              <span>Used by indie devs & startups worldwide</span>
+            </span>
+          </div>
+        </div>
       </section>
 
       <section className="border-t border-gray-800 py-12 bg-gray-900/30">
