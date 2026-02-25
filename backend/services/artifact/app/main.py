@@ -13,7 +13,7 @@ from botocore.client import Config
 import aio_pika
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Text, BigInteger, DateTime, select
+from sqlalchemy import String, Text, BigInteger, DateTime, select, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 
 logging.basicConfig(level=logging.INFO)
@@ -47,6 +47,9 @@ class Base(DeclarativeBase):
 
 class Artifact(Base):
     __tablename__ = "artifacts"
+    __table_args__ = (
+        UniqueConstraint("build_id", "platform", name="uq_artifact_build_platform"),
+    )
 
     id: Mapped[str] = mapped_column(PGUUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
     build_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
