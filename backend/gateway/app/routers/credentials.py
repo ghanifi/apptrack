@@ -17,6 +17,9 @@ ALLOWED_PROVIDERS = {
     "codemagic": ["CODEMAGIC_TOKEN", "CODEMAGIC_APP_ID"],
     "google_play": ["GOOGLE_PLAY_KEY_JSON"],
     "app_store": ["APP_STORE_KEY_ID", "APP_STORE_ISSUER_ID", "APP_STORE_PRIVATE_KEY"],
+    "ios_signing": ["IOS_CERT_P12_BASE64", "IOS_CERT_PASSWORD", "IOS_PROVISIONING_PROFILE_BASE64"],
+    "github_actions": ["GITHUB_ACTIONS_TOKEN"],
+    "test_automation": ["TEST_AUTOMATION_WEBHOOK_URL"],
 }
 
 

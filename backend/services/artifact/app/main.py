@@ -1,17 +1,20 @@
-import json
 import hashlib
+import json
 import logging
 import uuid
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
-from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, HTTPException, Header
 from typing import Optional
+from fastapi import FastAPI, UploadFile, File, HTTPException, Header
 from pydantic_settings import BaseSettings
 import boto3
 from botocore.client import Config
 import aio_pika
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import String, Text, BigInteger, DateTime, select
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,7 +29,7 @@ class Settings(BaseSettings):
     MINIO_PUBLIC_URL: str = "http://localhost:9000"
     SERVICE_TOKEN_SECRET: str = ""
     SIGNED_URL_EXPIRY: int = 3600
-    METADATA_DIR: str = "/data/artifact-meta"
+    DATABASE_URL: str = "postgresql+asyncpg://apptrack:apptrack@postgres:5432/apptrack"
 
     class Config:
         env_file = ".env"
@@ -34,33 +37,32 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-META_DIR = Path(settings.METADATA_DIR)
-META_DIR.mkdir(parents=True, exist_ok=True)
+_engine = create_async_engine(settings.DATABASE_URL, echo=False)
+_SessionFactory = async_sessionmaker(_engine, expire_on_commit=False)
 
 
-def _meta_path(artifact_id: str) -> Path:
-    return META_DIR / f"{artifact_id}.json"
+class Base(DeclarativeBase):
+    pass
 
 
-def _save_meta(artifact_id: str, data: dict):
-    _meta_path(artifact_id).write_text(json.dumps(data, default=str), encoding="utf-8")
+class Artifact(Base):
+    __tablename__ = "artifacts"
+
+    id: Mapped[str] = mapped_column(PGUUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    build_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    owner_id: Mapped[str] = mapped_column(String(64), default="")
+    platform: Mapped[str] = mapped_column(String(20), default="")
+    filename: Mapped[Optional[str]] = mapped_column(String(255))
+    object_key: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[Optional[str]] = mapped_column(Text)
+    checksum: Mapped[Optional[str]] = mapped_column(String(64))
+    size_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
-def _load_meta(artifact_id: str) -> dict | None:
-    p = _meta_path(artifact_id)
-    if p.exists():
-        return json.loads(p.read_text(encoding="utf-8"))
-    return None
-
-
-def _load_all_meta() -> list[dict]:
-    results = []
-    for f in META_DIR.glob("*.json"):
-        try:
-            results.append(json.loads(f.read_text(encoding="utf-8")))
-        except Exception:
-            continue
-    return results
+async def _init_db():
+    async with _engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
 def get_s3():
@@ -80,34 +82,11 @@ def ensure_bucket():
         s3.head_bucket(Bucket=settings.MINIO_BUCKET)
     except Exception:
         s3.create_bucket(Bucket=settings.MINIO_BUCKET)
-        s3.put_bucket_policy(
-            Bucket=settings.MINIO_BUCKET,
-            Policy=json.dumps({
-                "Version": "2012-10-17",
-                "Statement": [{
-                    "Effect": "Allow",
-                    "Principal": {"AWS": ["*"]},
-                    "Action": ["s3:GetObject"],
-                    "Resource": [f"arn:aws:s3:::{settings.MINIO_BUCKET}/*"],
-                }],
-            }),
-        )
         logger.info("Created MinIO bucket: %s", settings.MINIO_BUCKET)
 
 
 def _compute_checksum(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
-
-
-async def publish_event(channel: aio_pika.abc.AbstractChannel, routing_key: str, payload: dict) -> None:
-    await channel.default_exchange.publish(
-        aio_pika.Message(
-            body=json.dumps(payload).encode(),
-            content_type="application/json",
-            delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-        ),
-        routing_key=routing_key,
-    )
 
 
 async def start_consumer():
@@ -118,6 +97,7 @@ async def start_consumer():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await _init_db()
     try:
         ensure_bucket()
     except Exception as exc:
@@ -125,14 +105,15 @@ async def lifespan(app: FastAPI):
     conn = await start_consumer()
     yield
     await conn.close()
+    await _engine.dispose()
 
 
-app = FastAPI(title="Artifact Storage Service", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Artifact Storage Service", version="0.3.0", lifespan=lifespan)
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "artifact", "version": "0.2.0"}
+    return {"status": "ok", "service": "artifact", "version": "0.3.0"}
 
 
 @app.post("/upload")
@@ -148,10 +129,15 @@ async def upload_artifact(
     tenant_prefix = f"{owner_id}/" if owner_id else ""
     object_key = f"{tenant_prefix}{build_id}/{artifact_id}.{ext}"
 
+    url = None
+    checksum = None
+    size = 0
+
     try:
         ensure_bucket()
         content = await file.read()
         checksum = _compute_checksum(content)
+        size = len(content)
         s3 = get_s3()
         s3.put_object(
             Bucket=settings.MINIO_BUCKET,
@@ -163,10 +149,26 @@ async def upload_artifact(
         url = f"{settings.MINIO_PUBLIC_URL}/{settings.MINIO_BUCKET}/{object_key}"
     except Exception as exc:
         logger.error("MinIO upload failed: %s", exc)
-        url = None
-        checksum = None
+        content = b""
 
-    artifact = {
+    async with _SessionFactory() as session:
+        artifact = Artifact(
+            id=artifact_id,
+            build_id=build_id,
+            owner_id=owner_id,
+            platform=platform,
+            filename=file.filename,
+            object_key=object_key,
+            url=url,
+            checksum=checksum,
+            size_bytes=size,
+            created_at=datetime.utcnow(),
+        )
+        session.add(artifact)
+        await session.commit()
+
+    logger.info("Uploaded artifact %s for build %s (checksum=%s size=%d)", artifact_id, build_id, checksum, size)
+    return {
         "id": artifact_id,
         "build_id": build_id,
         "owner_id": owner_id,
@@ -175,46 +177,61 @@ async def upload_artifact(
         "object_key": object_key,
         "url": url,
         "checksum": checksum,
-        "size_bytes": len(content) if url else 0,
+        "size_bytes": size,
         "created_at": datetime.utcnow().isoformat(),
     }
-    ARTIFACTS_META_COMPAT = artifact
-    _save_meta(artifact_id, artifact)
-    logger.info("Uploaded artifact %s for build %s (checksum=%s, size=%d)", artifact_id, build_id, checksum, artifact.get("size_bytes", 0))
-    return artifact
 
 
 @app.get("/build/{build_id}")
-def get_artifacts_by_build(build_id: str):
-    return [a for a in _load_all_meta() if a.get("build_id") == build_id]
+async def get_artifacts_by_build(build_id: str):
+    async with _SessionFactory() as session:
+        result = await session.execute(select(Artifact).where(Artifact.build_id == build_id))
+        artifacts = result.scalars().all()
+    return [
+        {
+            "id": a.id, "build_id": a.build_id, "owner_id": a.owner_id,
+            "platform": a.platform, "filename": a.filename,
+            "object_key": a.object_key, "url": a.url, "checksum": a.checksum,
+            "size_bytes": a.size_bytes, "created_at": a.created_at.isoformat(),
+        }
+        for a in artifacts
+    ]
 
 
 @app.get("/{artifact_id}/download")
-def download_url(artifact_id: str, owner_id: Optional[str] = None):
-    artifact = _load_meta(artifact_id)
+async def download_url(artifact_id: str, owner_id: Optional[str] = None):
+    async with _SessionFactory() as session:
+        result = await session.execute(select(Artifact).where(Artifact.id == artifact_id))
+        artifact = result.scalar_one_or_none()
+
     if not artifact:
         raise HTTPException(status_code=404, detail="Artifact not found")
-    if owner_id and artifact.get("owner_id") and artifact["owner_id"] != owner_id:
+    if owner_id and artifact.owner_id and artifact.owner_id != owner_id:
         raise HTTPException(status_code=403, detail="Access denied — tenant mismatch")
+
     try:
         s3 = get_s3()
-        url = s3.generate_presigned_url(
+        signed_url = s3.generate_presigned_url(
             "get_object",
-            Params={"Bucket": settings.MINIO_BUCKET, "Key": artifact["object_key"]},
+            Params={"Bucket": settings.MINIO_BUCKET, "Key": artifact.object_key},
             ExpiresIn=settings.SIGNED_URL_EXPIRY,
         )
-        return {"download_url": url, "expires_in": settings.SIGNED_URL_EXPIRY, "checksum": artifact.get("checksum")}
+        return {"download_url": signed_url, "expires_in": settings.SIGNED_URL_EXPIRY, "checksum": artifact.checksum}
     except Exception as exc:
         logger.error("Presigned URL generation failed: %s", exc)
-        return {"download_url": artifact.get("url"), "checksum": artifact.get("checksum")}
+        return {"download_url": artifact.url, "checksum": artifact.checksum}
 
 
 @app.get("/{artifact_id}/verify")
-def verify_artifact(artifact_id: str, expected_checksum: Optional[str] = None):
-    artifact = _load_meta(artifact_id)
+async def verify_artifact(artifact_id: str, expected_checksum: Optional[str] = None):
+    async with _SessionFactory() as session:
+        result = await session.execute(select(Artifact).where(Artifact.id == artifact_id))
+        artifact = result.scalar_one_or_none()
+
     if not artifact:
         raise HTTPException(status_code=404, detail="Artifact not found")
-    stored_checksum = artifact.get("checksum")
+
+    stored_checksum = artifact.checksum
     if expected_checksum and stored_checksum:
         match = stored_checksum == expected_checksum
         return {"artifact_id": artifact_id, "checksum": stored_checksum, "expected": expected_checksum, "match": match}

@@ -1,6 +1,8 @@
 import json
 import hashlib
 import logging
+import shutil
+import subprocess
 import time
 import tempfile
 import os
@@ -50,7 +52,7 @@ def _build_jwt_token(key_id: str, issuer_id: str, private_key_pem: str) -> str:
     return pyjwt.encode(payload, private_key_pem, algorithm="ES256", headers={"kid": key_id})
 
 
-async def _download_and_verify(artifact_url: str, suffix: str, expected_checksum: str | None = None) -> str:
+async def _download_artifact(artifact_url: str, suffix: str, expected_checksum: str | None = None) -> str:
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp_path = tmp.name
 
@@ -66,10 +68,8 @@ async def _download_and_verify(artifact_url: str, suffix: str, expected_checksum
     actual_checksum = sha256.hexdigest()
     if expected_checksum and actual_checksum != expected_checksum:
         os.unlink(tmp_path)
-        raise ValueError(
-            f"Artifact checksum mismatch: expected={expected_checksum}, actual={actual_checksum}"
-        )
-    logger.info("Artifact downloaded and verified: checksum=%s", actual_checksum)
+        raise ValueError(f"Checksum mismatch: expected={expected_checksum} actual={actual_checksum}")
+    logger.info("Artifact downloaded: checksum=%s path=%s", actual_checksum, tmp_path)
     return tmp_path
 
 
@@ -105,8 +105,8 @@ async def _deploy_google_play(deployment_id: str, payload: dict, channel: aio_pi
         edit = service.edits().insert(packageName=package_name, body={}).execute()
         edit_id = edit["id"]
 
+        tmp_path = await _download_artifact(artifact_url, ".aab", expected_checksum)
         try:
-            tmp_path = await _download_and_verify(artifact_url, ".aab", expected_checksum)
             media = MediaFileUpload(tmp_path, mimetype="application/octet-stream", resumable=True)
             service.edits().bundles().upload(
                 packageName=package_name, editId=edit_id, media_body=media
@@ -135,6 +135,117 @@ async def _deploy_google_play(deployment_id: str, payload: dict, channel: aio_pi
         })
 
 
+async def _upload_ipa_via_fastlane(ipa_path: str, key_id: str, issuer_id: str, private_key_pem: str) -> tuple[bool, str]:
+    if not shutil.which("fastlane"):
+        return False, "fastlane not installed"
+
+    key_file = tempfile.NamedTemporaryFile(suffix=".p8", delete=False, mode="w")
+    key_file.write(private_key_pem)
+    key_file.close()
+
+    try:
+        result = subprocess.run(
+            [
+                "fastlane", "deliver",
+                "--ipa", ipa_path,
+                "--api_key_path", "/dev/stdin",
+                "--skip_metadata", "true",
+                "--skip_screenshots", "true",
+                "--submit_for_review", "false",
+            ],
+            input=json.dumps({
+                "key_id": key_id,
+                "issuer_id": issuer_id,
+                "key": private_key_pem,
+                "in_house": False,
+                "is_key_content_base64": False,
+            }),
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        if result.returncode == 0:
+            return True, "Uploaded via Fastlane deliver"
+        return False, f"Fastlane exited {result.returncode}: {result.stderr[-500:]}"
+    except subprocess.TimeoutExpired:
+        return False, "Fastlane timed out after 600s"
+    except Exception as exc:
+        return False, str(exc)
+    finally:
+        os.unlink(key_file.name)
+
+
+async def _upload_ipa_via_altool(ipa_path: str, key_id: str, issuer_id: str, private_key_pem: str) -> tuple[bool, str]:
+    altool = shutil.which("altool") or shutil.which("xcrun")
+    if not altool:
+        return False, "altool / xcrun not installed (macOS required)"
+
+    key_file = tempfile.NamedTemporaryFile(suffix=".p8", delete=False, mode="w")
+    key_file.write(private_key_pem)
+    key_file.close()
+
+    cmd = (
+        ["xcrun", "altool", "--upload-app", "--type", "ios", "--file", ipa_path,
+         "--apiKey", key_id, "--apiIssuer", issuer_id, "--show-progress"]
+        if altool.endswith("xcrun")
+        else ["altool", "--upload-app", "--type", "ios", "--file", ipa_path,
+              "--apiKey", key_id, "--apiIssuer", issuer_id]
+    )
+
+    env = os.environ.copy()
+    env["API_PRIVATE_KEYS_DIR"] = os.path.dirname(key_file.name)
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=env)
+        if result.returncode == 0:
+            return True, "Uploaded via altool"
+        return False, f"altool exited {result.returncode}: {result.stderr[-500:]}"
+    except subprocess.TimeoutExpired:
+        return False, "altool timed out after 600s"
+    except Exception as exc:
+        return False, str(exc)
+    finally:
+        os.unlink(key_file.name)
+
+
+async def _verify_app_store_credentials(key_id: str, issuer_id: str, private_key_pem: str) -> tuple[bool, str]:
+    try:
+        jwt_token = _build_jwt_token(key_id, issuer_id, private_key_pem)
+        headers = {"Authorization": f"Bearer {jwt_token}", "Content-Type": "application/json"}
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get("https://api.appstoreconnect.apple.com/v1/apps", headers=headers)
+        if resp.status_code == 200:
+            return True, jwt_token
+        return False, f"App Store Connect API returned {resp.status_code}: {resp.text[:200]}"
+    except Exception as exc:
+        return False, str(exc)
+
+
+async def _submit_via_eas(artifact_url: str, eas_token: str, expo_app_id: str,
+                          key_id: str, issuer_id: str, private_key_pem: str) -> tuple[bool, str]:
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"https://api.expo.dev/v2/projects/{expo_app_id}/submissions",
+                headers={"Authorization": f"Bearer {eas_token}", "Content-Type": "application/json"},
+                json={
+                    "platform": "ios",
+                    "config": {
+                        "ascApiKeyId": key_id,
+                        "ascApiKeyIssuerId": issuer_id,
+                        "ascApiKeyContent": private_key_pem,
+                        "artifactPath": artifact_url,
+                    },
+                },
+            )
+        if resp.status_code in (200, 201):
+            submission_id = (resp.json().get("data") or {}).get("id")
+            return True, f"EAS Submit created: submission_id={submission_id}"
+        return False, f"EAS Submit returned {resp.status_code}: {resp.text[:200]}"
+    except Exception as exc:
+        return False, str(exc)
+
+
 async def _deploy_app_store(deployment_id: str, payload: dict, channel: aio_pika.abc.AbstractChannel):
     key_id = payload.get("app_store_key_id")
     issuer_id = payload.get("app_store_issuer_id")
@@ -144,81 +255,88 @@ async def _deploy_app_store(deployment_id: str, payload: dict, channel: aio_pika
     expo_app_id = payload.get("expo_app_id")
 
     if not all([key_id, issuer_id, private_key]):
-        logger.warning("App Store: missing credentials — simulating deploy %s", deployment_id)
-        await publish_event(channel, "deploy.completed", {
-            "deployment_id": deployment_id,
-            "build_id": payload.get("build_id"),
-            "target": "app_store",
-            "status": "in_review",
-            "note": "Simulated — App Store Connect credentials not configured",
-        })
-        return
-
-    try:
-        jwt_token = _build_jwt_token(key_id, issuer_id, private_key)
-        headers = {"Authorization": f"Bearer {jwt_token}", "Content-Type": "application/json"}
-
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            apps_resp = await client.get("https://api.appstoreconnect.apple.com/v1/apps", headers=headers)
-
-        if apps_resp.status_code != 200:
-            raise ValueError(f"App Store Connect API error: {apps_resp.status_code} — {apps_resp.text[:200]}")
-
-        if eas_token and expo_app_id and artifact_url:
-            logger.info("Submitting to App Store via EAS Submit for app %s", expo_app_id)
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                submit_resp = await client.post(
-                    f"https://api.expo.dev/v2/projects/{expo_app_id}/submissions",
-                    headers={"Authorization": f"Bearer {eas_token}", "Content-Type": "application/json"},
-                    json={
-                        "platform": "ios",
-                        "config": {
-                            "ascApiKeyId": key_id,
-                            "ascApiKeyIssuerId": issuer_id,
-                            "ascApiKeyContent": private_key,
-                            "artifactPath": artifact_url,
-                        },
-                    },
-                )
-            if submit_resp.status_code in (200, 201):
-                submission_id = (submit_resp.json().get("data") or {}).get("id")
-                logger.info("EAS Submit created: submission_id=%s", submission_id)
-            else:
-                logger.warning("EAS Submit API returned %s: %s — marking as in_review", submit_resp.status_code, submit_resp.text[:200])
-        else:
-            if artifact_url:
-                logger.info("Attempting direct IPA upload via App Store Connect Transporter API for deploy %s", deployment_id)
-                try:
-                    tmp_path = await _download_and_verify(artifact_url, ".ipa", payload.get("artifact_checksum"))
-                    async with httpx.AsyncClient(timeout=120.0) as client:
-                        upload_resp = await client.post(
-                            "https://contentdelivery.itunes.apple.com/WebObjects/MZLabelService.woa/wa/validateAssets",
-                            headers={"Authorization": f"Bearer {jwt_token}"},
-                            files={"file": ("app.ipa", open(tmp_path, "rb"), "application/octet-stream")},
-                        )
-                    os.unlink(tmp_path)
-                    if upload_resp.status_code in (200, 201):
-                        logger.info("IPA uploaded to App Store Connect for deploy %s", deployment_id)
-                    else:
-                        logger.warning("App Store upload returned %s — marking as in_review (manual Transporter fallback)", upload_resp.status_code)
-                except Exception as upload_exc:
-                    logger.warning("Direct upload failed: %s — marking as in_review (use Transporter CLI)", upload_exc)
-            else:
-                logger.info("App Store credentials verified — no artifact to upload for deploy %s", deployment_id)
-
-        await publish_event(channel, "deploy.completed", {
-            "deployment_id": deployment_id,
-            "build_id": payload.get("build_id"),
-            "target": "app_store",
-            "status": "in_review",
-        })
-    except Exception as exc:
-        logger.error("App Store deploy failed: %s", exc)
+        logger.warning("App Store: missing credentials — deploy %s cannot proceed", deployment_id)
         await publish_event(channel, "deploy.failed", {
             "deployment_id": deployment_id,
             "build_id": payload.get("build_id"),
             "target": "app_store",
-            "error": str(exc),
+            "error": "App Store Connect credentials (key_id, issuer_id, private_key) are required.",
+            "hint": "Configure app_store credentials in the credentials manager.",
+        })
+        return
+
+    cred_ok, cred_msg = await _verify_app_store_credentials(key_id, issuer_id, private_key)
+    if not cred_ok:
+        logger.error("App Store credential verification failed for deploy %s: %s", deployment_id, cred_msg)
+        await publish_event(channel, "deploy.failed", {
+            "deployment_id": deployment_id,
+            "build_id": payload.get("build_id"),
+            "target": "app_store",
+            "error": f"App Store Connect credential invalid: {cred_msg}",
+        })
+        return
+
+    if not artifact_url:
+        logger.warning("No artifact URL for App Store deploy %s — credentials valid but nothing to upload", deployment_id)
+        await publish_event(channel, "deploy.completed", {
+            "deployment_id": deployment_id,
+            "build_id": payload.get("build_id"),
+            "target": "app_store",
+            "status": "credentials_verified",
+            "note": "Credentials are valid. Trigger a build first to get an artifact URL.",
+        })
+        return
+
+    upload_ok = False
+    upload_note = ""
+
+    if eas_token and expo_app_id:
+        upload_ok, upload_note = await _submit_via_eas(artifact_url, eas_token, expo_app_id, key_id, issuer_id, private_key)
+        if upload_ok:
+            logger.info("App Store submit via EAS succeeded for deploy %s: %s", deployment_id, upload_note)
+
+    if not upload_ok:
+        tmp_path = None
+        try:
+            tmp_path = await _download_artifact(artifact_url, ".ipa", payload.get("artifact_checksum"))
+            upload_ok, upload_note = await _upload_ipa_via_fastlane(tmp_path, key_id, issuer_id, private_key)
+            if upload_ok:
+                logger.info("App Store upload via Fastlane succeeded for deploy %s", deployment_id)
+        except Exception as dl_exc:
+            upload_note = str(dl_exc)
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    if not upload_ok:
+        tmp_path = None
+        try:
+            tmp_path = await _download_artifact(artifact_url, ".ipa", payload.get("artifact_checksum"))
+            upload_ok, upload_note = await _upload_ipa_via_altool(tmp_path, key_id, issuer_id, private_key)
+            if upload_ok:
+                logger.info("App Store upload via altool succeeded for deploy %s", deployment_id)
+        except Exception as dl_exc:
+            upload_note = str(dl_exc)
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    if upload_ok:
+        await publish_event(channel, "deploy.completed", {
+            "deployment_id": deployment_id,
+            "build_id": payload.get("build_id"),
+            "target": "app_store",
+            "status": "in_review",
+            "note": upload_note,
+        })
+    else:
+        logger.error("App Store upload failed for deploy %s — all methods exhausted: %s", deployment_id, upload_note)
+        await publish_event(channel, "deploy.failed", {
+            "deployment_id": deployment_id,
+            "build_id": payload.get("build_id"),
+            "target": "app_store",
+            "error": f"Upload failed — {upload_note}. Install Fastlane or use EAS Submit.",
+            "hint": "Run: gem install fastlane && fastlane add_plugin deliver",
         })
 
 
@@ -264,7 +382,7 @@ async def lifespan(app: FastAPI):
     await conn.close()
 
 
-app = FastAPI(title="Store Deploy Service", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Store Deploy Service", version="0.3.0", lifespan=lifespan)
 
 
 class DeployRequest(BaseModel):
@@ -276,4 +394,4 @@ class DeployRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "store-deploy", "version": "0.2.0"}
+    return {"status": "ok", "service": "store-deploy", "version": "0.3.0"}

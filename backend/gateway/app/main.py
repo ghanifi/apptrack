@@ -15,6 +15,7 @@ from app.tenant_middleware import TenantIsolationMiddleware
 from app.logging_config import setup_logging
 from app.routers import auth, projects, builds, deployments, credentials, github, preview, webhooks, audit, flags, usage
 from app.routers import secrets, rbac, immutable_audit, deploy_policies, backups
+from app.routers import ota
 from app.config import settings
 from app.database import engine, Base
 from app import events
@@ -218,6 +219,7 @@ app.include_router(rbac.router)
 app.include_router(immutable_audit.router)
 app.include_router(deploy_policies.router)
 app.include_router(backups.router)
+app.include_router(ota.router, prefix="/api/ota", tags=["ota-updates"])
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 

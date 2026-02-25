@@ -148,6 +148,7 @@ services:
       - EAS_WEBHOOK_SECRET=${EAS_WEBHOOK_SECRET:-}
       - CODEMAGIC_WEBHOOK_SECRET=${CODEMAGIC_WEBHOOK_SECRET:-}
       - GITHUB_ACTIONS_TOKEN=${GITHUB_ACTIONS_TOKEN:-}
+      - TEST_AUTOMATION_WEBHOOK_URL=${TEST_AUTOMATION_WEBHOOK_URL:-}
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -165,14 +166,16 @@ services:
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_BUCKET=artifacts
       - MINIO_PUBLIC_URL=http://localhost:9000
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-apptrack}:${POSTGRES_PASSWORD:-apptrack}@postgres:5432/${POSTGRES_DB:-apptrack}
     depends_on:
       minio:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     volumes:
       - ./backend/services/artifact:/app
-      - artifact_meta:/data/artifact-meta
 
   store-deploy-service:
     build: ./backend/services/store-deploy
@@ -194,14 +197,16 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
       docker-socket-proxy:
         condition: service_started
     volumes:
       - ./backend/services/preview:/app
       - repo_clones:/tmp/repos
-      - preview_state:/data/preview-state
     environment:
       - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-apptrack}:${POSTGRES_PASSWORD:-apptrack}@postgres:5432/${POSTGRES_DB:-apptrack}
       - PREVIEW_BASE_URL=http://localhost:8005
       - PREVIEW_HOST=${PREVIEW_HOST:-localhost}
       - CLONE_BASE_DIR=/tmp/repos
@@ -290,5 +295,3 @@ volumes:
   repo_clones:
   prometheus_data:
   grafana_data:
-  artifact_meta:
-  preview_state:

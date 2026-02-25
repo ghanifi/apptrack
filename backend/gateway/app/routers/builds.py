@@ -1,13 +1,19 @@
+import uuid
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from app.dependencies import get_current_user
 from app.database import get_db
-from app.models import Build, Project
+from app.models import Build, Project, Credential
+from app.crypto import decrypt
+from app.config import settings as app_settings
 
 router = APIRouter()
+
+BUILD_SERVICE_URL = "http://build-service:8006"
 
 
 def _serialize_build(b: Build) -> dict:
@@ -24,6 +30,25 @@ def _serialize_build(b: Build) -> dict:
         "finished_at": b.finished_at.isoformat() if b.finished_at else None,
         "created_at": b.created_at.isoformat(),
     }
+
+
+async def _get_credential(db: AsyncSession, owner_id: str, provider: str, key_name: str) -> str | None:
+    result = await db.execute(
+        select(Credential).where(
+            and_(
+                Credential.owner_id == owner_id,
+                Credential.provider == provider,
+                Credential.key_name == key_name,
+            )
+        )
+    )
+    cred = result.scalar_one_or_none()
+    if not cred:
+        return None
+    try:
+        return decrypt(cred.encrypted_value)
+    except Exception:
+        return None
 
 
 @router.get("")
@@ -89,10 +114,42 @@ async def cancel_build(build_id: str, current_user: dict = Depends(get_current_u
     if build.status in ("success", "failed", "cancelled"):
         raise HTTPException(status_code=400, detail=f"Build already in terminal state: {build.status}")
 
+    provider_cancelled = False
+    if build.external_build_id and build.provider in ("eas", "codemagic", "github_actions"):
+        cancel_payload: dict = {
+            "external_build_id": build.external_build_id,
+            "provider": build.provider,
+        }
+        if build.provider == "eas":
+            token = await _get_credential(db, current_user["id"], "eas", "EAS_TOKEN")
+            if token:
+                cancel_payload["eas_token"] = token
+        elif build.provider == "codemagic":
+            token = await _get_credential(db, current_user["id"], "codemagic", "CODEMAGIC_TOKEN")
+            if token:
+                cancel_payload["codemagic_token"] = token
+        elif build.provider == "github_actions":
+            token = await _get_credential(db, current_user["id"], "github_actions", "GITHUB_ACTIONS_TOKEN")
+            if token:
+                cancel_payload["github_token"] = token
+            if project.repo_url and "github.com/" in project.repo_url:
+                owner_repo = project.repo_url.rstrip("/").rstrip(".git").split("github.com/")[-1]
+                cancel_payload["owner_repo"] = owner_repo
+                cancel_payload["run_id"] = build.external_build_id
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(f"{BUILD_SERVICE_URL}/cancel", json=cancel_payload)
+                provider_cancelled = resp.status_code == 200 and resp.json().get("cancelled", False)
+        except Exception:
+            pass
+
     build.status = "cancelled"
     build.finished_at = datetime.utcnow()
     await db.commit()
-    return _serialize_build(build)
+    data = _serialize_build(build)
+    data["provider_cancelled"] = provider_cancelled
+    return data
 
 
 @router.post("/{build_id}/retry")
@@ -109,7 +166,6 @@ async def retry_build(build_id: str, current_user: dict = Depends(get_current_us
     if build.status not in ("failed", "cancelled"):
         raise HTTPException(status_code=400, detail=f"Can only retry failed or cancelled builds, current: {build.status}")
 
-    import uuid
     new_build = Build(
         id=str(uuid.uuid4()),
         project_id=build.project_id,

@@ -1805,7 +1805,7 @@ try:
     log_test("Artifact: owner_id tenant mismatch kontrolu", "tenant mismatch" in artifact_src)
     log_test("Artifact: verify endpoint mevcut", "def verify_artifact" in artifact_src)
     log_test("Artifact: presigned URL expiry konfigurasyonu", "SIGNED_URL_EXPIRY" in artifact_src)
-    log_test("Artifact: v0.2.0 versiyon", "0.2.0" in artifact_src)
+    log_test("Artifact: v0.3.0 versiyon", "0.3.0" in artifact_src)
 
     log_test("Build model: artifact_checksum kolonu", "artifact_checksum" in models_src2)
     log_test("SQL: artifact_checksum builds tablosunda", "artifact_checksum" in sql_src5)
@@ -1823,11 +1823,11 @@ try:
     sd_path = os.path.join(os.path.dirname(__file__), "..", "services", "store-deploy", "app", "main.py")
     with open(sd_path, "r", encoding="utf-8") as f:
         sd_src = f.read()
-    log_test("StoreDeploy: _download_and_verify fonksiyonu", "_download_and_verify" in sd_src)
+    log_test("StoreDeploy: _download_artifact fonksiyonu", "_download_artifact" in sd_src)
     log_test("StoreDeploy: streaming download", "aiter_bytes" in sd_src)
-    log_test("StoreDeploy: checksum mismatch kontrolu", "checksum mismatch" in sd_src)
+    log_test("StoreDeploy: checksum mismatch kontrolu", "Checksum mismatch" in sd_src)
     log_test("StoreDeploy: expected_checksum parametresi", "expected_checksum" in sd_src)
-    log_test("StoreDeploy: v0.2.0 versiyon", "0.2.0" in sd_src)
+    log_test("StoreDeploy: v0.3.0 versiyon", "0.3.0" in sd_src)
 
 except Exception as e:
     log_test("StoreDeploy: genel hata", False, traceback.format_exc()[:200])
@@ -2273,12 +2273,12 @@ try:
     artifact_path = os.path.join(os.path.dirname(__file__), "..", "services", "artifact", "app", "main.py")
     with open(artifact_path, "r", encoding="utf-8") as f:
         artifact_src = f.read()
-    log_test("Artifact: kalici meta - METADATA_DIR ayari", "METADATA_DIR" in artifact_src)
-    log_test("Artifact: _save_meta fonksiyonu", "_save_meta" in artifact_src)
-    log_test("Artifact: _load_meta fonksiyonu", "_load_meta" in artifact_src)
-    log_test("Artifact: _load_all_meta fonksiyonu", "_load_all_meta" in artifact_src)
-    log_test("Artifact: JSON dosya tabanli storage", "json.dumps" in artifact_src and "write_text" in artifact_src)
-    log_test("Artifact: mkdir parents=True", "mkdir" in artifact_src and "parents=True" in artifact_src)
+    log_test("Artifact: kalici meta - DB tabanlı Artifact model", "class Artifact(Base)" in artifact_src)
+    log_test("Artifact: SQLAlchemy async engine", "create_async_engine" in artifact_src)
+    log_test("Artifact: SessionFactory olusturma", "_SessionFactory" in artifact_src)
+    log_test("Artifact: _init_db fonksiyonu (tablo olusturma)", "async def _init_db" in artifact_src)
+    log_test("Artifact: DB'ye session.add ile kayit", "session.add" in artifact_src)
+    log_test("Artifact: DB commit", "session.commit" in artifact_src)
     log_test("Artifact: in-memory ARTIFACTS_META kaldirildi", "ARTIFACTS_META: dict = {}" not in artifact_src)
 
 except Exception as e:
@@ -2294,11 +2294,11 @@ try:
     preview_path = os.path.join(os.path.dirname(__file__), "..", "services", "preview", "app", "main.py")
     with open(preview_path, "r", encoding="utf-8") as f:
         preview_src = f.read()
-    log_test("Preview: kalici state - PREVIEW_STATE_DIR ayari", "PREVIEW_STATE_DIR" in preview_src)
+    log_test("Preview: kalici state - DB tabanlı PreviewState model", "class PreviewState(Base)" in preview_src)
     log_test("Preview: _save_preview fonksiyonu", "_save_preview" in preview_src)
     log_test("Preview: _load_preview fonksiyonu", "_load_preview" in preview_src)
     log_test("Preview: _delete_preview fonksiyonu", "_delete_preview" in preview_src)
-    log_test("Preview: JSON dosya tabanli state", "json.dumps" in preview_src and "write_text" in preview_src)
+    log_test("Preview: DB tabanlı async session", "_SessionFactory" in preview_src)
     log_test("Preview: in-memory PREVIEWS dict kaldirildi", "PREVIEWS: dict = {}" not in preview_src)
     log_test("Preview: stop_preview delete ile temizlik", "_delete_preview" in preview_src)
 
@@ -2315,10 +2315,10 @@ try:
     store_path = os.path.join(os.path.dirname(__file__), "..", "services", "store-deploy", "app", "main.py")
     with open(store_path, "r", encoding="utf-8") as f:
         store_src = f.read()
-    log_test("StoreDeploy: IPA upload attempt", "IPA upload" in store_src or "upload_resp" in store_src)
-    log_test("StoreDeploy: Transporter API URL", "contentdelivery.itunes.apple.com" in store_src or "Transporter" in store_src)
-    log_test("StoreDeploy: fallback on upload failure", "Transporter fallback" in store_src or "Transporter CLI" in store_src)
-    log_test("StoreDeploy: artifact download before upload", "_download_and_verify" in store_src)
+    log_test("StoreDeploy: IPA upload via fastlane", "_upload_ipa_via_fastlane" in store_src)
+    log_test("StoreDeploy: IPA upload via altool", "_upload_ipa_via_altool" in store_src)
+    log_test("StoreDeploy: fallback on upload failure", "_upload_ipa_via_altool" in store_src)
+    log_test("StoreDeploy: artifact download before upload", "_download_artifact" in store_src)
 
 except Exception as e:
     log_test("StoreDeploy: genel hata", False, traceback.format_exc()[:200])
@@ -2333,10 +2333,10 @@ try:
     dc_path = os.path.join(os.path.dirname(__file__), "..", "..", "docker-compose.yml")
     with open(dc_path, "r", encoding="utf-8") as f:
         dc_src = f.read()
-    log_test("Docker: artifact_meta volume tanimli", "artifact_meta:" in dc_src)
-    log_test("Docker: preview_state volume tanimli", "preview_state:" in dc_src)
-    log_test("Docker: artifact_meta mount", "artifact_meta:/data/artifact-meta" in dc_src)
-    log_test("Docker: preview_state mount", "preview_state:/data/preview-state" in dc_src)
+    log_test("Docker: postgres_data volume (artifact+preview DB storage)", "postgres_data:" in dc_src)
+    log_test("Docker: minio_data volume (artifact binary storage)", "minio_data:" in dc_src)
+    log_test("Docker: artifact service DB-based (no file volume needed)", "artifact-service:" in dc_src)
+    log_test("Docker: preview service DB-based (no file volume needed)", "preview-service:" in dc_src)
     log_test("Docker: GITHUB_ACTIONS_TOKEN env", "GITHUB_ACTIONS_TOKEN" in dc_src)
 
 except Exception as e:

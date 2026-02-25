@@ -356,3 +356,36 @@ CREATE TABLE IF NOT EXISTS backup_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_backup_status ON backup_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_backup_type_created ON backup_jobs(backup_type, created_at);
+
+-- Artifact Storage (migrated from file system)
+CREATE TABLE IF NOT EXISTS artifacts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    build_id VARCHAR(64) NOT NULL,
+    owner_id VARCHAR(64) DEFAULT '',
+    platform VARCHAR(20) DEFAULT '',
+    filename VARCHAR(255),
+    object_key TEXT NOT NULL,
+    url TEXT,
+    checksum VARCHAR(64),
+    size_bytes BIGINT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifacts_build_id ON artifacts(build_id);
+
+-- Preview States (migrated from file system)
+CREATE TABLE IF NOT EXISTS preview_states (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id VARCHAR(64) NOT NULL UNIQUE,
+    framework VARCHAR(50) DEFAULT '',
+    status VARCHAR(50) DEFAULT 'pending',
+    preview_type VARCHAR(50) DEFAULT '',
+    preview_url TEXT,
+    embed_url TEXT,
+    qr_url TEXT,
+    instructions TEXT,
+    extra JSONB,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_preview_states_project_id ON preview_states(project_id);
