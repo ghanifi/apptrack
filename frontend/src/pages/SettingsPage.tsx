@@ -21,7 +21,7 @@ interface CredentialField {
 interface ProviderSection {
   provider: string
   label: string
-  icon: React.FC<{ size?: number | string; className?: string }>
+  icon: React.ComponentType<any>
   description: string
   fields: CredentialField[]
 }

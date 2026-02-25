@@ -9,7 +9,7 @@ interface HealthStatus {
   version: string
 }
 
-const STATUS_CONFIG: Record<string, { icon: React.FC<{ size?: number; className?: string }>; color: string; label: string }> = {
+const STATUS_CONFIG: Record<string, { icon: React.ComponentType<any>; color: string; label: string }> = {
   healthy: { icon: CheckCircle, color: 'text-green-400', label: 'Operational' },
   degraded: { icon: AlertCircle, color: 'text-yellow-400', label: 'Degraded' },
   unhealthy: { icon: XCircle, color: 'text-red-400', label: 'Down' },
