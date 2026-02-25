@@ -4,11 +4,11 @@ import { useAuthStore } from '@/store/authStore'
 import clsx from 'clsx'
 
 const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard', exact: true },
-  { to: '/projects', icon: FolderGit2, label: 'Projects' },
-  { to: '/usage', icon: BarChart3, label: 'Usage & Billing' },
-  { to: '/audit', icon: Shield, label: 'Audit Log' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', exact: true },
+  { to: '/dashboard/projects', icon: FolderGit2, label: 'Projects' },
+  { to: '/dashboard/usage', icon: BarChart3, label: 'Usage & Billing' },
+  { to: '/dashboard/audit', icon: Shield, label: 'Audit Log' },
+  { to: '/dashboard/settings', icon: Settings, label: 'Settings' },
 ]
 
 export default function DashboardLayout() {

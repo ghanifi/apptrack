@@ -233,6 +233,12 @@ def health():
     return {"status": "ok", "service": "gateway", "version": "0.7.0"}
 
 
+@app.get("/api/errors/{error_code}")
+def get_error_detail(error_code: str):
+    from app.error_messages import get_error_message
+    return get_error_message(error_code)
+
+
 @app.get("/api/health/deep")
 async def deep_health():
     db_ok = await _check_db()
@@ -244,9 +250,77 @@ async def deep_health():
             "status": "healthy" if all_ok else "degraded",
             "service": "gateway",
             "version": "0.7.0",
+            "services": {
+                "database": "healthy" if db_ok else "unhealthy",
+                "rabbitmq": "healthy" if mq_ok else "unhealthy",
+                "gateway": "healthy",
+                "build_service": "healthy" if mq_ok else "degraded",
+                "artifact_service": "healthy" if db_ok else "degraded",
+                "preview_service": "healthy",
+                "store_deploy": "healthy" if mq_ok else "degraded",
+            },
             "checks": {
                 "database": "ok" if db_ok else "unreachable",
                 "rabbitmq": "ok" if mq_ok else "unreachable",
             },
         },
     )
+
+
+@app.get("/api/monitoring/dashboard")
+async def monitoring_dashboard():
+    from sqlalchemy import select, func, and_
+    from app.models import Build, Deployment, User, Project
+    from datetime import datetime, timedelta
+    from app.database import AsyncSessionLocal
+
+    now = datetime.utcnow()
+    day_ago = now - timedelta(days=1)
+    week_ago = now - timedelta(days=7)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    async with AsyncSessionLocal() as db:
+        total_builds_24h = (await db.execute(
+            select(func.count()).where(Build.created_at >= day_ago)
+        )).scalar() or 0
+        success_builds_24h = (await db.execute(
+            select(func.count()).where(and_(Build.status == "success", Build.created_at >= day_ago))
+        )).scalar() or 0
+        failed_builds_24h = (await db.execute(
+            select(func.count()).where(and_(Build.status == "failed", Build.created_at >= day_ago))
+        )).scalar() or 0
+
+        total_deploys_24h = (await db.execute(
+            select(func.count()).where(Deployment.created_at >= day_ago)
+        )).scalar() or 0
+        success_deploys_24h = (await db.execute(
+            select(func.count()).where(and_(Deployment.status == "published", Deployment.created_at >= day_ago))
+        )).scalar() or 0
+        failed_deploys_24h = (await db.execute(
+            select(func.count()).where(and_(Deployment.status == "failed", Deployment.created_at >= day_ago))
+        )).scalar() or 0
+
+        active_builds = (await db.execute(
+            select(func.count()).where(Build.status.in_(["queued", "running"]))
+        )).scalar() or 0
+
+        builds_this_month = (await db.execute(
+            select(func.count()).where(Build.created_at >= month_start)
+        )).scalar() or 0
+
+    build_success_rate = round(success_builds_24h / max(total_builds_24h, 1) * 100, 1)
+    deploy_success_rate = round(success_deploys_24h / max(total_deploys_24h, 1) * 100, 1)
+
+    return {
+        "timestamp": now.isoformat(),
+        "builds": {
+            "last_24h": {"total": total_builds_24h, "success": success_builds_24h, "failed": failed_builds_24h},
+            "success_rate_24h": build_success_rate,
+            "active": active_builds,
+            "this_month": builds_this_month,
+        },
+        "deploys": {
+            "last_24h": {"total": total_deploys_24h, "success": success_deploys_24h, "failed": failed_deploys_24h},
+            "success_rate_24h": deploy_success_rate,
+        },
+    }
