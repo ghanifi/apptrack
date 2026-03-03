@@ -16,6 +16,15 @@ async def time_to_first_deploy(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kullanıcının ilk deploy'a kadar geçen süre metriklerini hesaplar.
+
+    Kayıt olma anından ilk proje, ilk credential, ilk başarılı build
+    ve ilk deploy'a kadar geçen süreleri saniye cinsinden döndürür.
+    Build başarı oranı istatistiklerini de içerir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     user_result = await db.execute(select(User).where(User.id == current_user["id"]))
     user = user_result.scalar_one_or_none()
     if not user:
@@ -95,6 +104,14 @@ async def platform_kpis(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Platform genelindeki KPI metriklerini döndürür.
+
+    Toplam kullanıcı, haftalık yeni kullanıcı, son 30 günlük build/deploy
+    sayıları, başarı oranları ve ortalama build süresini içerir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     now = datetime.utcnow()
     day_ago = now - timedelta(days=1)
     week_ago = now - timedelta(days=7)

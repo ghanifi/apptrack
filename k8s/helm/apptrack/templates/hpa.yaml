@@ -1,0 +1,34 @@
+{{- if .Values.autoscaling.enabled -}}
+{{- $root := . -}}
+{{- $services := list "gateway" "build-service" "store-deploy" "frontend" -}}
+{{- range $name := $services }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "apptrack.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "apptrack.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "apptrack.fullname" $root }}-{{ $name }}
+  minReplicas: {{ $root.Values.autoscaling.minReplicas }}
+  maxReplicas: {{ $root.Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $root.Values.autoscaling.targetCPUUtilization }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ $root.Values.autoscaling.targetMemoryUtilization }}
+{{- end }}
+{{- end }}

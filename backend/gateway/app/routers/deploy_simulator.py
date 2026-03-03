@@ -40,6 +40,16 @@ async def estimate_deploy(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Deploy sürecinin tahmini süre, maliyet ve hazırlık durumunu hesaplar.
+
+    Framework, platform ve hedef mağazaya göre build süresi, review süresi
+    ve maliyet tahmini yapar. Geçmiş build verilerini de dikkate alır.
+    Credential eksikliklerini kontrol ederek hazırlık raporu sunar.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı
+    """
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project or project.owner_id != current_user["id"]:

@@ -9,8 +9,12 @@ from pydantic_settings import BaseSettings
 import aio_pika
 import git
 
+import time as _time
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+_START_TIME = _time.time()
 
 
 class Settings(BaseSettings):
@@ -107,7 +111,12 @@ app = FastAPI(title="Repo Sync Service", version="0.1.0", lifespan=lifespan)
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "repo-sync"}
+    return {
+        "status": "healthy",
+        "service": "repo-sync",
+        "version": "0.9.0",
+        "uptime_seconds": int(_time.time() - _START_TIME),
+    }
 
 
 @app.post("/sync")

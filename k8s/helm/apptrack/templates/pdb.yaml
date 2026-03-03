@@ -1,0 +1,18 @@
+{{- $root := . -}}
+{{- $services := list "gateway" "build-service" "store-deploy" "artifact" "preview" "frontend" -}}
+{{- range $name := $services }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "apptrack.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "apptrack.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "apptrack.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+{{- end }}

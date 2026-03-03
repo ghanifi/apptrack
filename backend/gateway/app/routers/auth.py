@@ -4,6 +4,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr
+from typing import Optional
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
@@ -21,6 +22,28 @@ router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 REFRESH_TOKEN_EXPIRE_DAYS = 30
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    name: str
+    avatar_url: Optional[str] = None
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    refresh_token: Optional[str] = None
+    token_type: str = "bearer"
+    expires_in: Optional[int] = None
+    user: dict
+
+
+class TokenRefreshResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: Optional[int] = None
 
 
 def create_access_token(data: dict, fingerprint: str | None = None) -> str:
@@ -54,6 +77,14 @@ def _user_response(user: User) -> dict:
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/minute")
 async def register(request: Request, req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    """Yeni kullanıcı kaydı oluşturur.
+
+    E-posta ve şifre ile yeni bir kullanıcı hesabı oluşturur.
+    Aynı e-posta adresiyle mükerrer kayıt engellenir.
+
+    Raises:
+        400: E-posta zaten kayıtlı
+    """
     result = await db.execute(select(User).where(User.email == req.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -64,9 +95,17 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
     return {"message": "User registered successfully"}
 
 
-@router.post("/login")
+@router.post("/login", response_model=AuthResponse)
 @limiter.limit("5/minute")
 async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(get_db)):
+    """E-posta ve şifre ile kullanıcı girişi yapar.
+
+    Kimlik doğrulama başarılı olursa access ve refresh token döndürür.
+    Cihaz parmak izi token'a eklenir, audit kaydı oluşturulur.
+
+    Raises:
+        401: Geçersiz e-posta veya şifre
+    """
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
     if not user or not user.hashed_password or not pwd_context.verify(req.password, user.hashed_password):
@@ -87,6 +126,14 @@ async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(
 
 @router.get("/github")
 def github_oauth_redirect():
+    """GitHub OAuth yetkilendirme sayfasına yönlendirir.
+
+    CSRF koruması için state parametresi oluşturur ve cookie'ye kaydeder.
+    Kullanıcıyı GitHub'ın OAuth izin sayfasına yönlendirir.
+
+    Raises:
+        501: GitHub OAuth yapılandırılmamış
+    """
     if not settings.GITHUB_CLIENT_ID:
         raise HTTPException(status_code=501, detail="GitHub OAuth not configured")
     state = secrets.token_urlsafe(32)
@@ -110,13 +157,23 @@ def github_oauth_redirect():
     return redirect
 
 
-@router.post("/github/callback")
+@router.post("/github/callback", response_model=AuthResponse)
 async def github_callback(
     code: str,
     state: str | None = None,
     request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
+    """GitHub OAuth callback'ini işler ve kullanıcı oturumu açar.
+
+    GitHub'dan alınan code ile access token alır, kullanıcı bilgilerini çeker.
+    Mevcut kullanıcı varsa günceller, yoksa yeni hesap oluşturur.
+    GitHub token'ı şifreli olarak saklanır.
+
+    Raises:
+        400: Geçersiz OAuth state veya GitHub OAuth başarısız
+        501: GitHub OAuth yapılandırılmamış
+    """
     if not settings.GITHUB_CLIENT_ID:
         raise HTTPException(status_code=501, detail="GitHub OAuth not configured")
 
@@ -184,9 +241,18 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
-@router.post("/refresh")
+@router.post("/refresh", response_model=TokenRefreshResponse)
 @limiter.limit("10/minute")
 async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession = Depends(get_db)):
+    """Refresh token ile yeni access ve refresh token üretir.
+
+    Süresi dolmuş access token'ı yenilemek için kullanılır.
+    Geçerli bir refresh token gereklidir, token tipi kontrol edilir.
+
+    Raises:
+        401: Geçersiz veya süresi dolmuş refresh token
+        401: Kullanıcı bulunamadı
+    """
     try:
         payload = jwt.decode(req.refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
     except JWTError:

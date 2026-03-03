@@ -20,6 +20,14 @@ async def list_audit_logs(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kullanıcının audit log kayıtlarını sayfalanmış olarak listeler.
+
+    Action ve resource_type bazında filtreleme destekler. Sonuçlar tarih
+    sırasıyla azalan şekilde döndürülür. IP adresi ve trace ID bilgileri dahildir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     base_q = select(AuditLog).where(AuditLog.user_id == current_user["id"])
     if action:
         base_q = base_q.where(AuditLog.action == action)
@@ -59,6 +67,14 @@ async def list_audit_actions(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kullanıcının audit log'larındaki benzersiz action türlerini listeler.
+
+    Her action türü ve kaç kez gerçekleştiği bilgisini döndürür.
+    Sayıya göre azalan sırada sıralanır. Filtreleme için kullanılabilir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     result = await db.execute(
         select(AuditLog.action, func.count().label("count"))
         .where(AuditLog.user_id == current_user["id"])

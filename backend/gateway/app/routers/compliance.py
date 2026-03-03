@@ -26,6 +26,14 @@ RETENTION_POLICIES = {
 
 @router.get("/retention-policies")
 async def get_retention_policies(current_user: dict = Depends(get_current_user)):
+    """Veri saklama politikalarını döndürür.
+
+    Audit log, build artifact, deployment kaydı gibi veri türleri için
+    varsayılan, minimum ve maksimum saklama sürelerini (gün) listeler.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     return {
         "policies": RETENTION_POLICIES,
         "description": "Data retention periods in days. Immutable audit entries have the longest retention.",
@@ -38,6 +46,15 @@ async def purge_expired_data(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Saklama süresi dolmuş verileri temizler.
+
+    Retention policy'lere göre süresi dolan audit log, build, usage ve
+    webhook nonce kayıtlarını tespit eder. dry_run=True ile sadece sayım yapılır,
+    False ile gerçek silme işlemi gerçekleştirilir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     now = datetime.utcnow()
     results = {}
 
@@ -91,6 +108,16 @@ async def set_legal_hold(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Belirtilen kaynağa yasal saklama (legal hold) uygular.
+
+    Legal hold uygulanan kaynaklar retention policy tarafından silinmez.
+    İşlem immutable audit log'a kaydedilir. Proje, build, deployment
+    ve user kaynakları desteklenir.
+
+    Raises:
+        400: Geçersiz kaynak türü
+        401: Kimlik doğrulama gerekli
+    """
     valid_types = ["project", "build", "deployment", "user"]
     if resource_type not in valid_types:
         raise HTTPException(status_code=400, detail=f"Invalid resource type. Must be one of: {valid_types}")
@@ -123,6 +150,15 @@ async def export_audit_bundle(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Immutable audit kayıtlarını tarih aralığına göre dışa aktarır.
+
+    Zincir bütünlüğü doğrulanır (hash chain verification). Varsayılan olarak
+    son 30 günlük kayıtlar döndürülür. Bundle hash ile veri bütünlüğü garanti edilir.
+    Maksimum 10.000 kayıt döndürülür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     now = datetime.utcnow()
     start = datetime.fromisoformat(start_date) if start_date else now - timedelta(days=30)
     end = datetime.fromisoformat(end_date) if end_date else now
@@ -173,6 +209,15 @@ def _verify_chain(entries) -> bool:
 
 @router.get("/data-locality")
 async def get_data_locality(current_user: dict = Depends(get_current_user)):
+    """Kullanıcının veri lokasyonu ve uyumluluk bilgilerini döndürür.
+
+    Veri bölgesi, depolama bölgesi, GDPR uyumluluk modu ve
+    mevcut bölge seçeneklerini içerir. Credential'lar, artifact'ler
+    ve audit log'lar için veri saklama politikaları gösterilir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     return {
         "user_id": current_user["id"],
         "data_region": "eu-west-1",

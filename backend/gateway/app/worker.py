@@ -141,26 +141,24 @@ async def _process_build_finished(payload: dict):
         )
 
         if status == "success" and build_id:
-            try:
-                from app.cost_guard import record_build_cost
-                result = await db.execute(select(Build).where(Build.id == build_id))
-                finished_build = result.scalar_one_or_none()
-                if finished_build:
-                    proj_result = await db.execute(
-                        select(Project).where(Project.id == finished_build.project_id)
-                    )
-                    proj = proj_result.scalar_one_or_none()
-                    if proj:
-                        actual_minutes = payload.get("duration_minutes")
-                        await record_build_cost(
-                            db, proj.owner_id,
-                            finished_build.provider, finished_build.platform,
-                            actual_minutes,
+            # Cost recording with retry
+            _MAX_COST_RETRIES = 3
+            for _attempt in range(_MAX_COST_RETRIES):
+                try:
+                    from app.cost_guard import record_build_cost
+                    result = await db.execute(select(Build).where(Build.id == build_id))
+                    finished_build = result.scalar_one_or_none()
+                    if finished_build:
+                        await record_build_cost(db, finished_build)
+                    break
+                except Exception as cost_exc:
+                    if _attempt == _MAX_COST_RETRIES - 1:
+                        logger.error(
+                            "Cost recording FAILED after %d attempts for build %s: %s — MANUAL REVIEW REQUIRED",
+                            _MAX_COST_RETRIES, build_id, cost_exc
                         )
-                        await db.commit()
-                        logger.info("Recorded build cost for user %s build %s", proj.owner_id, build_id)
-            except Exception as cost_exc:
-                logger.warning("Failed to record build cost: %s", cost_exc)
+                    else:
+                        await asyncio.sleep(2 ** _attempt)
 
         try:
             from app.main import BUILD_RESULT_COUNTER, BUILD_DURATION
@@ -169,8 +167,8 @@ async def _process_build_finished(payload: dict):
             duration = payload.get("duration_seconds")
             if duration:
                 BUILD_DURATION.labels(provider=provider).observe(float(duration))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Metrics recording failed for build %s: %s", build_id, exc)
 
 
 async def _process_build_failed(payload: dict):
@@ -207,8 +205,8 @@ async def _process_deploy_completed(payload: dict):
             from app.main import DEPLOY_RESULT_COUNTER
             target = payload.get("target", "unknown")
             DEPLOY_RESULT_COUNTER.labels(target=target, status=status).inc()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Metrics recording failed for deployment %s: %s", deployment_id, exc)
 
 
 async def _process_deploy_failed(payload: dict):
@@ -228,8 +226,8 @@ async def _process_deploy_failed(payload: dict):
         target = payload.get("target", "unknown")
         reason = payload.get("error_code", "unknown")
         DEPLOY_FAILURE_COUNTER.labels(target=target, reason=reason).inc()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Metrics recording failed for deployment %s: %s", deployment_id, exc)
 
 
 async def handle_framework_detected(message: aio_pika.abc.AbstractIncomingMessage):

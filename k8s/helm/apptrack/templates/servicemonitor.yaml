@@ -1,0 +1,27 @@
+{{- if and .Values.monitoring.prometheus.enabled .Values.monitoring.prometheus.serviceMonitor -}}
+{{- $root := . -}}
+{{- $services := list "gateway" "build-service" "store-deploy" "artifact" "preview" -}}
+{{- range $name := $services }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "apptrack.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "apptrack.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "apptrack.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - {{ $root.Release.Namespace }}
+{{- end }}
+{{- end }}

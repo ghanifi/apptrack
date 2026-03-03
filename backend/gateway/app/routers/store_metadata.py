@@ -94,6 +94,15 @@ async def get_store_metadata(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Projenin mağaza metadata kayıtlarını getirir.
+
+    İsteğe bağlı locale parametresi ile filtrelenebilir.
+    Tüm platform ve dil kombinasyonları için metadata döndürülür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+    """
     await _verify_project_ownership(db, project_id, current_user["id"])
     stmt = select(StoreMetadata).where(StoreMetadata.project_id == project_id)
     if locale:
@@ -109,6 +118,15 @@ async def get_configured_locales(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Proje için yapılandırılmış dil/platform kombinasyonlarını listeler.
+
+    Hangi locale'lerin hangi platformlar için tanımlı olduğunu ve
+    desteklenen tüm locale listesini döndürür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+    """
     await _verify_project_ownership(db, project_id, current_user["id"])
     result = await db.execute(
         select(StoreMetadata.locale, StoreMetadata.platform)
@@ -136,6 +154,16 @@ async def upsert_store_metadata(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Mağaza metadata'sını oluşturur veya günceller (upsert).
+
+    Platform, locale ve proje kombinasyonu için metadata kaydı yoksa oluşturur,
+    varsa sadece gönderilen alanları günceller. 24 desteklenen locale mevcuttur.
+
+    Raises:
+        400: Geçersiz platform veya desteklenmeyen locale
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+    """
     if platform not in ("android", "ios"):
         raise HTTPException(status_code=400, detail="Platform must be 'android' or 'ios'")
     if locale not in SUPPORTED_LOCALES:
@@ -178,6 +206,16 @@ async def update_icon_url(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Uygulama ikonunun URL'sini günceller.
+
+    Metadata kaydı yoksa otomatik oluşturulur. iOS için 1024x1024px,
+    Android için 512x512px PNG formatı önerilir.
+
+    Raises:
+        400: Geçersiz platform
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+    """
     if platform not in ("android", "ios"):
         raise HTTPException(status_code=400, detail="Platform must be 'android' or 'ios'")
     await _verify_project_ownership(db, project_id, current_user["id"])
@@ -210,6 +248,16 @@ async def update_screenshots(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Ekran görüntülerini günceller.
+
+    Metadata kaydı yoksa otomatik oluşturulur. Platform'a göre farklı
+    cihaz boyutları desteklenir (iPhone, iPad, telefon, tablet).
+
+    Raises:
+        400: Geçersiz platform
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+    """
     if platform not in ("android", "ios"):
         raise HTTPException(status_code=400, detail="Platform must be 'android' or 'ios'")
     await _verify_project_ownership(db, project_id, current_user["id"])
@@ -333,6 +381,16 @@ async def check_store_compliance(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Mağaza uyumluluk kontrolü yapar.
+
+    Metadata, ikon ve ekran görüntülerini mağaza gereksinimlerine göre doğrular.
+    Hata ve uyarıları ayrı listeler, hazırlık skoru (0-100) ve yayın hazırlığı durumu döndürür.
+
+    Raises:
+        400: Geçersiz platform
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+    """
     if platform not in ("android", "ios"):
         raise HTTPException(status_code=400, detail="Platform must be 'android' or 'ios'")
     await _verify_project_ownership(db, project_id, current_user["id"])
@@ -377,6 +435,16 @@ async def simulate_store_review(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Mağaza inceleme sürecini simüle eder.
+
+    App name, bundle ID, gizlilik politikası, ikon, screenshot ve açıklama kontrolü yapar.
+    Tahmini onay süresi ve olası red/onay/iyileştirme gerekli kararını döndürür.
+
+    Raises:
+        400: Geçersiz platform
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+    """
     if platform not in ("android", "ios"):
         raise HTTPException(status_code=400, detail="Platform must be 'android' or 'ios'")
     await _verify_project_ownership(db, project_id, current_user["id"])

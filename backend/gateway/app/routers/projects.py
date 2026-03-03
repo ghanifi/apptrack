@@ -72,7 +72,7 @@ class BuildResponse(BaseModel):
     platform: str
     provider: str
     status: str
-    artifact_url: str | None
+    artifact_url: str | None = None
     created_at: str
 
     class Config:
@@ -84,12 +84,51 @@ class ProjectResponse(BaseModel):
     name: str
     repo_url: str
     branch: str
-    framework: str
+    framework: Optional[str] = None
+    status: str
+    created_at: datetime | str
+    updated_at: datetime | str
+    owner_id: str
+    builds: List[BuildResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+class ProjectListResponse(BaseModel):
+    items: List[ProjectResponse]
+    total: int
+
+
+class PaginatedProjectResponse(BaseModel):
+    items: List[ProjectResponse]
+    total: int
+    page: int
+    size: int
+    pages: int
+
+
+class SyncResponse(BaseModel):
+    status: str
+    project_id: str
+
+
+class TriggerBuildResponse(BaseModel):
+    build_id: str
+    status: str
+    provider: str
+    platform: str
+    cost_estimate: dict
+
+
+class DeploymentResponse(BaseModel):
+    id: str
+    build_id: str
+    target: str
+    track: str
     status: str
     created_at: str
     updated_at: str
-    owner_id: str
-    builds: List[BuildResponse] = []
 
     class Config:
         from_attributes = True
@@ -120,7 +159,7 @@ def _serialize_project(p: Project) -> dict:
     }
 
 
-@router.get("")
+@router.get("", response_model=PaginatedProjectResponse)
 async def list_projects(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(20, ge=1, le=100, description="Items per page"),
@@ -128,6 +167,14 @@ async def list_projects(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kullanıcının projelerini sayfalanmış olarak listeler.
+
+    Duruma göre filtreleme destekler. Sonuçlar oluşturulma tarihine göre
+    azalan sırada döndürülür. Her proje ile birlikte build bilgileri dahildir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     base_q = select(Project).where(Project.owner_id == current_user["id"])
     if status_filter:
         base_q = base_q.where(Project.status == status_filter)
@@ -150,12 +197,23 @@ async def list_projects(
     }
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=ProjectResponse)
 async def create_project(
     req: ProjectCreate,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Yeni bir proje oluşturur.
+
+    Repo URL ve branch doğrulanır, proje kotası kontrol edilir.
+    Proje oluşturulduktan sonra analiz event'i yayınlanır ve
+    GitHub webhook otomatik olarak kaydedilir.
+
+    Raises:
+        400: Geçersiz repo URL veya branch formatı
+        401: Kimlik doğrulama gerekli
+        403: Proje kotası aşıldı
+    """
     repo_url = validate_repo_url(req.repo_url)
     branch = validate_branch(req.branch)
 
@@ -201,12 +259,21 @@ async def create_project(
     return _serialize_project(project)
 
 
-@router.get("/{project_id}")
+@router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(
     project_id: str,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Belirtilen projenin detaylarını getirir.
+
+    Proje bilgileri ve ilişkili build'ler dahil tam detay döndürür.
+    Sadece proje sahibi erişebilir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+    """
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project or project.owner_id != current_user["id"]:
@@ -214,13 +281,22 @@ async def get_project(
     return _serialize_project(project)
 
 
-@router.patch("/{project_id}")
+@router.patch("/{project_id}", response_model=ProjectResponse)
 async def update_project(
     project_id: str,
     req: ProjectUpdate,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Projenin adını veya branch bilgisini günceller.
+
+    Kısmi güncelleme destekler (PATCH). Sadece gönderilen alanlar güncellenir.
+    Proje sahibi dışında kimse güncelleyemez.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+    """
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project or project.owner_id != current_user["id"]:
@@ -241,6 +317,15 @@ async def delete_project(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Belirtilen projeyi kalıcı olarak siler.
+
+    Proje ve ilişkili tüm veriler veritabanından kaldırılır.
+    Bu işlem geri alınamaz. Sadece proje sahibi silebilir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+    """
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project or project.owner_id != current_user["id"]:
@@ -249,12 +334,21 @@ async def delete_project(
     await db.commit()
 
 
-@router.post("/{project_id}/sync")
+@router.post("/{project_id}/sync", response_model=SyncResponse)
 async def sync_project(
     project_id: str,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Proje repo'sunu yeniden analiz etmek için senkronizasyon başlatır.
+
+    Proje durumunu 'analyzing' olarak günceller ve analiz event'i yayınlar.
+    Framework tespiti ve repo yapısı yeniden değerlendirilir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+    """
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project or project.owner_id != current_user["id"]:
@@ -271,7 +365,7 @@ async def sync_project(
     return {"status": "sync_triggered", "project_id": project_id}
 
 
-@router.post("/{project_id}/build")
+@router.post("/{project_id}/build", response_model=TriggerBuildResponse)
 @limiter.limit("10/hour")
 async def trigger_build(
     request: Request,
@@ -280,6 +374,19 @@ async def trigger_build(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Proje için yeni bir build işlemi başlatır.
+
+    Framework'e göre uygun build sağlayıcı seçilir (EAS, Codemagic, GitHub Actions).
+    Build kotası, spam koruması, bütçe limiti ve idempotency kontrolü yapılır.
+    Maliyet tahmini hesaplanır ve build event'i yayınlanır.
+
+    Raises:
+        400: Framework henüz tespit edilmedi
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+        409: Aynı proje/platform için aktif build zaten mevcut
+        429: Build spam koruması veya rate limit aşıldı
+    """
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project or project.owner_id != current_user["id"]:
@@ -390,12 +497,21 @@ class DeployRequest(BaseModel):
     package_name: str = ""
 
 
-@router.get("/{project_id}/deployments")
+@router.get("/{project_id}/deployments", response_model=List[DeploymentResponse])
 async def list_project_deployments(
     project_id: str,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Projeye ait tüm deployment'ları listeler.
+
+    İlişkili build'ler üzerinden projenin deployment geçmişini döndürür.
+    Sonuçlar oluşturulma tarihine göre azalan sırada sıralanır.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+    """
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project or project.owner_id != current_user["id"]:
@@ -410,7 +526,7 @@ async def list_project_deployments(
     return [_serialize_dep(d) for d in dep_result.scalars().all()]
 
 
-@router.post("/{project_id}/deploy")
+@router.post("/{project_id}/deploy", response_model=DeploymentResponse)
 @limiter.limit("10/hour")
 async def deploy_project(
     request: Request,
@@ -419,6 +535,18 @@ async def deploy_project(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Projenin en son başarılı build'ini mağazaya deploy eder.
+
+    Google Play veya App Store hedefine deploy başlatır.
+    Başarılı bir build gereklidir. Hedef mağazaya göre gerekli
+    credential'lar otomatik olarak event payload'a eklenir.
+
+    Raises:
+        400: Başarılı build bulunamadı
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+        429: Rate limit aşıldı
+    """
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project or project.owner_id != current_user["id"]:

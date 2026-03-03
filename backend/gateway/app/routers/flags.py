@@ -33,6 +33,14 @@ async def list_flags(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Tüm feature flag'leri listeler.
+
+    Sistemde tanımlı tüm özellik bayraklarını isim sırasıyla döndürür.
+    Her flag için durum, yüzde, izin verilen kullanıcılar ve açıklama bilgisi dahildir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     result = await db.execute(select(FeatureFlag).order_by(FeatureFlag.name))
     return [
         {
@@ -54,6 +62,14 @@ async def create_flag(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Yeni bir feature flag oluşturur.
+
+    İsim, başlangıç durumu, açıklama ve yüzde ile yeni flag tanımlar.
+    Oluşturma sonrası flag cache'i invalidate edilir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     flag = FeatureFlag(
         name=req.name,
         enabled=req.enabled,
@@ -74,6 +90,15 @@ async def update_flag(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Mevcut bir feature flag'i günceller.
+
+    Durum, açıklama, yüzde ve izin verilen kullanıcılar kısmi olarak güncellenebilir.
+    Güncelleme sonrası flag cache'i invalidate edilir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Feature flag bulunamadı
+    """
     result = await db.execute(select(FeatureFlag).where(FeatureFlag.name == flag_name))
     flag = result.scalar_one_or_none()
     if not flag:
@@ -98,5 +123,13 @@ async def check_flag(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Belirtilen feature flag'in mevcut kullanıcı için aktif olup olmadığını kontrol eder.
+
+    Flag'in genel durumu, yüzde tabanlı rollout ve kullanıcı bazlı
+    izin listesi değerlendirilerek sonuç döndürülür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     enabled = await is_enabled(db, flag_name, current_user["id"])
     return {"flag": flag_name, "enabled": enabled}

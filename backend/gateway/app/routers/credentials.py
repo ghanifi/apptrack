@@ -46,6 +46,14 @@ class CredentialInfo(BaseModel):
 
 @router.get("", response_model=List[CredentialInfo])
 async def list_credentials(current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Kullanıcının kayıtlı credential'larını listeler.
+
+    Credential değerleri döndürülmez, sadece provider, key adı ve tarih bilgileri
+    gösterilir. Provider ve key adına göre sıralı döner.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     result = await db.execute(
         select(Credential).where(Credential.owner_id == current_user["id"]).order_by(Credential.provider, Credential.key_name)
     )
@@ -63,6 +71,15 @@ async def upsert_credential(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Credential oluşturur veya günceller (upsert).
+
+    Değer AES ile şifrelenerek saklanır. Sadece izin verilen provider/key
+    kombinasyonları kabul edilir. İşlem audit log'a kaydedilir.
+
+    Raises:
+        400: Geçersiz provider/key kombinasyonu veya boş değer
+        401: Kimlik doğrulama gerekli
+    """
     allowed_keys = ALLOWED_PROVIDERS.get(req.provider)
     if not allowed_keys or req.key_name not in allowed_keys:
         raise HTTPException(status_code=400, detail=f"Unknown provider/key: {req.provider}/{req.key_name}")
@@ -106,6 +123,14 @@ async def delete_credential(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Belirtilen credential'ı kalıcı olarak siler.
+
+    Provider ve key adı ile eşleşen credential kaydını veritabanından kaldırır.
+    Kayıt bulunamazsa sessizce başarılı döner (idempotent).
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     await db.execute(
         delete(Credential).where(
             and_(Credential.owner_id == current_user["id"],
@@ -140,6 +165,14 @@ async def rotate_encryption_keys(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kullanıcının tüm credential'larının şifreleme anahtarlarını yeniler.
+
+    Mevcut şifreli değerleri çözer ve yeni anahtar ile tekrar şifreler.
+    Rotate edilen ve toplam credential sayısı döndürülür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     result = await db.execute(
         select(Credential).where(Credential.owner_id == current_user["id"])
     )

@@ -18,6 +18,17 @@ async def start_canary_deploy(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Canary (kademeli) deploy başlatır.
+
+    Belirtilen yüzde oranında trafiğe yeni sürümü açar (1-50 arası).
+    Deployment durumu 'canary' olarak güncellenir. Metrikler izlendikten
+    sonra promote veya rollback yapılabilir.
+
+    Raises:
+        400: Geçersiz yüzde değeri veya uyumsuz deployment durumu
+        401: Kimlik doğrulama gerekli
+        404: Deployment bulunamadı
+    """
     if not 1 <= initial_percentage <= 50:
         raise HTTPException(status_code=400, detail="Canary percentage must be between 1 and 50")
 
@@ -52,6 +63,16 @@ async def promote_canary(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Canary deployment'ı tam sürüme yükseltir.
+
+    Canary aşamasındaki deployment'ı %100 trafiğe açarak 'published'
+    durumuna geçirir. Sadece 'canary' durumundaki deployment'lar promote edilebilir.
+
+    Raises:
+        400: Deployment canary durumunda değil
+        401: Kimlik doğrulama gerekli
+        404: Deployment bulunamadı
+    """
     result = await db.execute(
         select(Deployment).join(Build).join(Project).where(
             and_(Deployment.id == deployment_id, Project.owner_id == current_user["id"])
@@ -82,6 +103,16 @@ async def rollback_deployment(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Deployment'ı geri alır ve önceki sürümü geri yükler.
+
+    Canary, published veya pending durumundaki deployment'lar geri alınabilir.
+    Sebep (reason) parametresi log'a kaydedilir. Durum 'rolled_back' olarak güncellenir.
+
+    Raises:
+        400: Geri alınamaz durumdaki deployment
+        401: Kimlik doğrulama gerekli
+        404: Deployment bulunamadı
+    """
     result = await db.execute(
         select(Deployment).join(Build).join(Project).where(
             and_(Deployment.id == deployment_id, Project.owner_id == current_user["id"])
@@ -112,6 +143,16 @@ async def canary_metrics(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Canary deployment'ın sağlık metriklerini döndürür.
+
+    Hata oranı, çökme olmayan oturum yüzdesi ve promote önerisi dahil
+    deployment sağlık bilgilerini sunar. Canary durumundaki deployment'lar
+    için promote güvenliği değerlendirilir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Deployment bulunamadı
+    """
     result = await db.execute(
         select(Deployment).join(Build).join(Project).where(
             and_(Deployment.id == deployment_id, Project.owner_id == current_user["id"])

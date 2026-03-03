@@ -65,6 +65,14 @@ async def list_roles(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Sistemdeki tüm rolleri ve izinlerini listeler.
+
+    Her rol için ad, açıklama, sistem rolü olup olmadığı ve
+    ilişkili izinlerin (resource:action) listesini döndürür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     result = await db.execute(
         select(Role).options(selectinload(Role.permissions))
     )
@@ -92,6 +100,16 @@ async def assign_role(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kullanıcıya belirtilen projede rol atar.
+
+    Hedef kullanıcıya proje bazında rol atar veya mevcut rolünü günceller.
+    İşlem için 'member:invite' izni gereklidir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        403: Yetki yetersiz (member:invite izni gerekli)
+        404: Rol, kullanıcı veya proje bulunamadı
+    """
     await require_permission(db, user.id, req.project_id, "member", "invite")
 
     role_result = await db.execute(
@@ -150,6 +168,16 @@ async def revoke_role(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kullanıcının proje bazlı rol atamasını geri alır.
+
+    Belirtilen kullanıcının projeden rol ilişkisini siler.
+    İşlem için 'member:remove' izni gereklidir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        403: Yetki yetersiz (member:remove izni gerekli)
+        404: Rol ataması bulunamadı
+    """
     await require_permission(db, user.id, project_id, "member", "remove")
 
     result = await db.execute(
@@ -173,6 +201,15 @@ async def list_project_members(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Projedeki tüm üyeleri ve rollerini listeler.
+
+    Proje sahibi dahil olmak üzere tüm üyelerin bilgilerini döndürür.
+    İşlem için 'member:read' izni gereklidir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        403: Yetki yetersiz (member:read izni gerekli)
+    """
     await require_permission(db, user.id, project_id, "member", "read")
 
     result = await db.execute(
@@ -215,6 +252,14 @@ async def check_user_permission(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kullanıcının belirli bir kaynak üzerinde izni olup olmadığını kontrol eder.
+
+    Belirtilen proje, kaynak ve aksiyon kombinasyonu için
+    mevcut kullanıcının yetkisini doğrular.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     has_perm = await check_permission(db, user.id, req.project_id, req.resource, req.action)
     return {
         "user_id": user.id,
@@ -231,6 +276,15 @@ async def get_my_permissions(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Mevcut kullanıcının projedeki rolünü ve tüm izinlerini getirir.
+
+    Proje sahibi ise owner rolü ve tüm izinler döner. Diğer kullanıcılar
+    için atanmış rol ve o role ait izin listesi döndürülür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı
+    """
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")

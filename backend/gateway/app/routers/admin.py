@@ -31,6 +31,15 @@ async def list_tenants(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Tüm tenant (kullanıcı) listesini sayfalı olarak getirir.
+
+    E-posta ile arama destekler. Her tenant için proje sayısı
+    ve plan bilgisi dahil özet bilgileri döndürür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        403: Admin yetkisi gerekli
+    """
     await _require_admin(current_user)
 
     base_q = select(User)
@@ -70,6 +79,16 @@ async def tenant_debug_view(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Tenant için detaylı debug görünümü sağlar.
+
+    Projeler, son build'ler, deployment'lar, denetim kayıtları,
+    kota bilgileri ve aylık kullanım istatistiklerini içerir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        403: Admin yetkisi gerekli
+        404: Tenant bulunamadı
+    """
     await _require_admin(current_user)
 
     user_result = await db.execute(select(User).where(User.id == user_id))
@@ -163,6 +182,17 @@ async def admin_retry_build(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Başarısız build'i admin olarak yeniden kuyruğa alır.
+
+    Yalnızca failed, cancelled veya timeout durumundaki build'ler
+    için yeni bir build oluşturarak kuyruğa ekler.
+
+    Raises:
+        400: Build durumu yeniden denemeye uygun değil
+        401: Kimlik doğrulama gerekli
+        403: Admin yetkisi gerekli
+        404: Build bulunamadı
+    """
     await _require_admin(current_user)
 
     result = await db.execute(select(Build).where(Build.id == build_id))
@@ -195,6 +225,16 @@ async def admin_change_plan(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Tenant'ın abonelik planını admin olarak değiştirir.
+
+    Kullanıcının kotasını seçilen plana göre günceller.
+    Mevcut kota yoksa yeni kota kaydı oluşturur.
+
+    Raises:
+        400: Geçersiz plan adı
+        401: Kimlik doğrulama gerekli
+        403: Admin yetkisi gerekli
+    """
     await _require_admin(current_user)
 
     if plan not in PLAN_DEFAULTS:
@@ -225,6 +265,15 @@ async def admin_suspend_tenant(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Tenant hesabını askıya alır.
+
+    Kullanıcının çalışan ve kuyruktaki tüm build'lerini iptal eder.
+    Askıya alma nedeni kayıt altına alınır.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        403: Admin yetkisi gerekli
+    """
     await _require_admin(current_user)
 
     await db.execute(
@@ -246,6 +295,15 @@ async def admin_overview(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Platform genelinde admin özet panelini döndürür.
+
+    Toplam kullanıcı, proje, günlük/aylık build ve deployment
+    sayıları ile aktif ve başarısız build istatistiklerini içerir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        403: Admin yetkisi gerekli
+    """
     await _require_admin(current_user)
 
     now = datetime.utcnow()
@@ -298,6 +356,15 @@ async def export_audit_logs(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Denetim günlüklerini dışa aktarır.
+
+    Kullanıcı ve aksiyon bazında filtreleme ile belirtilen gün aralığındaki
+    en fazla 1000 denetim kaydını döndürür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        403: Admin yetkisi gerekli
+    """
     await _require_admin(current_user)
 
     since = datetime.utcnow() - timedelta(days=days)

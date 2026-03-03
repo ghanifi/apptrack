@@ -1,0 +1,99 @@
+# E5 - PodDisruptionBudgets for all AppTrack services
+# Ensures at least 1 pod remains available during voluntary disruptions
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway-pdb
+  labels:
+    app: apptrack
+    component: gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: apptrack
+      component: gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: build-service-pdb
+  labels:
+    app: apptrack
+    component: build-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: apptrack
+      component: build-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: store-deploy-pdb
+  labels:
+    app: apptrack
+    component: store-deploy
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: apptrack
+      component: store-deploy
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: artifact-service-pdb
+  labels:
+    app: apptrack
+    component: artifact
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: apptrack
+      component: artifact
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: preview-service-pdb
+  labels:
+    app: apptrack
+    component: preview
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: apptrack
+      component: preview
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: repo-sync-pdb
+  labels:
+    app: apptrack
+    component: repo-sync
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: apptrack
+      component: repo-sync
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb
+  labels:
+    app: apptrack
+    component: frontend
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: apptrack
+      component: frontend

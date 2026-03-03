@@ -16,8 +16,12 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import String, Text, BigInteger, DateTime, select, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 
+import time as _time
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+_START_TIME = _time.time()
 
 
 class Settings(BaseSettings):
@@ -116,7 +120,12 @@ app = FastAPI(title="Artifact Storage Service", version="0.3.0", lifespan=lifesp
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "artifact", "version": "0.3.0"}
+    return {
+        "status": "healthy",
+        "service": "artifact",
+        "version": "0.9.0",
+        "uptime_seconds": int(_time.time() - _START_TIME),
+    }
 
 
 @app.post("/upload")

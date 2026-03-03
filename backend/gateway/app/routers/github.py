@@ -17,6 +17,16 @@ async def list_github_repos(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kullanıcının GitHub repo'larını listeler.
+
+    Bağlı GitHub hesabı üzerinden kullanıcının erişebildiği tüm repo'ları
+    sayfalanmış olarak döndürür. Güncelleme tarihine göre sıralanır.
+
+    Raises:
+        400: GitHub hesabı bağlı değil
+        401: Kimlik doğrulama gerekli
+        502: GitHub API'den yanıt alınamadı
+    """
     result = await db.execute(select(User).where(User.id == current_user["id"]))
     user = result.scalar_one_or_none()
     if not user or not user.github_access_token:
@@ -61,6 +71,16 @@ async def list_repo_branches(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Belirtilen GitHub repo'sunun branch'lerini listeler.
+
+    Owner ve repo adı ile GitHub API'den branch listesini çeker.
+    Her branch için isim, koruma durumu ve son commit SHA'sı döndürülür.
+
+    Raises:
+        400: GitHub hesabı bağlı değil
+        401: Kimlik doğrulama gerekli
+        502: GitHub API'den yanıt alınamadı
+    """
     result = await db.execute(select(User).where(User.id == current_user["id"]))
     user = result.scalar_one_or_none()
     if not user or not user.github_access_token:
@@ -100,6 +120,16 @@ async def list_repo_contents(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Belirtilen repo yolundaki dosya ve klasörleri listeler.
+
+    GitHub Contents API üzerinden repo içeriğini getirir.
+    İsteğe bağlı path ve ref (branch/tag) parametreleri desteklenir.
+
+    Raises:
+        400: GitHub hesabı bağlı değil
+        401: Kimlik doğrulama gerekli
+        502: GitHub API'den yanıt alınamadı
+    """
     result = await db.execute(select(User).where(User.id == current_user["id"]))
     user = result.scalar_one_or_none()
     if not user or not user.github_access_token:
@@ -128,6 +158,15 @@ async def disconnect_github(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """GitHub hesap bağlantısını keser.
+
+    Kullanıcının GitHub access token ve GitHub ID bilgilerini sıfırlar.
+    Bu işlemden sonra GitHub ile ilgili özellikler kullanılamaz hale gelir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Kullanıcı bulunamadı
+    """
     result = await db.execute(select(User).where(User.id == current_user["id"]))
     user = result.scalar_one_or_none()
     if not user:
@@ -141,6 +180,14 @@ async def disconnect_github(
 
 @router.get("/profile")
 async def github_profile(current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Kullanıcının profil bilgilerini ve GitHub bağlantı durumunu döndürür.
+
+    Kullanıcı adı, e-posta, avatar URL ve GitHub hesabının bağlı olup
+    olmadığı bilgisini içerir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     result = await db.execute(select(User).where(User.id == current_user["id"]))
     user = result.scalar_one_or_none()
     return {

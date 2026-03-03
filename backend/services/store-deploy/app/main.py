@@ -14,8 +14,12 @@ from pydantic_settings import BaseSettings
 import aio_pika
 import httpx
 
+import time as _time
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+_START_TIME = _time.time()
 
 
 class Settings(BaseSettings):
@@ -27,6 +31,10 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+class ConfigurationError(Exception):
+    """Credential veya konfigürasyon eksikliği — deploy başlatılamaz."""
 
 
 async def publish_event(channel: aio_pika.abc.AbstractChannel, routing_key: str, payload: dict) -> None:
@@ -80,16 +88,16 @@ async def _deploy_google_play(deployment_id: str, payload: dict, channel: aio_pi
     package_name = payload.get("package_name", "")
     track = payload.get("track", "internal")
 
-    if not key_json or not artifact_url:
-        logger.warning("Google Play: missing credentials or artifact — simulating deploy %s", deployment_id)
-        await publish_event(channel, "deploy.completed", {
-            "deployment_id": deployment_id,
-            "build_id": payload.get("build_id"),
-            "target": "google_play",
-            "status": "published",
-            "note": "Simulated — Google Play credentials not configured",
-        })
-        return
+    if not key_json:
+        raise ConfigurationError(
+            "Google Play service account key eksik. "
+            "Settings > Credentials bölümünden Google Play JSON Key ekleyin."
+        )
+    if not artifact_url:
+        raise ConfigurationError(
+            "Artifact URL bulunamadı. "
+            "Deploy tetiklemeden önce başarılı bir Android build tamamlanmalıdır."
+        )
 
     try:
         from google.oauth2 import service_account
@@ -254,16 +262,21 @@ async def _deploy_app_store(deployment_id: str, payload: dict, channel: aio_pika
     eas_token = payload.get("eas_token")
     expo_app_id = payload.get("expo_app_id")
 
-    if not all([key_id, issuer_id, private_key]):
-        logger.warning("App Store: missing credentials — deploy %s cannot proceed", deployment_id)
-        await publish_event(channel, "deploy.failed", {
-            "deployment_id": deployment_id,
-            "build_id": payload.get("build_id"),
-            "target": "app_store",
-            "error": "App Store Connect credentials (key_id, issuer_id, private_key) are required.",
-            "hint": "Configure app_store credentials in the credentials manager.",
-        })
-        return
+    if not key_id:
+        raise ConfigurationError(
+            "App Store Connect Key ID eksik. "
+            "Settings > Credentials bölümünden App Store Connect Key ID ekleyin."
+        )
+    if not issuer_id:
+        raise ConfigurationError(
+            "App Store Connect Issuer ID eksik. "
+            "Settings > Credentials bölümünden App Store Connect Issuer ID ekleyin."
+        )
+    if not private_key:
+        raise ConfigurationError(
+            "App Store Connect Private Key (.p8) eksik. "
+            "Settings > Credentials bölümünden App Store Connect Private Key ekleyin."
+        )
 
     cred_ok, cred_msg = await _verify_app_store_credentials(key_id, issuer_id, private_key)
     if not cred_ok:
@@ -277,15 +290,10 @@ async def _deploy_app_store(deployment_id: str, payload: dict, channel: aio_pika
         return
 
     if not artifact_url:
-        logger.warning("No artifact URL for App Store deploy %s — credentials valid but nothing to upload", deployment_id)
-        await publish_event(channel, "deploy.completed", {
-            "deployment_id": deployment_id,
-            "build_id": payload.get("build_id"),
-            "target": "app_store",
-            "status": "credentials_verified",
-            "note": "Credentials are valid. Trigger a build first to get an artifact URL.",
-        })
-        return
+        raise ConfigurationError(
+            "Artifact URL bulunamadı. "
+            "iOS build tamamlanmalı — deploy tetiklemeden önce başarılı bir iOS build gereklidir."
+        )
 
     upload_ok = False
     upload_note = ""
@@ -355,6 +363,14 @@ async def handle_deploy_triggered(message: aio_pika.abc.AbstractIncomingMessage,
             else:
                 raise ValueError(f"Unknown deploy target: {target}")
 
+        except ConfigurationError as exc:
+            logger.error("Deploy %s configuration error: %s", deployment_id, exc)
+            await publish_event(channel, "deploy.failed", {
+                "deployment_id": deployment_id,
+                "error": str(exc),
+                "error_type": "configuration_error",
+                "fix_url": "/settings/credentials"
+            })
         except Exception as exc:
             logger.error("Deploy handler error: %s", exc)
             p = json.loads(message.body) if message.body else {}
@@ -394,4 +410,9 @@ class DeployRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "store-deploy", "version": "0.3.0"}
+    return {
+        "status": "healthy",
+        "service": "store-deploy",
+        "version": "0.9.0",
+        "uptime_seconds": int(_time.time() - _START_TIME),
+    }

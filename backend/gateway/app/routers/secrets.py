@@ -45,6 +45,14 @@ async def credential_health_check(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kimlik bilgilerinin sağlık durumunu kontrol eder.
+
+    Kullanıcıya ait tüm credential'ların süre dolumu, rotasyon durumu
+    ve genel sağlık bilgilerini içeren detaylı rapor döndürür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     result = await db.execute(
         select(Credential).where(Credential.owner_id == user.id)
     )
@@ -102,6 +110,16 @@ async def rotate_credential(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Belirtilen credential'ı yeni versiyona rotate eder.
+
+    Credential'ın şifreli değerini yeniden şifreler, versiyon numarasını artırır
+    ve rotasyon geçmişine kayıt ekler.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Credential bulunamadı
+        500: Yeniden şifreleme başarısız
+    """
     result = await db.execute(
         select(Credential).where(
             and_(Credential.id == credential_id, Credential.owner_id == user.id)
@@ -152,6 +170,14 @@ async def rotate_all_credentials(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kullanıcıya ait tüm credential'ları toplu olarak rotate eder.
+
+    Her credential için yeni versiyon oluşturur ve şifreli değeri yeniler.
+    Başarısız olan credential'lar atlanır, başarılı olanlar raporlanır.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     result = await db.execute(
         select(Credential).where(Credential.owner_id == user.id)
     )
@@ -197,6 +223,15 @@ async def set_rotation_policy(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Credential için rotasyon politikasını ayarlar.
+
+    Rotasyon aralığını ve otomatik rotasyon tercihini günceller.
+    Süre dolumu tarihi yoksa rotasyon aralığının iki katı olarak oluşturulur.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Credential bulunamadı
+    """
     result = await db.execute(
         select(Credential).where(
             and_(Credential.id == credential_id, Credential.owner_id == user.id)
@@ -225,6 +260,15 @@ async def get_rotation_history(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Credential'ın rotasyon geçmişini getirir.
+
+    Belirtilen credential için en son 50 rotasyon kaydını
+    tarih sırasına göre (en yeniden en eskiye) döndürür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Credential bulunamadı
+    """
     cred_result = await db.execute(
         select(Credential).where(
             and_(Credential.id == credential_id, Credential.owner_id == user.id)
@@ -263,6 +307,14 @@ async def get_expiring_credentials(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Süresi dolmak üzere olan credential'ları listeler.
+
+    Belirtilen gün sayısı içinde süresi dolacak credential'ları
+    süre dolum tarihine göre sıralayarak döndürür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     threshold = datetime.utcnow() + timedelta(days=days)
     result = await db.execute(
         select(Credential).where(

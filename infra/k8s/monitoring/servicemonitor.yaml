@@ -1,0 +1,111 @@
+# E1 - Prometheus ServiceMonitor for AppTrack services
+# Requires: prometheus-operator CRD (ServiceMonitor)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: apptrack-gateway
+  labels:
+    app: apptrack
+    component: gateway
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: apptrack
+      component: gateway
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - apptrack
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: apptrack-build-service
+  labels:
+    app: apptrack
+    component: build-service
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: apptrack
+      component: build-service
+  endpoints:
+    - port: "8006"
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - apptrack
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: apptrack-store-deploy
+  labels:
+    app: apptrack
+    component: store-deploy
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: apptrack
+      component: store-deploy
+  endpoints:
+    - port: "8008"
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - apptrack
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: apptrack-preview
+  labels:
+    app: apptrack
+    component: preview
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: apptrack
+      component: preview
+  endpoints:
+    - port: "8005"
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - apptrack
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: apptrack-repo-sync
+  labels:
+    app: apptrack
+    component: repo-sync
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: apptrack
+      component: repo-sync
+  endpoints:
+    - port: "8003"
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - apptrack

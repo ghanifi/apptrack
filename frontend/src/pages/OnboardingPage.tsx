@@ -113,6 +113,7 @@ export default function OnboardingPage() {
   const [buildTriggered, setBuildTriggered] = useState(false)
   const [buildPlatform, setBuildPlatform] = useState<'android' | 'ios' | 'both'>('android')
   const [deployStarted, setDeployStarted] = useState(false)
+  const [deployTrack, setDeployTrack] = useState<'internal' | 'beta' | 'production'>('internal')
 
   const { data: profile } = useQuery({
     queryKey: ['github-profile'],
@@ -174,7 +175,7 @@ export default function OnboardingPage() {
 
   const triggerDeploy = useMutation({
     mutationFn: (buildId: string) =>
-      api.post(`/deployments/${buildId}/deploy`, { target: googlePlayConnected ? 'google_play' : 'app_store', track: 'internal' }),
+      api.post(`/deployments/${buildId}/deploy`, { target: googlePlayConnected ? 'google_play' : 'app_store', track: deployTrack }),
     onSuccess: () => {
       setDeployStarted(true)
     },
@@ -291,6 +292,7 @@ export default function OnboardingPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search repos..."
+                  aria-label="Search repositories"
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:border-primary-500"
                 />
               </div>
@@ -303,6 +305,8 @@ export default function OnboardingPage() {
                   <button
                     key={repo.id}
                     onClick={() => setSelectedRepo(repo)}
+                    aria-label={`Select repository ${repo.full_name}`}
+                    aria-pressed={selectedRepo?.id === repo.id}
                     className={clsx(
                       'w-full text-left px-5 py-3 hover:bg-gray-800 transition-colors',
                       selectedRepo?.id === repo.id && 'bg-primary-600/10 border-l-2 border-primary-500'
@@ -660,6 +664,21 @@ export default function OnboardingPage() {
                       : 'Add store credentials first to deploy, or go to your project.'}
                   </p>
                   <div className="space-y-3">
+                    {anyStoreConnected && (
+                      <div className="mt-4">
+                        <label className="block text-sm text-gray-400 mb-1">Deploy Track</label>
+                        <select
+                          value={deployTrack}
+                          onChange={e => setDeployTrack(e.target.value as 'internal' | 'beta' | 'production')}
+                          aria-label="Deploy track"
+                          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+                        >
+                          <option value="internal">Internal Testing</option>
+                          <option value="beta">Beta / TestFlight</option>
+                          <option value="production">⚠️ Production (Canlı)</option>
+                        </select>
+                      </div>
+                    )}
                     {anyStoreConnected && latestBuild && (
                       <button
                         onClick={() => triggerDeploy.mutate(latestBuild.id)}

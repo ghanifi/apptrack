@@ -99,6 +99,15 @@ async def validate_google_play_credentials(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Google Play service account kimlik bilgilerini doğrular.
+
+    Kaydedilmiş service account JSON anahtarını kullanarak Google OAuth2
+    token endpoint'ine bağlanır ve kimlik doğrulamasını test eder.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Google Play service account anahtarı bulunamadı
+    """
     key_json = await get_user_credential(db, current_user["id"], "google_play", "GOOGLE_PLAY_KEY_JSON")
     if not key_json:
         raise HTTPException(status_code=404, detail="Google Play service account key not found. Add it in Settings first.")
@@ -111,6 +120,15 @@ async def validate_app_store_credentials(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """App Store Connect API kimlik bilgilerini doğrular.
+
+    Key ID, Issuer ID ve Private Key ile JWT token oluşturarak
+    App Store Connect API'ye test isteği gönderir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: App Store credential'larından biri veya birkaçı eksik
+    """
     key_id = await get_user_credential(db, current_user["id"], "app_store", "APP_STORE_KEY_ID")
     issuer_id = await get_user_credential(db, current_user["id"], "app_store", "APP_STORE_ISSUER_ID")
     private_key = await get_user_credential(db, current_user["id"], "app_store", "APP_STORE_PRIVATE_KEY")

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Header
 from pydantic import BaseModel
 from typing import Optional
@@ -9,9 +11,12 @@ from app.database import get_db
 from app.models import Deployment, Build, Project, IdempotencyRecord
 from app import events
 from app.routers.credentials import get_user_credential
+from app.routers.deploy_policies import evaluate_deploy_policies
 from app.limiter import limiter
 from app.audit import record_audit_with_db
 from app.quotas import check_deploy_quota, track_usage
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -38,6 +43,14 @@ async def list_deployments(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kullanıcının tüm deployment'larını sayfalanmış olarak listeler.
+
+    Durum bazında filtreleme destekler. Build ve proje ilişkileri üzerinden
+    sadece kullanıcının kendi deployment'ları döndürülür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     base_q = (
         select(Deployment)
         .join(Build, Deployment.build_id == Build.id)
@@ -68,6 +81,15 @@ async def list_project_deployments(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Belirli bir projeye ait deployment'ları listeler.
+
+    Proje sahipliği doğrulandıktan sonra ilişkili build'ler üzerinden
+    tüm deployment kayıtlarını tarih sırasıyla döndürür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yetkisi yok
+    """
     proj = await db.execute(select(Project).where(Project.id == project_id))
     project = proj.scalar_one_or_none()
     if not project or project.owner_id != current_user["id"]:
@@ -98,6 +120,20 @@ async def deploy(
     db: AsyncSession = Depends(get_db),
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
 ):
+    """Başarılı bir build'i hedef mağazaya deploy eder.
+
+    Idempotency key, artifact yaşı, deploy kotası ve deploy policy kontrolü yapılır.
+    Google Play veya App Store hedefine göre gerekli credential'lar eklenir.
+    Artifact checksum doğrulaması desteklenir.
+
+    Raises:
+        400: Build hazır değil veya artifact süresi dolmuş
+        401: Kimlik doğrulama gerekli
+        403: Erişim engellendi veya deploy policy ihlali
+        404: Build bulunamadı
+        409: Mükerrer deploy isteği (idempotency)
+        429: Rate limit aşıldı
+    """
     if x_idempotency_key:
         existing = await db.execute(
             select(IdempotencyRecord).where(
@@ -134,6 +170,24 @@ async def deploy(
             )
 
     await check_deploy_quota(db, current_user["id"])
+
+    # Deploy policy enforcement
+    policy_result = await evaluate_deploy_policies(db, project.id, build)
+    if not policy_result["allowed"]:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "Deploy policy ihlali — deploy engellenedi",
+                "violations": policy_result["violations"],
+                "warnings": policy_result.get("warnings", []),
+                "policies_evaluated": policy_result.get("policies_evaluated", 0),
+            }
+        )
+    if policy_result.get("warnings"):
+        logger.warning(
+            "Deploy policy warnings for project %s: %s",
+            project.id, policy_result["warnings"]
+        )
 
     dep = Deployment(build_id=build_id, target=req.target, track=req.track)
     db.add(dep)

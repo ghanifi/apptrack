@@ -48,6 +48,16 @@ async def create_policy(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Projeye yeni deploy politikası oluşturur.
+
+    Branch kısıtlama, onay gerekliliği, zaman penceresi gibi
+    politika türlerinden birini projeye ekler.
+
+    Raises:
+        400: Geçersiz politika türü
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı
+    """
     project = await db.get(Project, project_id)
     if not project or project.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -82,6 +92,14 @@ async def list_policies(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Projeye ait tüm deploy politikalarını listeler.
+
+    Politikalar oluşturulma tarihine göre en yeniden en eskiye
+    sıralanarak döndürülür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     result = await db.execute(
         select(DeployPolicy).where(DeployPolicy.project_id == project_id)
         .order_by(DeployPolicy.created_at.desc())
@@ -112,6 +130,15 @@ async def update_policy(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Mevcut deploy politikasının ayarlarını günceller.
+
+    Politika adı, kuralları ve aktif/pasif durumu
+    kısmi olarak güncellenebilir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Politika bulunamadı
+    """
     result = await db.execute(
         select(DeployPolicy).where(
             and_(DeployPolicy.id == policy_id, DeployPolicy.project_id == project_id)
@@ -145,6 +172,15 @@ async def delete_policy(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Belirtilen deploy politikasını kalıcı olarak siler.
+
+    Politika silindikten sonra bu politika deploy değerlendirmelerinde
+    artık dikkate alınmaz.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Politika bulunamadı
+    """
     result = await db.execute(
         select(DeployPolicy).where(
             and_(DeployPolicy.id == policy_id, DeployPolicy.project_id == project_id)
@@ -269,6 +305,15 @@ async def evaluate_policies(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Build için aktif deploy politikalarını değerlendirir.
+
+    Branch kısıtlaması, build durumu, artifact yaşı, imza kontrolü
+    ve zaman penceresi gibi tüm aktif politikaları kontrol eder.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Build bulunamadı
+    """
     build = await db.get(Build, build_id)
     if not build:
         raise HTTPException(status_code=404, detail="Build not found")
@@ -284,6 +329,17 @@ async def approve_deployment(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Deployment için onay veya red kararı kaydeder.
+
+    Her kullanıcı bir deployment için yalnızca bir kez oy kullanabilir.
+    Karar 'approved' veya 'rejected' olmalıdır.
+
+    Raises:
+        400: Geçersiz karar değeri
+        401: Kimlik doğrulama gerekli
+        404: Deployment bulunamadı
+        409: Kullanıcı zaten onay vermiş
+    """
     deployment = await db.get(Deployment, deployment_id)
     if not deployment:
         raise HTTPException(status_code=404, detail="Deployment not found")
@@ -326,6 +382,14 @@ async def list_approvals(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Deployment için verilen tüm onay/red kararlarını listeler.
+
+    Her onayın karar veren kullanıcı, karar türü, yorum
+    ve tarih bilgilerini döndürür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     result = await db.execute(
         select(DeployApproval).where(DeployApproval.deployment_id == deployment_id)
     )

@@ -33,6 +33,15 @@ async def trigger_backup(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Manuel yedekleme işlemi başlatır.
+
+    Belirtilen yedekleme türüne göre (db_snapshot, artifact_replication vb.)
+    yedekleme oluşturur, checksum hesaplar ve sonucu kaydeder.
+
+    Raises:
+        400: Geçersiz yedekleme türü
+        401: Kimlik doğrulama gerekli
+    """
     if req.backup_type not in BACKUP_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid backup type. Must be one of: {BACKUP_TYPES}")
 
@@ -91,6 +100,14 @@ async def list_backups(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Yedekleme kayıtlarını sayfalı olarak listeler.
+
+    Yedekleme türüne göre filtreleme destekler. Kayıtlar oluşturulma
+    tarihine göre en yeniden en eskiye sıralanır.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     query = select(BackupJob)
     if backup_type:
         query = query.where(BackupJob.backup_type == backup_type)
@@ -132,6 +149,15 @@ async def get_backup(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Belirtilen yedeklemenin detay bilgilerini getirir.
+
+    Yedekleme durumu, boyutu, checksum değeri, depolama yolu
+    ve hata mesajı dahil tüm bilgileri döndürür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Yedekleme bulunamadı
+    """
     backup = await db.get(BackupJob, backup_id)
     if not backup:
         raise HTTPException(status_code=404, detail="Backup not found")
@@ -157,6 +183,16 @@ async def verify_restore(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Yedeklemenin geri yüklemeye hazır olup olmadığını doğrular.
+
+    Depolama yolu, checksum, boyut ve metadata geçerliliğini kontrol eder.
+    İsteğe bağlı olarak checksum yeniden hesaplanarak eşleşme doğrulanır.
+
+    Raises:
+        400: Yedekleme durumu uygun değil (tamamlanmamış)
+        401: Kimlik doğrulama gerekli
+        404: Yedekleme bulunamadı
+    """
     backup = await db.get(BackupJob, req.backup_id)
     if not backup:
         raise HTTPException(status_code=404, detail="Backup not found")
@@ -206,6 +242,14 @@ async def backup_stats(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Yedekleme istatistiklerinin özetini döndürür.
+
+    Toplam yedekleme sayısı, başarılı/başarısız sayıları, toplam boyut
+    ve son başarılı yedekleme bilgisini içerir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     total_result = await db.execute(select(func.count(BackupJob.id)))
     total = total_result.scalar() or 0
 

@@ -49,10 +49,12 @@ async def append_immutable_entry(
     details: dict | None = None,
     ip_address: str | None = None,
 ) -> ImmutableAuditEntry:
+    await db.execute(text("SELECT pg_advisory_xact_lock(20240101)"))
     last_result = await db.execute(
         select(ImmutableAuditEntry)
         .order_by(ImmutableAuditEntry.sequence_number.desc())
         .limit(1)
+        .with_for_update()
     )
     last_entry = last_result.scalar_one_or_none()
 
@@ -97,6 +99,14 @@ async def list_audit_entries(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Değiştirilemez denetim günlüğü kayıtlarını sayfalı olarak listeler.
+
+    Aksiyon ve kaynak türüne göre filtreleme destekler.
+    Kayıtlar sıra numarasına göre en yeniden en eskiye sıralanır.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     query = select(ImmutableAuditEntry)
     if action:
         query = query.where(ImmutableAuditEntry.action == action)
@@ -144,6 +154,14 @@ async def verify_chain_integrity(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Denetim günlüğü hash zincirinin bütünlüğünü doğrular.
+
+    Her kaydın hash değerini yeniden hesaplayarak ve önceki hash bağlantısını
+    kontrol ederek zincirin manipüle edilip edilmediğini tespit eder.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     result = await db.execute(
         select(ImmutableAuditEntry)
         .order_by(ImmutableAuditEntry.sequence_number.asc())
@@ -200,6 +218,15 @@ async def get_audit_entry(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Belirtilen sıra numarasına sahip denetim kaydını getirir.
+
+    Kayıt detaylarını, hash değerlerini ve IP adresi bilgisini
+    içeren tam denetim günlüğü girişini döndürür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Denetim kaydı bulunamadı
+    """
     result = await db.execute(
         select(ImmutableAuditEntry).where(
             ImmutableAuditEntry.sequence_number == sequence_number

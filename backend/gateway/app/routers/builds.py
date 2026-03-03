@@ -1,7 +1,8 @@
 import uuid
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional
+from pydantic import BaseModel
+from typing import List, Optional
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
@@ -11,8 +12,66 @@ from app.models import Build, Project, Credential
 from app.crypto import decrypt
 from app.config import settings as app_settings
 from app.cost_guard import estimate_build_cost, get_monthly_spend
+from app.routers.rbac import require_permission
 
 router = APIRouter()
+
+
+class BuildDetailResponse(BaseModel):
+    id: str
+    project_id: str
+    platform: str
+    provider: str
+    status: str
+    artifact_url: str | None = None
+    external_build_id: str | None = None
+    idempotency_key: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class PaginatedBuildResponse(BaseModel):
+    items: List[BuildDetailResponse]
+    total: int
+    page: int
+    size: int
+    pages: int
+
+
+class CancelBuildResponse(BuildDetailResponse):
+    provider_cancelled: bool = False
+
+
+class CostEstimateResponse(BaseModel):
+    provider: str | None = None
+    platform: str | None = None
+    estimated_cost_usd: float | None = None
+    current_monthly_spend_usd: float | None = None
+
+
+class BuildResponse(BaseModel):
+    id: str
+    project_id: str
+    platform: str
+    provider: str
+    status: str
+    artifact_url: Optional[str] = None
+    error_message: Optional[str] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class BuildListResponse(BaseModel):
+    items: List[BuildResponse]
+    total: int
+
 
 BUILD_SERVICE_URL = "http://build-service:8006"
 
@@ -52,7 +111,7 @@ async def _get_credential(db: AsyncSession, owner_id: str, provider: str, key_na
         return None
 
 
-@router.get("")
+@router.get("", response_model=PaginatedBuildResponse)
 async def list_builds(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
@@ -61,6 +120,15 @@ async def list_builds(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kullanıcının build'lerini sayfalanmış olarak listeler.
+
+    Durum ve proje bazında filtreleme destekler. Sonuçlar oluşturulma
+    tarihine göre azalan sırada döndürülür. Sadece kullanıcının kendi
+    projelerine ait build'ler gösterilir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     base_q = (
         select(Build)
         .join(Project, Build.project_id == Project.id)
@@ -88,8 +156,17 @@ async def list_builds(
     }
 
 
-@router.get("/{build_id}")
+@router.get("/{build_id}", response_model=BuildDetailResponse)
 async def get_build(build_id: str, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Belirtilen build'in detaylarını getirir.
+
+    Build ID ile tekil build kaydını döndürür. Proje sahipliği
+    kontrolü yapılır, sadece kendi projelerinin build'lerine erişilebilir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+        404: Build bulunamadı veya erişim yetkisi yok
+    """
     result = await db.execute(select(Build).where(Build.id == build_id))
     build = result.scalar_one_or_none()
     if not build:
@@ -101,8 +178,19 @@ async def get_build(build_id: str, current_user: dict = Depends(get_current_user
     return _serialize_build(build)
 
 
-@router.post("/{build_id}/cancel")
+@router.post("/{build_id}/cancel", response_model=CancelBuildResponse)
 async def cancel_build(build_id: str, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Devam eden bir build'i iptal eder.
+
+    Build sağlayıcıya (EAS, Codemagic, GitHub Actions) iptal isteği gönderir.
+    Sağlayıcı tarafında iptal başarısız olsa bile yerel durum 'cancelled' olarak güncellenir.
+    Terminal durumundaki build'ler iptal edilemez.
+
+    Raises:
+        400: Build zaten terminal durumda (success/failed/cancelled)
+        401: Kimlik doğrulama gerekli
+        404: Build bulunamadı veya erişim yetkisi yok
+    """
     result = await db.execute(select(Build).where(Build.id == build_id))
     build = result.scalar_one_or_none()
     if not build:
@@ -153,8 +241,20 @@ async def cancel_build(build_id: str, current_user: dict = Depends(get_current_u
     return data
 
 
-@router.post("/{build_id}/retry")
+@router.post("/{build_id}/retry", response_model=BuildDetailResponse)
 async def retry_build(build_id: str, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Başarısız veya iptal edilmiş bir build'i yeniden başlatır.
+
+    Orijinal build'in platform ve provider ayarlarıyla yeni bir build oluşturur.
+    RBAC izin kontrolü yapılır. Sadece failed veya cancelled durumundaki
+    build'ler yeniden denenebilir.
+
+    Raises:
+        400: Build yeniden denenebilir durumda değil
+        401: Kimlik doğrulama gerekli
+        403: Build oluşturma yetkisi yok
+        404: Build bulunamadı veya erişim yetkisi yok
+    """
     result = await db.execute(select(Build).where(Build.id == build_id))
     build = result.scalar_one_or_none()
     if not build:
@@ -163,6 +263,8 @@ async def retry_build(build_id: str, current_user: dict = Depends(get_current_us
     project = proj.scalar_one_or_none()
     if not project or project.owner_id != current_user["id"]:
         raise HTTPException(status_code=404, detail="Build not found")
+
+    await require_permission(db, current_user["id"], build.project_id, "builds", "create")
 
     if build.status not in ("failed", "cancelled"):
         raise HTTPException(status_code=400, detail=f"Can only retry failed or cancelled builds, current: {build.status}")
@@ -181,13 +283,21 @@ async def retry_build(build_id: str, current_user: dict = Depends(get_current_us
     return _serialize_build(new_build)
 
 
-@router.get("/cost/estimate")
+@router.get("/cost/estimate", response_model=CostEstimateResponse)
 async def cost_estimate(
     provider: str = Query("eas"),
     platform: str = Query("android"),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Build maliyet tahmini hesaplar.
+
+    Belirtilen sağlayıcı ve platform için tahmini build maliyetini döndürür.
+    Kullanıcının aylık toplam harcaması da yanıta eklenir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     estimate = await estimate_build_cost(provider, platform)
     monthly_spend = await get_monthly_spend(db, current_user["id"])
     estimate["current_monthly_spend_usd"] = round(monthly_spend, 2)

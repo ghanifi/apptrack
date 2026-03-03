@@ -27,6 +27,14 @@ STRIPE_WEBHOOK_SECRET = getattr(settings, "STRIPE_WEBHOOK_SECRET", "")
 
 @router.post("/webhook/stripe")
 async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """Stripe webhook olaylarını işler.
+
+    Checkout tamamlama, abonelik güncelleme/silme ve ödeme başarısızlığı
+    olaylarını imza doğrulaması ile alıp ilgili handler'a yönlendirir.
+
+    Raises:
+        400: Geçersiz imza veya JSON formatı
+    """
     body = await request.body()
     sig = request.headers.get("stripe-signature", "")
 
@@ -61,6 +69,11 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
 @router.get("/plans")
 async def list_plans():
+    """Mevcut abonelik planlarını ve özelliklerini listeler.
+
+    Her plan için fiyat, kota limitleri ve dahil olan
+    özelliklerin detaylarını döndürür.
+    """
     plans = []
     for plan_name, defaults in PLAN_DEFAULTS.items():
         plans.append({
@@ -76,6 +89,14 @@ async def current_plan(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Mevcut kullanıcının aktif planını ve kota bilgilerini getirir.
+
+    Plan adı, fiyatı ve proje, build, deploy, depolama gibi
+    tüm kota limitlerini döndürür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     quota = await get_or_create_quota(db, current_user["id"])
     return {
         "plan": quota.plan,
@@ -97,6 +118,15 @@ async def upgrade_plan(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Plan yükseltme işlemini başlatır.
+
+    Mevcut plandan daha üst bir plana geçiş için Stripe checkout
+    yönlendirmesi oluşturur. Alt plana geçiş kabul edilmez.
+
+    Raises:
+        400: Geçersiz plan veya alt plana yükseltme denemesi
+        401: Kimlik doğrulama gerekli
+    """
     if plan not in PLAN_DEFAULTS:
         raise HTTPException(status_code=400, detail=f"Invalid plan. Options: {list(PLAN_DEFAULTS.keys())}")
 
@@ -121,6 +151,15 @@ async def downgrade_plan(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Planı daha alt seviyeye düşürür.
+
+    Mevcut plandan daha düşük bir plana geçiş yapar ve kotaları
+    hemen günceller. Üst plana geçiş kabul edilmez.
+
+    Raises:
+        400: Geçersiz plan veya üst plana düşürme denemesi
+        401: Kimlik doğrulama gerekli
+    """
     if plan not in PLAN_DEFAULTS:
         raise HTTPException(status_code=400, detail=f"Invalid plan. Options: {list(PLAN_DEFAULTS.keys())}")
 

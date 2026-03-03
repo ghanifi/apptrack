@@ -25,7 +25,8 @@ spec:
       serviceAccountName: apptrack-gateway
       containers:
         - name: gateway
-          image: apptrack/gateway:latest
+          image: apptrack/gateway:v0.9.0
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
               name: http

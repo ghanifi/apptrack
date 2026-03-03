@@ -18,6 +18,14 @@ async def usage_summary(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kullanıcının aylık kullanım özetini döndürür.
+
+    Proje, build, deploy sayıları ile kota limitleri karşılaştırmalı olarak sunulur.
+    Eşzamanlı build, depolama ve build dakikası bilgileri de dahildir.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     user_id = current_user["id"]
     quota = await get_or_create_quota(db, user_id)
     month_start = _month_start()
@@ -87,6 +95,14 @@ async def usage_history(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Kullanıcının geçmiş kullanım kayıtlarını döndürür.
+
+    Metrik türü ve ay sayısına göre filtrelenebilir. Her kayıt için
+    metrik tipi, değer, dönem başlangıç/bitiş ve metadata bilgileri sunulur.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
     user_id = current_user["id"]
     base_q = select(UsageRecord).where(UsageRecord.user_id == user_id)
     if metric_type:

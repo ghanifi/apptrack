@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
-import { useAuthStore } from '@/store/authStore'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '@/lib/api'
 
 interface AuditEntry {
   id: string
@@ -13,26 +14,23 @@ interface AuditEntry {
 }
 
 export default function AuditPage() {
-  const { token } = useAuthStore()
-  const [logs, setLogs] = useState<AuditEntry[]>([])
   const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
 
-  useEffect(() => {
-    setLoading(true)
-    const params = new URLSearchParams({ page: String(page), size: '25' })
-    if (filter) params.append('action', filter)
-    fetch(`/api/audit?${params}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(data => {
-        setLogs(data.items || [])
-        setTotalPages(data.pages || 1)
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [token, page, filter])
+  const { data: auditData, isLoading, error } = useQuery({
+    queryKey: ['audit-logs', page, filter],
+    queryFn: () =>
+      api.get('/audit', {
+        params: {
+          page,
+          size: 25,
+          ...(filter ? { action: filter } : {}),
+        },
+      }).then(r => r.data),
+  })
+
+  const logs = auditData?.items ?? []
+  const totalPages = auditData?.pages ?? 1
 
   const actionColors: Record<string, string> = {
     'project.created': 'text-green-400',
@@ -41,6 +39,14 @@ export default function AuditPage() {
     'credential.upserted': 'text-yellow-400',
     'user.login': 'text-cyan-400',
     'user.github_login': 'text-cyan-400',
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-red-400">Audit logları yüklenemedi.</p>
+      </div>
+    )
   }
 
   return (
@@ -59,7 +65,7 @@ export default function AuditPage() {
         ))}
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <p className="text-zinc-400">Loading...</p>
       ) : logs.length === 0 ? (
         <p className="text-zinc-500">No audit logs found.</p>
@@ -75,7 +81,7 @@ export default function AuditPage() {
               </tr>
             </thead>
             <tbody>
-              {logs.map(log => (
+              {logs.map((log: AuditEntry) => (
                 <tr key={log.id} className="border-b border-zinc-700/50 hover:bg-zinc-700/20">
                   <td className={`p-3 font-mono ${actionColors[log.action] || 'text-zinc-300'}`}>{log.action}</td>
                   <td className="p-3 text-zinc-400">{log.resource_type}{log.resource_id ? `:${log.resource_id.slice(0, 8)}` : ''}</td>

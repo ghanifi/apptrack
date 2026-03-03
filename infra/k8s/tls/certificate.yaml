@@ -1,0 +1,17 @@
+# E2 - Wildcard Certificate for *.apptrack.io
+# Requires: cert-manager CRD + ClusterIssuer (cluster-issuer.yaml)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apptrack-wildcard-tls
+  namespace: apptrack
+spec:
+  secretName: apptrack-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - apptrack.io
+    - "*.apptrack.io"
+  duration: 2160h    # 90 days
+  renewBefore: 360h  # 15 days before expiry

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -19,10 +20,17 @@ from app.routers import ota
 from app.routers import admin as admin_router
 from app.routers import billing as billing_router
 from app.routers import credential_validation, deploy_simulator, metrics_kpi, canary, compliance
+from app.routers import build_diagnosis, cost_prediction, provider_recommendation
 from app.routers import store_metadata
+from app.routers import support as support_router
+from app.routers import organizations as organizations_router
+from app.routers import sso as sso_router
+import time as _time
 from app.config import settings
-from app.database import engine, Base
+from app.database import engine, Base, AsyncSessionLocal
 from app import events
+
+_START_TIME = _time.time()
 from app.worker import start_event_worker
 from app.cleanup import cleanup_stale_builds
 from app.webhook_guard import cleanup_expired_nonces
@@ -104,8 +112,7 @@ SERVICE_AUTH_FAILURE = Counter(
 )
 
 _worker_conn = None
-_cleanup_task = None
-_nonce_cleanup_task = None
+_background_tasks: dict[str, asyncio.Task] = {}
 _shutdown_event = asyncio.Event()
 
 
@@ -129,9 +136,38 @@ async def _check_rabbitmq() -> bool:
         return False
 
 
+async def _credential_rotation_checker() -> None:
+    """Her 24 saatte bir expiry yaklaşan credential'ları kontrol eder."""
+    import asyncio as _asyncio
+    while True:
+        try:
+            await _asyncio.sleep(24 * 3600)  # 24 saatte bir çalış
+            async with AsyncSessionLocal() as db:
+                from app.models import Credential
+                from sqlalchemy import select as _select
+                threshold = datetime.utcnow() + timedelta(days=7)
+                result = await db.execute(
+                    _select(Credential).where(
+                        Credential.rotation_due_at != None,
+                        Credential.rotation_due_at <= threshold,
+                        Credential.rotation_due_at > datetime.utcnow(),
+                    )
+                )
+                for cred in result.scalars():
+                    logger.warning(
+                        "Credential rotation due soon: user_id=%s provider=%s key=%s due=%s",
+                        cred.owner_id, cred.provider, cred.key_name,
+                        cred.rotation_due_at.isoformat() if cred.rotation_due_at else "N/A"
+                    )
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.error("Credential rotation checker error: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _worker_conn, _cleanup_task, _nonce_cleanup_task
+    global _worker_conn
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     try:
@@ -140,24 +176,27 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Event worker unavailable: %s", exc)
 
-    _cleanup_task = asyncio.create_task(cleanup_stale_builds())
+    _background_tasks["stale_build_cleanup"] = asyncio.create_task(cleanup_stale_builds())
     logger.info("Stale build cleanup task started")
 
-    _nonce_cleanup_task = asyncio.create_task(cleanup_expired_nonces())
+    _background_tasks["nonce_cleanup"] = asyncio.create_task(cleanup_expired_nonces())
     logger.info("Webhook nonce cleanup task started")
 
-    logger.info("AppTrack gateway started (v0.8.0)")
+    _background_tasks["credential_rotation"] = asyncio.create_task(_credential_rotation_checker())
+    logger.info("Credential rotation checker task started")
+
+    logger.info("AppTrack gateway started (v0.9.0)")
     yield
 
     logger.info("Shutting down gracefully...")
     _shutdown_event.set()
-    for task in [_cleanup_task, _nonce_cleanup_task]:
-        if task:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+    for task_name, task in _background_tasks.items():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            logger.info("Background task %s cancelled", task_name)
+    _background_tasks.clear()
     await events.close_connection()
     if _worker_conn:
         await _worker_conn.close()
@@ -167,11 +206,45 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AppTrack API Gateway",
-    version="0.8.0",
+    description="Mobil uygulama CI/CD ve Store yönetim platformu. Build tetikleme, artifact yönetimi, Google Play / App Store deploy, RBAC, SSO ve organizasyon yönetimi.",
+    version="0.9.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
     lifespan=lifespan,
+    openapi_tags=[
+        {"name": "auth", "description": "Kimlik doğrulama — kayıt, giriş, GitHub OAuth, token yenileme"},
+        {"name": "projects", "description": "Proje CRUD, repo sync, build tetikleme, deploy"},
+        {"name": "builds", "description": "Build listeleme, iptal, yeniden deneme, maliyet tahmini"},
+        {"name": "deployments", "description": "Store deploy tetikleme ve takibi"},
+        {"name": "credentials", "description": "Şifreli credential (API key, token) yönetimi"},
+        {"name": "github", "description": "GitHub repo listeleme ve branch bilgisi"},
+        {"name": "preview", "description": "Canlı önizleme container yönetimi"},
+        {"name": "webhooks", "description": "GitHub, EAS ve Codemagic webhook alıcıları"},
+        {"name": "audit", "description": "Audit log sorgulama ve filtreleme"},
+        {"name": "feature-flags", "description": "Feature flag oluşturma, toggle ve değerlendirme"},
+        {"name": "usage", "description": "Kullanım istatistikleri ve kota takibi"},
+        {"name": "ota-updates", "description": "OTA güncellemeleri — EAS ve custom bundle"},
+        {"name": "store-metadata", "description": "Store listing metadata, icon ve screenshot yönetimi"},
+        {"name": "secrets", "description": "Secret yönetimi ve şifreleme"},
+        {"name": "rbac", "description": "Rol bazlı erişim kontrolü — rol atama ve izin yönetimi"},
+        {"name": "immutable-audit", "description": "Değiştirilemez audit log — hash chain ile bütünlük garantisi"},
+        {"name": "deploy-policies", "description": "Deploy politikaları — branch, zaman ve onay kuralları"},
+        {"name": "backups", "description": "Veritabanı backup yönetimi"},
+        {"name": "admin", "description": "Admin paneli — kullanıcı yönetimi ve sistem istatistikleri"},
+        {"name": "billing", "description": "Abonelik planları, ödeme ve fatura yönetimi"},
+        {"name": "credential-validation", "description": "Credential doğrulama — API key/token geçerlilik kontrolü"},
+        {"name": "deploy-simulator", "description": "Deploy simülasyonu — pre-publish kontrolleri"},
+        {"name": "metrics-kpi", "description": "KPI metrikleri — build/deploy başarı oranları, trendler"},
+        {"name": "canary", "description": "Canary deploy — kademeli yayınlama ve geri alma"},
+        {"name": "compliance", "description": "Uyumluluk kontrolleri — store gereksinimleri doğrulama"},
+        {"name": "support", "description": "Destek talebi oluşturma ve takibi"},
+        {"name": "organizations", "description": "Organizasyon yönetimi — üye davet, rol atama"},
+        {"name": "sso", "description": "SSO/OIDC yapılandırma ve kimlik doğrulama"},
+        {"name": "build-diagnosis", "description": "Build hata tanılama — otomatik analiz ve çözüm önerisi"},
+        {"name": "cost-prediction", "description": "Build maliyet tahmini — geçmiş veriye dayalı projeksiyon"},
+        {"name": "provider-recommendation", "description": "CI provider önerisi — performans ve maliyet analizi"},
+    ],
 )
 
 app.state.limiter = limiter
@@ -220,27 +293,38 @@ app.include_router(webhooks.router,    prefix="/api/webhooks",    tags=["webhook
 app.include_router(audit.router,       prefix="/api/audit",       tags=["audit"])
 app.include_router(flags.router,       prefix="/api/flags",       tags=["feature-flags"])
 app.include_router(usage.router,       prefix="/api/usage",       tags=["usage"])
-app.include_router(secrets.router)
-app.include_router(rbac.router)
-app.include_router(immutable_audit.router)
-app.include_router(deploy_policies.router)
-app.include_router(backups.router)
+app.include_router(secrets.router,              tags=["secrets"])
+app.include_router(rbac.router,                 tags=["rbac"])
+app.include_router(immutable_audit.router,      tags=["immutable-audit"])
+app.include_router(deploy_policies.router,      tags=["deploy-policies"])
+app.include_router(backups.router,              tags=["backups"])
 app.include_router(ota.router, prefix="/api/ota", tags=["ota-updates"])
-app.include_router(admin_router.router)
-app.include_router(billing_router.router)
-app.include_router(credential_validation.router)
-app.include_router(deploy_simulator.router)
-app.include_router(metrics_kpi.router)
-app.include_router(canary.router)
-app.include_router(compliance.router)
+app.include_router(admin_router.router,         tags=["admin"])
+app.include_router(billing_router.router,       tags=["billing"])
+app.include_router(credential_validation.router, tags=["credential-validation"])
+app.include_router(deploy_simulator.router,     tags=["deploy-simulator"])
+app.include_router(metrics_kpi.router,          tags=["metrics-kpi"])
+app.include_router(canary.router,               tags=["canary"])
+app.include_router(compliance.router,           tags=["compliance"])
 app.include_router(store_metadata.router, prefix="/api/projects", tags=["store-metadata"])
+app.include_router(support_router.router, prefix="/api", tags=["support"])
+app.include_router(organizations_router.router, prefix="/api", tags=["organizations"])
+app.include_router(sso_router.router, prefix="/api", tags=["sso"])
+app.include_router(build_diagnosis.router)
+app.include_router(cost_prediction.router)
+app.include_router(provider_recommendation.router)
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "gateway", "version": "0.8.0"}
+    return {
+        "status": "healthy",
+        "service": "gateway",
+        "version": "0.9.0",
+        "uptime_seconds": int(_time.time() - _START_TIME),
+    }
 
 
 @app.get("/api/errors/{error_code}")
@@ -265,7 +349,7 @@ async def deep_health():
         content={
             "status": "healthy" if all_ok else "degraded",
             "service": "gateway",
-            "version": "0.7.0",
+            "version": "0.9.0",
             "services": {
                 "database": "healthy" if db_ok else "unhealthy",
                 "rabbitmq": "healthy" if mq_ok else "unhealthy",

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
 from app.dependencies import get_current_user
 from app.database import get_db
-from app.models import Project, Credential
+from app.models import Project, Credential, OTAUpdate
 from app.crypto import decrypt
 
 router = APIRouter()
@@ -58,6 +58,18 @@ async def trigger_eas_update(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Expo EAS Update API üzerinden OTA güncelleme tetikler.
+
+    EAS token ve Expo app ID ile Expo sunucusuna güncelleme isteği gönderir.
+    Credential'lar istek veya credential yöneticisinden alınır.
+
+    Raises:
+        400: EAS_TOKEN veya EXPO_APP_ID eksik
+        401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı
+        502: EAS Update API hatası
+        503: EAS Update bağlantı hatası
+    """
     proj_result = await db.execute(
         select(Project).where(
             and_(Project.id == req.project_id, Project.owner_id == current_user["id"])
@@ -114,6 +126,17 @@ async def list_eas_branches(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """EAS projesine ait güncelleme dallarını listeler.
+
+    Expo API üzerinden belirtilen uygulama için tanımlı
+    tüm branch bilgilerini getirir.
+
+    Raises:
+        400: EAS_TOKEN yapılandırılmamış
+        401: Kimlik doğrulama gerekli
+        502: EAS API hatası
+        503: Bağlantı hatası
+    """
     eas_token = await _get_credential(db, current_user["id"], "eas", "EAS_TOKEN")
     if not eas_token:
         raise HTTPException(status_code=400, detail="EAS_TOKEN not configured")
@@ -140,6 +163,17 @@ async def list_eas_updates(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """EAS projesine ait OTA güncellemelerini listeler.
+
+    İsteğe bağlı olarak branch'e göre filtreleme yaparak
+    Expo API üzerinden güncelleme geçmişini getirir.
+
+    Raises:
+        400: EAS_TOKEN yapılandırılmamış
+        401: Kimlik doğrulama gerekli
+        502: EAS API hatası
+        503: Bağlantı hatası
+    """
     eas_token = await _get_credential(db, current_user["id"], "eas", "EAS_TOKEN")
     if not eas_token:
         raise HTTPException(status_code=400, detail="EAS_TOKEN not configured")
@@ -164,17 +198,162 @@ async def list_eas_updates(
         raise HTTPException(status_code=503, detail=str(exc))
 
 
-@router.post("/rollback")
-async def rollback_eas_update(
-    expo_app_id: str,
-    branch: str,
-    update_id: str,
+@router.post("/custom-bundle")
+async def push_custom_bundle(
+    req: OTAUpdateCreate,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Non-EAS projeler icin custom bundle ile OTA update gonderir (Flutter, React Native bare)."""
+    project = await db.get(Project, req.project_id)
+    if not project or project.owner_id != current_user["id"]:
+        raise HTTPException(status_code=404, detail="Proje bulunamadi")
+
+    if not req.bundle_url:
+        raise HTTPException(
+            status_code=400,
+            detail="bundle_url zorunludur. MinIO'ya yuklenen artifact URL'ini belirtin."
+        )
+
+    update = OTAUpdate(
+        id=str(uuid.uuid4()),
+        project_id=req.project_id,
+        channel=req.channel,
+        platform=req.platform,
+        runtime_version=req.runtime_version,
+        bundle_url=req.bundle_url,
+        message=req.message,
+        status="published",
+        created_by=current_user["id"],
+    )
+    db.add(update)
+    await db.commit()
+    await db.refresh(update)
+
+    return {
+        "status": "published",
+        "update_id": update.id,
+        "bundle_url": update.bundle_url,
+        "channel": update.channel,
+        "platform": update.platform,
+        "runtime_version": update.runtime_version,
+        "message": update.message,
+    }
+
+
+@router.get("/custom-bundle/{project_id}/history")
+async def list_custom_bundle_updates(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Projenin custom bundle OTA guncelleme gecmisini listeler."""
+    project = await db.get(Project, project_id)
+    if not project or project.owner_id != current_user["id"]:
+        raise HTTPException(status_code=404, detail="Proje bulunamadi")
+
+    result = await db.execute(
+        select(OTAUpdate)
+        .where(OTAUpdate.project_id == project_id)
+        .order_by(OTAUpdate.created_at.desc())
+        .limit(50)
+    )
+    updates = result.scalars().all()
+    return [
+        {
+            "update_id": u.id,
+            "channel": u.channel,
+            "platform": u.platform,
+            "runtime_version": u.runtime_version,
+            "bundle_url": u.bundle_url,
+            "message": u.message,
+            "status": u.status,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+        }
+        for u in updates
+    ]
+
+
+@router.post("/rollback")
+async def rollback_eas_update(
+    expo_app_id: str = "",
+    branch: str = "",
+    update_id: str = "",
+    project_id: str = "",
+    channel: str = "production",
+    platform: str = "all",
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """OTA güncellemesini önceki versiyona geri alır.
+
+    EAS projesi ise Expo Rollback API kullanır. Custom bundle projesi ise
+    bir önceki başarılı bundle URL'i ile yeni güncelleme yayınlar.
+
+    Raises:
+        400: Gerekli parametreler eksik
+        401: Kimlik doğrulama gerekli
+        404: Proje veya önceki güncelleme bulunamadı
+        502: EAS Rollback API hatası
+        503: Bağlantı hatası
+    """
     eas_token = await _get_credential(db, current_user["id"], "eas", "EAS_TOKEN")
+
+    # EAS projesi degilse custom bundle rollback
     if not eas_token:
-        raise HTTPException(status_code=400, detail="EAS_TOKEN not configured")
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail="EAS_TOKEN bulunamadi ve project_id belirtilmedi. "
+                       "EAS rollback icin EAS_TOKEN, custom bundle rollback icin project_id gereklidir.",
+            )
+
+        project = await db.get(Project, project_id)
+        if not project or project.owner_id != current_user["id"]:
+            raise HTTPException(status_code=404, detail="Proje bulunamadi")
+
+        # Son basarili bundle'a geri don
+        last_good = await db.execute(
+            select(OTAUpdate)
+            .where(
+                OTAUpdate.project_id == project_id,
+                OTAUpdate.status == "published",
+            )
+            .order_by(OTAUpdate.created_at.desc())
+            .offset(1)  # skip current, get previous
+            .limit(1)
+        )
+        prev_update = last_good.scalar_one_or_none()
+        if not prev_update:
+            raise HTTPException(status_code=404, detail="Geri donulecek onceki guncelleme bulunamadi")
+
+        # Yeni update olarak publish et (eski bundle URL ile)
+        rollback_update = OTAUpdate(
+            id=str(uuid.uuid4()),
+            project_id=project_id,
+            channel=channel,
+            platform=platform,
+            runtime_version=prev_update.runtime_version,
+            bundle_url=prev_update.bundle_url,
+            message=f"Rollback to {prev_update.runtime_version}",
+            status="published",
+            created_by=current_user["id"],
+        )
+        db.add(rollback_update)
+        await db.commit()
+        return {
+            "status": "rolled_back",
+            "rollback_to": prev_update.id,
+            "bundle_url": prev_update.bundle_url,
+            "runtime_version": prev_update.runtime_version,
+        }
+
+    # EAS rollback
+    if not expo_app_id or not branch or not update_id:
+        raise HTTPException(
+            status_code=400,
+            detail="EAS rollback icin expo_app_id, branch ve update_id zorunludur.",
+        )
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:

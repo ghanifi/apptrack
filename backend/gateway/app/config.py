@@ -1,9 +1,10 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from typing import List
 
 
 class Settings(BaseSettings):
-    SECRET_KEY: str = "change-me-in-production"
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
 
@@ -20,6 +21,8 @@ class Settings(BaseSettings):
     ARTIFACT_SERVICE_URL: str = "http://artifact-service:8007"
     STORE_DEPLOY_SERVICE_URL: str = "http://store-deploy-service:8008"
 
+    REDIS_URL: str = "redis://redis:6379/0"
+
     RABBITMQ_URL: str = "amqp://guest:guest@rabbitmq:5672/"
 
     GITHUB_CLIENT_ID: str = ""
@@ -29,7 +32,7 @@ class Settings(BaseSettings):
     GITHUB_WEBHOOK_SECRET: str = ""
     GATEWAY_URL: str = "http://localhost:8000"
 
-    FERNET_SALT: str = "apptrack-fernet-salt-change-me"
+    FERNET_SALT: str
     SECRET_KEY_OLD: str = ""
 
     RATE_LIMIT_DEFAULT: str = "100/minute"
@@ -41,6 +44,22 @@ class Settings(BaseSettings):
 
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_API_KEY: str = ""
+
+    EAS_WEBHOOK_SECRET: str = ""
+    CODEMAGIC_WEBHOOK_SECRET: str = ""
+
+    ENVIRONMENT: str = "development"
+
+    @model_validator(mode='after')
+    def validate_production_secrets(self) -> "Settings":
+        if self.ENVIRONMENT == "production":
+            if "change-me" in self.SECRET_KEY or "apptrack-fernet" in self.FERNET_SALT:
+                raise ValueError(
+                    "Production ortamında SECRET_KEY ve FERNET_SALT için "
+                    "güvenli değerler kullanılmalıdır. "
+                    "Varsayılan veya geçici değerler kabul edilmez."
+                )
+        return self
 
     class Config:
         env_file = ".env"

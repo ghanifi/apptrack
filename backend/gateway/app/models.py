@@ -7,95 +7,103 @@ from app.database import Base
 
 
 class User(Base):
+    """Platform kullanıcısı — GitHub OAuth veya email/password ile kayıt."""
     __tablename__ = "users"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    hashed_password: Mapped[str | None] = mapped_column(String(255))
-    github_id: Mapped[str | None] = mapped_column(String(100))
-    github_access_token: Mapped[str | None] = mapped_column(Text)
-    avatar_url: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()), comment="Kullanıcı UUID")
+    name: Mapped[str] = mapped_column(String(255), nullable=False, comment="Görünen ad")
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, comment="E-posta adresi (unique)")
+    hashed_password: Mapped[str | None] = mapped_column(String(255), comment="Bcrypt hash — OAuth kullanıcılarında null")
+    github_id: Mapped[str | None] = mapped_column(String(100), comment="GitHub kullanıcı ID'si")
+    github_access_token: Mapped[str | None] = mapped_column(Text, comment="Fernet ile şifrelenmiş GitHub access token")
+    avatar_url: Mapped[str | None] = mapped_column(Text, comment="Profil fotoğrafı URL'si")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Kayıt tarihi")
 
     projects: Mapped[list["Project"]] = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
 
 
 class Project(Base):
+    """Mobil uygulama projesi — GitHub repo'suna bağlı, framework otomatik tespit edilir."""
     __tablename__ = "projects"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
-    owner_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    repo_url: Mapped[str] = mapped_column(Text, nullable=False)
-    branch: Mapped[str] = mapped_column(String(100), default="main")
-    framework: Mapped[str] = mapped_column(String(50), default="unknown")
-    status: Mapped[str] = mapped_column(String(50), default="pending")
-    clone_path: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()), comment="Proje UUID")
+    owner_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, comment="Proje sahibi kullanıcı ID")
+    name: Mapped[str] = mapped_column(String(255), nullable=False, comment="Proje adı")
+    repo_url: Mapped[str] = mapped_column(Text, nullable=False, comment="GitHub repo URL'si")
+    branch: Mapped[str] = mapped_column(String(100), default="main", comment="Hedef branch: main, develop vb.")
+    framework: Mapped[str] = mapped_column(String(50), default="unknown", comment="Tespit edilen framework: react-native, flutter, expo, swift, kotlin")
+    status: Mapped[str] = mapped_column(String(50), default="pending", comment="Proje durumu: pending, analyzing, active, building, error")
+    clone_path: Mapped[str | None] = mapped_column(Text, comment="Sunucudaki clone dizini")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Oluşturulma tarihi")
+    org_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True, comment="Bağlı organizasyon ID (opsiyonel)")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="Son güncelleme tarihi")
 
     owner: Mapped["User"] = relationship("User", back_populates="projects")
     builds: Mapped[list["Build"]] = relationship("Build", back_populates="project", cascade="all, delete-orphan")
 
 
 class Build(Base):
+    """CI/CD build kaydı — EAS, Codemagic veya GitHub Actions üzerinde çalışır."""
     __tablename__ = "builds"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
-    project_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
-    platform: Mapped[str] = mapped_column(String(20), nullable=False)
-    provider: Mapped[str] = mapped_column(String(50), nullable=False)
-    status: Mapped[str] = mapped_column(String(50), default="queued")
-    artifact_url: Mapped[str | None] = mapped_column(Text)
-    artifact_checksum: Mapped[str | None] = mapped_column(String(128))
-    external_build_id: Mapped[str | None] = mapped_column(String(255))
-    idempotency_key: Mapped[str | None] = mapped_column(String(64), index=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()), comment="Build UUID")
+    project_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, comment="Hedef proje ID")
+    platform: Mapped[str] = mapped_column(String(20), nullable=False, comment="Hedef platform: android, ios, both")
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, comment="CI provider: eas, codemagic, github_actions")
+    status: Mapped[str] = mapped_column(String(50), default="queued", comment="Build durumu: queued, running, success, failed, cancelled")
+    artifact_url: Mapped[str | None] = mapped_column(Text, comment="Build artifact (APK/IPA) URL'si")
+    artifact_checksum: Mapped[str | None] = mapped_column(String(128), comment="Artifact SHA-256 hash")
+    log_output: Mapped[str | None] = mapped_column(Text, comment="Build log çıktısı")
+    external_build_id: Mapped[str | None] = mapped_column(String(255), comment="Harici provider build ID'si")
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), index=True, comment="Duplikat build önleme anahtarı")
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, comment="Build başlangıç zamanı")
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, comment="Build bitiş zamanı")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Oluşturulma tarihi")
 
     project: Mapped["Project"] = relationship("Project", back_populates="builds")
     deployments: Mapped[list["Deployment"]] = relationship("Deployment", back_populates="build", cascade="all, delete-orphan")
 
 
 class Deployment(Base):
+    """Store deploy kaydı — Google Play veya App Store'a yayınlama."""
     __tablename__ = "deployments"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
-    build_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("builds.id", ondelete="CASCADE"), nullable=False)
-    target: Mapped[str] = mapped_column(String(50), nullable=False)
-    track: Mapped[str] = mapped_column(String(50), default="internal")
-    status: Mapped[str] = mapped_column(String(50), default="pending")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()), comment="Deployment UUID")
+    build_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("builds.id", ondelete="CASCADE"), nullable=False, comment="Kaynak build ID")
+    target: Mapped[str] = mapped_column(String(50), nullable=False, comment="Hedef store: google_play, app_store")
+    track: Mapped[str] = mapped_column(String(50), default="internal", comment="Release track: internal, beta, production")
+    status: Mapped[str] = mapped_column(String(50), default="pending", comment="Deploy durumu: pending, uploading, published, failed")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Oluşturulma tarihi")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="Son güncelleme tarihi")
 
     build: Mapped["Build"] = relationship("Build", back_populates="deployments")
 
 
 class Credential(Base):
+    """Fernet ile şifrelenmiş API key/token — provider bazlı (EAS, Codemagic, Google Play, App Store)."""
     __tablename__ = "credentials"
     __table_args__ = (
         UniqueConstraint("owner_id", "provider", "key_name", name="uq_credential_owner_provider_key"),
     )
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
-    owner_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    provider: Mapped[str] = mapped_column(String(50), nullable=False)
-    key_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    encrypted_value: Mapped[str] = mapped_column(Text, nullable=False)
-    key_version: Mapped[str] = mapped_column(String(20), default="v1")
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime)
-    rotation_due_at: Mapped[datetime | None] = mapped_column(DateTime)
-    last_rotated_at: Mapped[datetime | None] = mapped_column(DateTime)
-    rotation_count: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()), comment="Credential UUID")
+    owner_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, comment="Credential sahibi")
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, comment="Provider: eas, codemagic, google_play, app_store")
+    key_name: Mapped[str] = mapped_column(String(100), nullable=False, comment="Key adı: EAS_TOKEN, CODEMAGIC_TOKEN vb.")
+    encrypted_value: Mapped[str] = mapped_column(Text, nullable=False, comment="Fernet ile şifrelenmiş değer")
+    key_version: Mapped[str] = mapped_column(String(20), default="v1", comment="Şifreleme key versiyonu")
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, comment="Credential son kullanma tarihi")
+    rotation_due_at: Mapped[datetime | None] = mapped_column(DateTime, comment="Planlanan rotasyon tarihi")
+    last_rotated_at: Mapped[datetime | None] = mapped_column(DateTime, comment="Son rotasyon tarihi")
+    rotation_count: Mapped[int] = mapped_column(Integer, default=0, comment="Toplam rotasyon sayısı")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Oluşturulma tarihi")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="Son güncelleme tarihi")
 
     owner: Mapped["User"] = relationship("User")
 
 
 class AuditLog(Base):
+    """Audit log kaydı — tüm kullanıcı ve sistem eylemlerini izler."""
     __tablename__ = "audit_logs"
     __table_args__ = (
         Index("idx_audit_user_created", "user_id", "created_at"),
@@ -116,6 +124,7 @@ class AuditLog(Base):
 
 
 class UsageRecord(Base):
+    """Kullanım kaydı — build, deploy, storage gibi metrikler period bazlı izlenir."""
     __tablename__ = "usage_records"
     __table_args__ = (
         Index("idx_usage_user_type_period", "user_id", "metric_type", "period_start"),
@@ -132,6 +141,7 @@ class UsageRecord(Base):
 
 
 class UserQuota(Base):
+    """Kullanıcı kota limitleri — plan bazlı (free, pro, enterprise)."""
     __tablename__ = "user_quotas"
     __table_args__ = (
         UniqueConstraint("user_id", name="uq_user_quota"),
@@ -153,6 +163,7 @@ class UserQuota(Base):
 
 
 class FeatureFlag(Base):
+    """Feature flag — kullanıcı bazlı veya yüzdelik açma/kapama."""
     __tablename__ = "feature_flags"
     __table_args__ = (
         UniqueConstraint("name", name="uq_feature_flag_name"),
@@ -169,6 +180,7 @@ class FeatureFlag(Base):
 
 
 class WebhookNonce(Base):
+    """Webhook replay attack koruması — kullanılan nonce değerleri."""
     __tablename__ = "webhook_nonces"
     __table_args__ = (
         Index("idx_nonce_source_value", "source", "nonce_value"),
@@ -183,6 +195,7 @@ class WebhookNonce(Base):
 
 
 class IdempotencyRecord(Base):
+    """Idempotency kaydı — aynı isteğin tekrarlanmasını önler."""
     __tablename__ = "idempotency_records"
     __table_args__ = (
         UniqueConstraint("key", "endpoint", "user_id", name="uq_idempotency_key_endpoint_user"),
@@ -199,6 +212,7 @@ class IdempotencyRecord(Base):
 
 
 class Role(Base):
+    """RBAC rolü — sistem veya kullanıcı tanımlı, izin gruplarına bağlı."""
     __tablename__ = "roles"
     __table_args__ = (
         UniqueConstraint("name", name="uq_role_name"),
@@ -214,6 +228,7 @@ class Role(Base):
 
 
 class RolePermission(Base):
+    """Rol-izin eşleştirmesi — resource:action çifti (ör: builds:create)."""
     __tablename__ = "role_permissions"
     __table_args__ = (
         UniqueConstraint("role_id", "resource", "action", name="uq_role_permission"),
@@ -228,6 +243,7 @@ class RolePermission(Base):
 
 
 class UserRole(Base):
+    """Kullanıcı-rol ataması — proje bazlı veya global olabilir."""
     __tablename__ = "user_roles"
     __table_args__ = (
         UniqueConstraint("user_id", "project_id", name="uq_user_role_project"),
@@ -246,6 +262,7 @@ class UserRole(Base):
 
 
 class ImmutableAuditEntry(Base):
+    """Değiştirilemez audit log — SHA-256 hash chain ile bütünlük garantisi."""
     __tablename__ = "immutable_audit_entries"
     __table_args__ = (
         Index("idx_immutable_audit_user", "user_id", "created_at"),
@@ -267,6 +284,7 @@ class ImmutableAuditEntry(Base):
 
 
 class SecretRotationLog(Base):
+    """Credential rotasyon geçmişi — kim, ne zaman, hangi versiyon."""
     __tablename__ = "secret_rotation_logs"
     __table_args__ = (
         Index("idx_secret_rotation_cred", "credential_id", "rotated_at"),
@@ -283,6 +301,7 @@ class SecretRotationLog(Base):
 
 
 class DeployPolicy(Base):
+    """Deploy politikası — branch kısıtlama, zaman penceresi, onay gereksinimleri."""
     __tablename__ = "deploy_policies"
     __table_args__ = (
         Index("idx_deploy_policy_project", "project_id"),
@@ -300,6 +319,7 @@ class DeployPolicy(Base):
 
 
 class DeployApproval(Base):
+    """Deploy onayı — çoklu onay mekanizması, approve/reject kararı."""
     __tablename__ = "deploy_approvals"
     __table_args__ = (
         UniqueConstraint("deployment_id", "approver_id", name="uq_deploy_approval"),
@@ -314,6 +334,7 @@ class DeployApproval(Base):
 
 
 class StoreMetadata(Base):
+    """Store listing metadata — çoklu locale, app adı, açıklama, icon, screenshot."""
     __tablename__ = "store_metadata"
     __table_args__ = (
         UniqueConstraint("project_id", "platform", "locale", name="uq_store_meta_project_platform_locale"),
@@ -343,6 +364,7 @@ class StoreMetadata(Base):
 
 
 class BackupJob(Base):
+    """Veritabanı backup işi — full veya incremental, checksum ile doğrulama."""
     __tablename__ = "backup_jobs"
     __table_args__ = (
         Index("idx_backup_status", "status"),
@@ -361,3 +383,85 @@ class BackupJob(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     triggered_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class SupportTicket(Base):
+    """Destek talebi — kullanıcı tarafından açılan bug/feature/billing talebi."""
+    __tablename__ = "support_tickets"
+    __table_args__ = (
+        Index("idx_support_tickets_user_id", "user_id"),
+        Index("idx_support_tickets_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(20), nullable=False, default="general")
+    priority: Mapped[str] = mapped_column(String(10), nullable=False, default="medium")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Organization(Base):
+    """Organizasyon — takım bazlı proje yönetimi, üye davet, rol atama."""
+    __tablename__ = "organizations"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    owner_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    plan: Mapped[str] = mapped_column(String(20), nullable=False, default="free")
+    max_members: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class OrgMember(Base):
+    """Organizasyon üyesi — role: owner, admin, member, viewer."""
+    __tablename__ = "org_members"
+    __table_args__ = (
+        UniqueConstraint("org_id", "user_id", name="uq_org_member"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="member")  # owner, admin, member, viewer
+    invited_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class OTAUpdate(Base):
+    """OTA güncelleme kaydı — EAS veya custom bundle, channel ve platform bazlı."""
+    __tablename__ = "ota_updates"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(50), nullable=False, default="production")
+    platform: Mapped[str] = mapped_column(String(10), nullable=False, default="all")
+    runtime_version: Mapped[str] = mapped_column(String(50), nullable=False, default="1.0.0")
+    bundle_url: Mapped[str] = mapped_column(Text, nullable=False)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True, default="")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="published")  # published, rolled_back, deprecated
+    created_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class SSOProvider(Base):
+    """SSO/OIDC provider yapılandırması — organizasyon bazlı kurumsal kimlik doğrulama."""
+    __tablename__ = "sso_providers"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider_type: Mapped[str] = mapped_column(String(20), nullable=False)  # oidc, saml
+    name: Mapped[str] = mapped_column(String(100), nullable=False, default="Corporate SSO")
+    client_id: Mapped[str | None] = mapped_column(Text)
+    encrypted_client_secret: Mapped[str | None] = mapped_column(Text)
+    discovery_url: Mapped[str | None] = mapped_column(Text)  # OIDC: .well-known/openid-configuration
+    metadata_url: Mapped[str | None] = mapped_column(Text)  # SAML: metadata XML URL
+    allowed_domains: Mapped[str | None] = mapped_column(Text)  # Comma-separated email domains
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

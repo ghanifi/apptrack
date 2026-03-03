@@ -14,10 +14,13 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import String, Text, DateTime, select
 from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 import uuid as _uuid
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+_START_TIME = time.time()
 
 
 class Settings(BaseSettings):
@@ -40,6 +43,7 @@ _engine = create_async_engine(settings.DATABASE_URL, echo=False)
 _SessionFactory = async_sessionmaker(_engine, expire_on_commit=False)
 
 CONTAINERS: dict = {}
+_containers_lock = asyncio.Lock()
 APPETIZE_API_URL = "https://api.appetize.io/apps"
 _channel = None
 
@@ -69,25 +73,17 @@ async def _init_db():
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def _save_preview(project_id: str, data: dict):
-    async with _SessionFactory() as session:
-        result = await session.execute(select(PreviewState).where(PreviewState.project_id == project_id))
-        state = result.scalar_one_or_none()
-        if state is None:
-            state = PreviewState(project_id=project_id)
-            session.add(state)
-        state.framework = data.get("framework", state.framework or "")
-        state.status = data.get("status", "pending")
-        state.preview_type = data.get("type", "")
-        state.preview_url = data.get("preview_url")
-        state.embed_url = data.get("embed_url")
-        state.qr_url = data.get("qr_url")
-        state.instructions = data.get("instructions")
-        state.updated_at = datetime.utcnow()
-        extra = {k: v for k, v in data.items()
-                 if k not in ("project_id", "framework", "status", "type", "preview_url", "embed_url", "qr_url", "instructions")}
-        state.extra = extra or None
-        await session.commit()
+async def _save_preview(project_id: str, data: dict) -> None:
+    async with _SessionFactory() as db:
+        insert_data = {"project_id": project_id, **data}
+        stmt = pg_insert(PreviewState).values(**insert_data)
+        update_data = {k: v for k, v in insert_data.items() if k != "project_id"}
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["project_id"],
+            set_=update_data
+        )
+        await db.execute(stmt)
+        await db.commit()
 
 
 async def _load_preview(project_id: str) -> dict | None:
@@ -264,7 +260,8 @@ async def _launch_live_preview(project_id: str, framework: str) -> bool:
         return False
 
     container_id, host_port = result
-    CONTAINERS[project_id] = container_id
+    async with _containers_lock:
+        CONTAINERS[project_id] = container_id
     preview_url = f"http://{settings.PREVIEW_HOST}:{host_port}"
 
     await _save_preview(project_id, {
@@ -274,7 +271,13 @@ async def _launch_live_preview(project_id: str, framework: str) -> bool:
         "instructions": "Live dev server is starting, please wait...",
     })
 
-    asyncio.create_task(_wait_for_ready(preview_url, project_id, framework))
+    _ready_task = asyncio.create_task(_wait_for_ready(preview_url, project_id, framework))
+
+    def _on_ready_task_done(t: asyncio.Task) -> None:
+        if not t.cancelled() and t.exception() is not None:
+            logger.error("Preview _wait_for_ready task failed for project: %s", t.exception())
+
+    _ready_task.add_done_callback(_on_ready_task_done)
     return True
 
 
@@ -441,9 +444,10 @@ class PreviewRequest(BaseModel):
 @app.get("/health")
 def health():
     return {
-        "status": "ok",
+        "status": "healthy",
         "service": "preview",
-        "version": "0.4.0",
+        "version": "0.9.0",
+        "uptime_seconds": int(time.time() - _START_TIME),
         "docker_available": DOCKER_AVAILABLE,
         "live_preview_enabled": settings.ENABLE_LIVE_PREVIEW and DOCKER_AVAILABLE,
     }
@@ -468,8 +472,11 @@ async def start_preview(req: PreviewRequest):
 
 @app.delete("/{project_id}")
 async def stop_preview(project_id: str):
-    if DOCKER_AVAILABLE and project_id in CONTAINERS:
+    async with _containers_lock:
+        _in_containers = DOCKER_AVAILABLE and project_id in CONTAINERS
+    if _in_containers:
         await asyncio.to_thread(_stop_container_sync, project_id)
-        del CONTAINERS[project_id]
+        async with _containers_lock:
+            del CONTAINERS[project_id]
     await _delete_preview(project_id)
     return {"project_id": project_id, "status": "stopped"}

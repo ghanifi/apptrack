@@ -1,22 +1,28 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import { useAuthStore } from '@/store/authStore'
+import ErrorBoundary from '@/components/ErrorBoundary'
+import LoadingSpinner from '@/components/LoadingSpinner'
 import DashboardLayout from '@/components/layout/DashboardLayout'
-import LandingPage from '@/pages/LandingPage'
-import LoginPage from '@/pages/LoginPage'
-import DashboardPage from '@/pages/DashboardPage'
-import ProjectsPage from '@/pages/ProjectsPage'
-import NewProjectPage from '@/pages/NewProjectPage'
-import ProjectDetailPage from '@/pages/ProjectDetailPage'
-import ProjectStorePage from '@/pages/ProjectStorePage'
-import SettingsPage from '@/pages/SettingsPage'
-import UsagePage from '@/pages/UsagePage'
-import AuditPage from '@/pages/AuditPage'
-import OnboardingPage from '@/pages/OnboardingPage'
-import TermsPage from '@/pages/TermsPage'
-import PrivacyPage from '@/pages/PrivacyPage'
-import SLAPage from '@/pages/SLAPage'
-import StatusPage from '@/pages/StatusPage'
-import SupportPage from '@/pages/SupportPage'
+
+const LandingPage = lazy(() => import('./pages/LandingPage'))
+const LoginPage = lazy(() => import('./pages/LoginPage'))
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const ProjectsPage = lazy(() => import('./pages/ProjectsPage'))
+const NewProjectPage = lazy(() => import('./pages/NewProjectPage'))
+const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage'))
+const ProjectStorePage = lazy(() => import('./pages/ProjectStorePage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const UsagePage = lazy(() => import('./pages/UsagePage'))
+const AuditPage = lazy(() => import('./pages/AuditPage'))
+const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
+const TermsPage = lazy(() => import('./pages/TermsPage'))
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
+const SLAPage = lazy(() => import('./pages/SLAPage'))
+const StatusPage = lazy(() => import('./pages/StatusPage'))
+const SupportPage = lazy(() => import('./pages/SupportPage'))
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuthStore()
@@ -30,41 +36,52 @@ function PublicHome() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<PublicHome />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/terms" element={<TermsPage />} />
-        <Route path="/privacy" element={<PrivacyPage />} />
-        <Route path="/sla" element={<SLAPage />} />
-        <Route path="/status" element={<StatusPage />} />
-        <Route path="/support" element={<SupportPage />} />
-        <Route
-          path="/onboarding"
-          element={
-            <PrivateRoute>
-              <OnboardingPage />
-            </PrivateRoute>
-          }
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            className: 'bg-gray-900 text-white border border-gray-800',
+          }}
         />
-        <Route
-          path="/dashboard"
-          element={
-            <PrivateRoute>
-              <DashboardLayout />
-            </PrivateRoute>
-          }
-        >
-          <Route index element={<DashboardPage />} />
-          <Route path="projects" element={<ProjectsPage />} />
-          <Route path="projects/new" element={<NewProjectPage />} />
-          <Route path="projects/:id" element={<ProjectDetailPage />} />
-          <Route path="projects/:id/store" element={<ProjectStorePage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="usage" element={<UsagePage />} />
-          <Route path="audit" element={<AuditPage />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+        <Suspense fallback={<LoadingSpinner />}>
+          <Routes>
+            <Route path="/" element={<PublicHome />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/terms" element={<TermsPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/sla" element={<SLAPage />} />
+            <Route path="/status" element={<StatusPage />} />
+            <Route path="/support" element={<SupportPage />} />
+            <Route
+              path="/onboarding"
+              element={
+                <PrivateRoute>
+                  <OnboardingPage />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/dashboard"
+              element={
+                <PrivateRoute>
+                  <DashboardLayout />
+                </PrivateRoute>
+              }
+            >
+              <Route index element={<DashboardPage />} />
+              <Route path="projects" element={<ProjectsPage />} />
+              <Route path="projects/new" element={<NewProjectPage />} />
+              <Route path="projects/:id" element={<ProjectDetailPage />} />
+              <Route path="projects/:id/store" element={<ProjectStorePage />} />
+              <Route path="settings" element={<SettingsPage />} />
+              <Route path="usage" element={<UsagePage />} />
+              <Route path="audit" element={<AuditPage />} />
+            </Route>
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
+    </ErrorBoundary>
   )
 }

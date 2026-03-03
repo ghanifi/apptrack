@@ -1,0 +1,64 @@
+{{- $root := . -}}
+{{- $services := dict
+  "gateway" (dict "port" 8000 "replicaKey" "gateway" "configKey" "gateway")
+  "build-service" (dict "port" 8006 "replicaKey" "buildService" "configKey" "buildService")
+  "store-deploy" (dict "port" 8008 "replicaKey" "storeDeployService" "configKey" "storeDeployService")
+  "artifact" (dict "port" 8007 "replicaKey" "artifactService" "configKey" "artifactService")
+  "preview" (dict "port" 8005 "replicaKey" "previewService" "configKey" "previewService")
+  "frontend" (dict "port" 80 "replicaKey" "frontend" "configKey" "frontend")
+-}}
+{{- range $name, $svc := $services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "apptrack.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "apptrack.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  {{- if not $root.Values.autoscaling.enabled }}
+  replicas: {{ index $root.Values.replicaCount $svc.replicaKey }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "apptrack.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "apptrack.selectorLabels" $root | nindent 8 }}
+        app.kubernetes.io/component: {{ $name }}
+    spec:
+      containers:
+        - name: {{ $name }}
+          image: {{ printf "%s/%s:%s" $root.Values.image.registry $name ($root.Values.image.tag | default $root.Chart.AppVersion) }}
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $svc.port }}
+              protocol: TCP
+          {{- if hasKey (index $root.Values $svc.configKey) "resources" }}
+          resources:
+            {{- (index $root.Values $svc.configKey).resources | toYaml | nindent 12 }}
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "apptrack.fullname" $root }}-config
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+{{- end }}

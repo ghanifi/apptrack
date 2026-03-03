@@ -8,6 +8,14 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: 10m
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    # E8 - Security Headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' https://api.apptrack.io; frame-ancestors 'none'";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
 spec:
   ingressClassName: nginx
   tls:
@@ -72,10 +80,23 @@ spec:
         - protocol: TCP
           port: 8008
   egress:
+    # Allow DNS resolution (kube-dns / CoreDNS)
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow internal service-to-service communication
     - to:
         - podSelector:
             matchLabels:
               app: apptrack
+    # Allow external HTTPS, PostgreSQL, RabbitMQ
     - to: []
       ports:
         - protocol: TCP

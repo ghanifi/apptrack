@@ -389,3 +389,88 @@ CREATE TABLE IF NOT EXISTS preview_states (
 );
 
 CREATE INDEX IF NOT EXISTS idx_preview_states_project_id ON preview_states(project_id);
+
+-- Support Tickets
+CREATE TABLE IF NOT EXISTS support_tickets (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    user_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+    subject VARCHAR(200) NOT NULL,
+    message TEXT NOT NULL,
+    category VARCHAR(20) NOT NULL DEFAULT 'general',
+    priority VARCHAR(10) NOT NULL DEFAULT 'medium',
+    status VARCHAR(20) NOT NULL DEFAULT 'open',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_support_tickets_user_id ON support_tickets(user_id);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);
+
+-- Organizations
+CREATE TABLE IF NOT EXISTS organizations (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    name VARCHAR(100) NOT NULL,
+    slug VARCHAR(100) UNIQUE NOT NULL,
+    owner_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+    plan VARCHAR(20) NOT NULL DEFAULT 'free',
+    max_members INTEGER NOT NULL DEFAULT 5,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_organizations_slug ON organizations(slug);
+CREATE INDEX IF NOT EXISTS idx_organizations_owner ON organizations(owner_id);
+
+-- Organization Members
+CREATE TABLE IF NOT EXISTS org_members (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    org_id VARCHAR(36) NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role VARCHAR(20) NOT NULL DEFAULT 'member',
+    invited_by VARCHAR(36) REFERENCES users(id),
+    joined_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(org_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_org_members_org ON org_members(org_id);
+CREATE INDEX IF NOT EXISTS idx_org_members_user ON org_members(user_id);
+
+-- OTA Updates
+CREATE TABLE IF NOT EXISTS ota_updates (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    project_id VARCHAR(36) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    channel VARCHAR(50) NOT NULL DEFAULT 'production',
+    platform VARCHAR(10) NOT NULL DEFAULT 'all',
+    runtime_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
+    bundle_url TEXT NOT NULL,
+    message TEXT DEFAULT '',
+    status VARCHAR(20) NOT NULL DEFAULT 'published',
+    created_by VARCHAR(36) REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ota_updates_project ON ota_updates(project_id);
+CREATE INDEX IF NOT EXISTS idx_ota_updates_channel ON ota_updates(project_id, channel);
+
+-- Add org_id to projects (nullable, for gradual migration)
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS org_id VARCHAR(36) REFERENCES organizations(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);
+
+-- SSO Providers
+CREATE TABLE IF NOT EXISTS sso_providers (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    org_id VARCHAR(36) NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    provider_type VARCHAR(20) NOT NULL,
+    name VARCHAR(100) NOT NULL DEFAULT 'Corporate SSO',
+    client_id TEXT,
+    encrypted_client_secret TEXT,
+    discovery_url TEXT,
+    metadata_url TEXT,
+    allowed_domains TEXT,
+    enabled BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sso_providers_org ON sso_providers(org_id);
+CREATE INDEX IF NOT EXISTS idx_sso_providers_enabled ON sso_providers(org_id, enabled);

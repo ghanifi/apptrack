@@ -9,7 +9,7 @@ replicaCount:
 image:
   registry: ghcr.io/apptrack
   pullPolicy: IfNotPresent
-  tag: "latest"
+  tag: "v0.9.0"
 
 gateway:
   resources:

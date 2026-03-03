@@ -12,8 +12,12 @@ from pydantic_settings import BaseSettings
 import aio_pika
 import httpx
 
+import time as _time
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+_START_TIME = _time.time()
 
 
 class Settings(BaseSettings):
@@ -29,6 +33,12 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+class ConfigurationError(Exception):
+    """Credential veya konfigürasyon eksikliği — build başlatılamaz."""
+
+
 _channel: aio_pika.abc.AbstractChannel | None = None
 
 _used_nonces: dict[str, datetime] = {}
@@ -85,18 +95,16 @@ async def _trigger_test_automation(build_id: str, project_id: str, artifact_url:
 async def _trigger_eas(build_id: str, payload: dict, channel: aio_pika.abc.AbstractChannel):
     eas_token = payload.get("eas_token")
     expo_app_id = payload.get("expo_app_id", "")
-    if not eas_token or not expo_app_id:
-        logger.warning("EAS: missing EAS_TOKEN or EXPO_APP_ID for build %s — simulating", build_id)
-        await publish_event(channel, "build.finished", {
-            "build_id": build_id,
-            "project_id": payload["project_id"],
-            "framework": payload.get("framework", "expo"),
-            "status": "success",
-            "artifact_url": None,
-            "provider": "eas",
-            "note": "Simulated — EAS_TOKEN or EXPO_APP_ID not configured",
-        })
-        return
+    if not eas_token:
+        raise ConfigurationError(
+            "EAS_TOKEN credential eksik. "
+            "Settings > Credentials bölümünden EAS Token ekleyin."
+        )
+    if not expo_app_id:
+        raise ConfigurationError(
+            "EXPO_APP_ID eksik. "
+            "Project ayarlarından Expo App ID'yi tanımlayın."
+        )
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
@@ -131,18 +139,16 @@ async def _trigger_eas(build_id: str, payload: dict, channel: aio_pika.abc.Abstr
 async def _trigger_codemagic(build_id: str, payload: dict, channel: aio_pika.abc.AbstractChannel):
     codemagic_token = payload.get("codemagic_token")
     codemagic_app_id = payload.get("codemagic_app_id", "")
-    if not codemagic_token or not codemagic_app_id:
-        logger.warning("Codemagic: missing token or app ID for build %s — simulating", build_id)
-        await publish_event(channel, "build.finished", {
-            "build_id": build_id,
-            "project_id": payload["project_id"],
-            "framework": payload.get("framework", "flutter"),
-            "status": "success",
-            "artifact_url": None,
-            "provider": "codemagic",
-            "note": "Simulated — CODEMAGIC_TOKEN or CODEMAGIC_APP_ID not configured",
-        })
-        return
+    if not codemagic_token:
+        raise ConfigurationError(
+            "CODEMAGIC_TOKEN credential eksik. "
+            "Settings > Credentials bölümünden Codemagic API Token ekleyin."
+        )
+    if not codemagic_app_id:
+        raise ConfigurationError(
+            "CODEMAGIC_APP_ID eksik. "
+            "Project ayarlarından Codemagic App ID'yi tanımlayın."
+        )
 
     platform = payload.get("platform", "android")
     workflow_id = "android-workflow" if platform == "android" else "ios-workflow" if platform == "ios" else "android-and-ios"
@@ -189,18 +195,16 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
         parts = repo_url.rstrip("/").rstrip(".git").split("github.com/")[-1]
         owner_repo = parts
 
-    if not github_token or not owner_repo:
-        logger.warning("GitHub Actions: no token or repo, simulating build %s", build_id)
-        await publish_event(channel, "build.finished", {
-            "build_id": build_id,
-            "project_id": payload["project_id"],
-            "framework": framework,
-            "status": "success",
-            "artifact_url": None,
-            "provider": "github_actions",
-            "note": "Simulated — GITHUB_ACTIONS_TOKEN or repo_url not configured",
-        })
-        return
+    if not github_token:
+        raise ConfigurationError(
+            "GITHUB_ACTIONS_TOKEN credential eksik. "
+            "Settings > Credentials bölümünden GitHub Personal Access Token ekleyin."
+        )
+    if not owner_repo:
+        raise ConfigurationError(
+            "GitHub repo URL'i parse edilemedi. "
+            "Project'in repo_url alanının doğru formatta olduğundan emin olun (https://github.com/owner/repo)."
+        )
 
     if framework == "swift":
         workflow_file = "build-ios.yml"
@@ -316,17 +320,22 @@ async def handle_build_triggered(message: aio_pika.abc.AbstractIncomingMessage, 
             elif provider == "github_actions":
                 await _trigger_github_actions(build_id, payload, channel)
             else:
-                logger.warning("Unknown provider %s for build %s — simulating", provider, build_id)
-                await publish_event(channel, "build.finished", {
+                await publish_event(channel, "build.failed", {
                     "build_id": build_id,
-                    "project_id": payload["project_id"],
-                    "framework": framework,
-                    "status": "success",
-                    "artifact_url": None,
-                    "provider": provider,
-                    "note": f"Simulated — {provider} credentials not configured",
+                    "error": f"Desteklenmeyen build provider: '{provider}'. "
+                             f"Geçerli seçenekler: eas, codemagic, github_actions",
+                    "error_type": "unsupported_provider"
                 })
+                return
 
+        except ConfigurationError as exc:
+            logger.error("Build %s configuration error: %s", build_id, exc)
+            await publish_event(channel, "build.failed", {
+                "build_id": build_id,
+                "error": str(exc),
+                "error_type": "configuration_error",
+                "fix_url": "/settings/credentials"
+            })
         except Exception as exc:
             logger.error("Build handler error: %s", exc)
             p = json.loads(message.body) if message.body else {}
@@ -381,7 +390,12 @@ app = FastAPI(title="Build Orchestrator Service", version="0.3.0", lifespan=life
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "build", "version": "0.3.0"}
+    return {
+        "status": "healthy",
+        "service": "build",
+        "version": "0.9.0",
+        "uptime_seconds": int(_time.time() - _START_TIME),
+    }
 
 
 class CancelRequest(BaseModel):

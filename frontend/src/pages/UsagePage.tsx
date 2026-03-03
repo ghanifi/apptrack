@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useAuthStore } from '@/store/authStore'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '@/lib/api'
 
 interface UsageSummary {
   plan: string
@@ -31,19 +31,21 @@ function ProgressBar({ current, limit, label }: { current: number; limit: number
 }
 
 export default function UsagePage() {
-  const { token } = useAuthStore()
-  const [data, setData] = useState<UsageSummary | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { data, isLoading, error } = useQuery<UsageSummary>({
+    queryKey: ['usage-summary'],
+    queryFn: () => api.get('/usage/summary').then(r => r.data),
+  })
 
-  useEffect(() => {
-    fetch('/api/usage/summary', { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [token])
+  if (isLoading) return <div className="p-6 text-zinc-400">Loading usage data...</div>
 
-  if (loading) return <div className="p-6 text-zinc-400">Loading usage data...</div>
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-red-400">Kullanım verileri yüklenemedi. Sayfayı yenileyin.</p>
+      </div>
+    )
+  }
+
   if (!data) return <div className="p-6 text-red-400">Failed to load usage data</div>
 
   const planColors: Record<string, string> = {

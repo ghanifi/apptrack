@@ -8,8 +8,12 @@ from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 import aio_pika
 
+import time as _time
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+_START_TIME = _time.time()
 
 
 class Settings(BaseSettings):
@@ -133,7 +137,12 @@ class DetectionRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "framework-detection"}
+    return {
+        "status": "healthy",
+        "service": "framework-detection",
+        "version": "0.9.0",
+        "uptime_seconds": int(_time.time() - _START_TIME),
+    }
 
 
 @app.post("/detect")

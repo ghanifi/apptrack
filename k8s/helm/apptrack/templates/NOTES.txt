@@ -1,0 +1,50 @@
+===============================================================
+  AppTrack - Mobile App Publishing Automation Platform
+  Chart Version: {{ .Chart.Version }}
+  App Version:   {{ .Chart.AppVersion }}
+===============================================================
+
+Your AppTrack release "{{ .Release.Name }}" has been deployed!
+
+{{- if .Values.ingress.enabled }}
+
+Access the application at:
+{{- range .Values.ingress.hosts }}
+  - https://{{ .host }}
+{{- end }}
+{{- end }}
+
+Services deployed:
+  - Gateway API        (port 8000)
+  - Build Service      (port 8006)
+  - Store Deploy       (port 8008)
+  - Artifact Service   (port 8007)
+  - Preview Service    (port 8005)
+  - Frontend           (port 80)
+
+{{- if .Values.autoscaling.enabled }}
+
+Autoscaling is ENABLED:
+  Min replicas: {{ .Values.autoscaling.minReplicas }}
+  Max replicas: {{ .Values.autoscaling.maxReplicas }}
+  CPU target:   {{ .Values.autoscaling.targetCPUUtilization }}%
+  Memory target: {{ .Values.autoscaling.targetMemoryUtilization }}%
+{{- end }}
+
+{{- if .Values.monitoring.prometheus.enabled }}
+
+Monitoring:
+  Prometheus ServiceMonitors are enabled.
+  Metrics are available at /metrics on each backend service.
+{{- end }}
+
+To check the status of the deployment:
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Release.Namespace }}
+
+To view logs for a specific service:
+  kubectl logs -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=gateway -n {{ .Release.Namespace }}
+
+To upgrade:
+  helm upgrade {{ .Release.Name }} k8s/helm/apptrack --set image.tag=<new-version>
+
+===============================================================
