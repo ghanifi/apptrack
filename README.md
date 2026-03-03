@@ -17,6 +17,211 @@ Mobile app CI/CD and Store management platform. Build, test, deploy and manage y
 - **OTA Updates**: Over-the-air updates via EAS and custom bundles
 - **Store Metadata**: Multi-locale store listing management with icon/screenshot upload
 
+## Application Flow
+
+### End-to-End Publishing Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        AppTrack — Uygulama Akışı                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+ ┌──────────┐     ┌──────────────┐     ┌───────────────┐     ┌─────────────┐
+ │  GitHub   │────▶│  Repo Sync   │────▶│  Framework    │────▶│  Project    │
+ │  OAuth    │     │  Service     │     │  Detection    │     │  Created    │
+ │  Connect  │     │  (8003)      │     │  (8004)       │     │  ✓ Ready    │
+ └──────────┘     └──────────────┘     └───────────────┘     └──────┬──────┘
+                   Clone & sync         Auto-detect:                 │
+                   repository           Flutter, React Native,       │
+                                        Expo, Swift, Kotlin          │
+                                                                     ▼
+ ┌──────────────────────────────────────────────────────────────────────────┐
+ │                        CREDENTIAL MANAGEMENT                             │
+ │  ┌─────────────────────┐          ┌──────────────────────┐              │
+ │  │  Google Play         │          │  App Store Connect    │              │
+ │  │  Service Account     │          │  API Key + Issuer ID  │              │
+ │  │  Key (JSON)          │          │  + Private Key (.p8)  │              │
+ │  └─────────┬───────────┘          └──────────┬───────────┘              │
+ │            └──────────────┬──────────────────┘                          │
+ │                           ▼                                              │
+ │              ┌────────────────────────┐                                  │
+ │              │  Fernet Encryption     │  AES-128-CBC + Key Rotation     │
+ │              │  Secure Vault          │  Zero plaintext storage         │
+ │              └────────────────────────┘                                  │
+ └──────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        ▼
+ ┌──────────────────────────────────────────────────────────────────────────┐
+ │                          BUILD PIPELINE                                  │
+ │                                                                          │
+ │  ┌─────────┐    ┌──────────────┐    ┌──────────────┐    ┌────────────┐ │
+ │  │ Trigger  │───▶│ Provider     │───▶│ Build        │───▶│ Artifact   │ │
+ │  │ Build    │    │ Selection    │    │ Execution    │    │ Storage    │ │
+ │  │ (API)    │    │ (AI-powered) │    │              │    │ (MinIO)    │ │
+ │  └─────────┘    └──────────────┘    └──────────────┘    └────────────┘ │
+ │                                                                          │
+ │  Providers:                      Platforms:          Artifacts:          │
+ │  ├── EAS (Expo)                  ├── Android (.apk)  ├── Signed APK     │
+ │  ├── Codemagic (Flutter)         ├── iOS (.ipa)      ├── Signed IPA     │
+ │  └── GitHub Actions (Native)     └── Both            └── Build logs     │
+ │                                                                          │
+ │  AI Features:                                                            │
+ │  ├── Cost Prediction ── Geçmiş build sürelerinden maliyet tahmini       │
+ │  ├── Provider Recommendation ── Framework uyumluluğuna göre öneri       │
+ │  └── Build Diagnosis ── 30 hata pattern'ı ile otomatik tanı             │
+ └──────────────────────────────────────────────────────────────────────────┘
+                                        │
+                              ┌─────────┴─────────┐
+                              ▼                   ▼
+                    ┌──────────────┐    ┌──────────────────┐
+                    │  Build       │    │  Build Failed    │
+                    │  Success ✓   │    │  ✗              │
+                    └──────┬───────┘    └────────┬─────────┘
+                           │                     │
+                           │              ┌──────▼─────────┐
+                           │              │ AI Diagnosis    │
+                           │              │ 30 error        │
+                           │              │ patterns        │
+                           │              │ + fix önerileri │
+                           │              └──────┬─────────┘
+                           │                     │ retry
+                           │                     ▼
+                           │              ┌──────────────┐
+                           │              │ Rebuild      │
+                           │              └──────────────┘
+                           ▼
+ ┌──────────────────────────────────────────────────────────────────────────┐
+ │                      PRE-DEPLOY VALIDATION                               │
+ │                                                                          │
+ │  ┌────────────────┐  ┌────────────────┐  ┌──────────────────────────┐  │
+ │  │ Deploy         │  │ Compliance     │  │ Store Metadata           │  │
+ │  │ Simulator      │  │ Check          │  │ Validation               │  │
+ │  │                │  │                │  │                          │  │
+ │  │ • Credential   │  │ • Content      │  │ • 15 locale checks      │  │
+ │  │   validation   │  │   guidelines   │  │ • Icon size/format      │  │
+ │  │ • API key      │  │ • Age rating   │  │ • Screenshot specs      │  │
+ │  │   permissions  │  │ • Privacy      │  │ • Description length    │  │
+ │  │ • Dry-run      │  │   policy       │  │ • Readiness checklist   │  │
+ │  │   simulation   │  │ • Store rules  │  │                          │  │
+ │  └────────────────┘  └────────────────┘  └──────────────────────────┘  │
+ └──────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        ▼
+ ┌──────────────────────────────────────────────────────────────────────────┐
+ │                       DEPLOYMENT                                         │
+ │                                                                          │
+ │   Deploy Track:  ┌─────────────┐  ┌─────────────┐  ┌────────────────┐  │
+ │                  │  Internal   │  │  Beta /      │  │  Production    │  │
+ │                  │  Testing    │  │  TestFlight  │  │  (Canlı)       │  │
+ │                  └──────┬──────┘  └──────┬──────┘  └───────┬────────┘  │
+ │                         └────────────────┴─────────────────┘            │
+ │                                          │                              │
+ │                    ┌─────────────────────┴──────────────────────┐       │
+ │                    ▼                                            ▼       │
+ │          ┌──────────────────┐                     ┌──────────────────┐  │
+ │          │  Google Play     │                     │  App Store       │  │
+ │          │  Console API     │                     │  Connect API     │  │
+ │          │                  │                     │                  │  │
+ │          │  ┌────────────┐  │                     │  ┌────────────┐  │  │
+ │          │  │ Upload APK │  │                     │  │ Upload IPA │  │  │
+ │          │  │ Set track  │  │                     │  │ Submit for │  │  │
+ │          │  │ Rollout %  │  │                     │  │ review     │  │  │
+ │          │  └────────────┘  │                     │  └────────────┘  │  │
+ │          └──────────────────┘                     └──────────────────┘  │
+ │                                                                          │
+ │   Canary Deploy:                                                        │
+ │   ├── %10 → %25 → %50 → %100  (gradual rollout)                       │
+ │   └── Auto-rollback on error rate spike                                 │
+ └──────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        ▼
+ ┌──────────────────────────────────────────────────────────────────────────┐
+ │                      POST-DEPLOY                                         │
+ │                                                                          │
+ │  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐ │
+ │  │ Audit Log   │  │ KPI Metrics  │  │ OTA Updates  │  │ Webhook     │ │
+ │  │ (Immutable) │  │ (Prometheus) │  │ (EAS/Custom) │  │ Notify      │ │
+ │  │             │  │              │  │              │  │             │ │
+ │  │ SOC2-ready  │  │ Build time   │  │ Hot-fix      │  │ Slack       │ │
+ │  │ Hash chain  │  │ Success rate │  │ patches      │  │ Discord     │ │
+ │  │ Tamper-proof│  │ Cost/build   │  │ No rebuild   │  │ Email       │ │
+ │  └─────────────┘  └──────────────┘  └──────────────┘  └─────────────┘ │
+ └──────────────────────────────────────────────────────────────────────────┘
+```
+
+### User Journey (7 Steps)
+
+```
+ Step 1          Step 2          Step 3          Step 4
+ Connect         Select          Framework       Store
+ GitHub          Repository      Detection       Credentials
+ ┌──────┐       ┌──────┐       ┌──────┐       ┌──────┐
+ │  🔗  │──────▶│  📂  │──────▶│  🔍  │──────▶│  🔑  │
+ │GitHub│       │ Repo │       │ Auto │       │Creds │
+ │OAuth │       │Select│       │Detect│       │Setup │
+ └──────┘       └──────┘       └──────┘       └──────┘
+
+ Step 5          Step 6          Step 7
+ Build           Deploy          Live!
+ App             to Stores       Published
+ ┌──────┐       ┌──────┐       ┌──────┐
+ │  🔨  │──────▶│  🚀  │──────▶│  ✅  │
+ │Build │       │Deploy│       │ Live │
+ │ APK  │       │Store │       │  🎉  │
+ └──────┘       └──────┘       └──────┘
+```
+
+### System Architecture Diagram
+
+```
+                              ┌─────────────────┐
+                              │   Client (SPA)   │
+                              │  React + Vite    │
+                              │  Port: 3000      │
+                              └────────┬─────────┘
+                                       │ HTTPS
+                              ┌────────▼─────────┐
+                              │   Nginx Ingress   │
+                              │   TLS + Headers   │
+                              │   Rate Limiting   │
+                              └────────┬─────────┘
+                                       │
+                              ┌────────▼─────────┐
+                              │   API Gateway     │
+                              │   FastAPI (8000)  │
+                              │   WAF + Auth +    │
+                              │   RBAC + Routing  │
+                              └────────┬─────────┘
+                                       │
+                 ┌─────────────────────┼─────────────────────┐
+                 │                     │                     │
+        ┌────────▼──────┐    ┌────────▼──────┐    ┌────────▼──────┐
+        │  Auth (8001)  │    │ Build (8006)  │    │ Deploy(8008)  │
+        │  OAuth + JWT  │    │ CI/CD Orch.   │    │ Store Publish │
+        └───────────────┘    └───────┬───────┘    └───────────────┘
+                                     │
+            ┌────────────────────────┼────────────────────────┐
+            │                        │                        │
+   ┌────────▼──────┐       ┌────────▼──────┐       ┌────────▼──────┐
+   │ RepoSync(8003)│       │Artifact(8007) │       │Preview (8005) │
+   │ Git Clone     │       │ MinIO S3      │       │ Live Preview  │
+   └───────────────┘       └───────────────┘       └───────────────┘
+
+        ┌───────────────────────────────────────────────────┐
+        │                 Infrastructure                     │
+        │                                                    │
+        │  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │
+        │  │PostgreSQL│  │ RabbitMQ │  │   MinIO (S3)   │  │
+        │  │  16      │  │  3.13    │  │   Storage      │  │
+        │  └──────────┘  └──────────┘  └────────────────┘  │
+        │                                                    │
+        │  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │
+        │  │Prometheus│  │ Grafana  │  │   Redis        │  │
+        │  │Metrics   │  │Dashboard │  │   Rate Limit   │  │
+        │  └──────────┘  └──────────┘  └────────────────┘  │
+        └───────────────────────────────────────────────────┘
+```
+
 ## Architecture
 
 | Service | Port | Description |
