@@ -9,6 +9,7 @@ import {
 import { api } from '@/lib/api'
 import clsx from 'clsx'
 import Confetti from '@/components/ui/Confetti'
+import BuildDiagnosisPanel from '@/components/ui/BuildDiagnosisPanel'
 
 interface GithubRepo {
   id: number
@@ -608,8 +609,15 @@ export default function OnboardingPage() {
                             <div className="h-full bg-primary-500 rounded-full animate-pulse" style={{ width: '60%' }} />
                           </div>
                         )}
-                        {build.error_message && (
-                          <p className="text-xs text-red-400 mt-2">{build.error_message}</p>
+                        {build.status === 'failed' && (
+                          <div className="mt-3">
+                            <BuildDiagnosisPanel
+                              buildId={build.id}
+                              errorMessage={build.error_message}
+                              logOutput={build.log_output}
+                              onRetry={() => setBuildTriggered(false)}
+                            />
+                          </div>
                         )}
                       </div>
                     )) : (
@@ -619,7 +627,7 @@ export default function OnboardingPage() {
                     )}
                   </div>
 
-                  {buildFailed && (
+                  {buildFailed && !builds.some(b => b.status === 'failed') && (
                     <button
                       onClick={() => {
                         setBuildTriggered(false)

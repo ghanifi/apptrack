@@ -26,6 +26,8 @@ class BuildDetailResponse(BaseModel):
     artifact_url: str | None = None
     external_build_id: str | None = None
     idempotency_key: str | None = None
+    error_message: str | None = None
+    log_output: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
     created_at: str
@@ -76,7 +78,24 @@ class BuildListResponse(BaseModel):
 BUILD_SERVICE_URL = "http://build-service:8006"
 
 
+def _extract_error_message(log_output: str | None, status: str) -> str | None:
+    """Extract a short error summary from build log output for failed builds."""
+    if status != "failed" or not log_output:
+        return None
+    lines = log_output.strip().splitlines()
+    error_lines = [
+        line.strip() for line in lines
+        if any(kw in line.lower() for kw in ("error", "fatal", "failed", "exception", "killed"))
+    ]
+    if error_lines:
+        return error_lines[-1][:500]
+    if lines:
+        return lines[-1][:500]
+    return None
+
+
 def _serialize_build(b: Build) -> dict:
+    error_message = _extract_error_message(b.log_output, b.status)
     return {
         "id": b.id,
         "project_id": b.project_id,
@@ -86,6 +105,8 @@ def _serialize_build(b: Build) -> dict:
         "artifact_url": b.artifact_url,
         "external_build_id": b.external_build_id,
         "idempotency_key": b.idempotency_key,
+        "error_message": error_message,
+        "log_output": b.log_output if b.status == "failed" else None,
         "started_at": b.started_at.isoformat() if b.started_at else None,
         "finished_at": b.finished_at.isoformat() if b.finished_at else None,
         "created_at": b.created_at.isoformat(),

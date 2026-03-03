@@ -17,11 +17,35 @@ export interface Build {
   project_id: string
   platform: 'android' | 'ios' | 'both'
   provider: 'eas' | 'codemagic' | 'github_actions'
-  status: 'queued' | 'running' | 'success' | 'failed'
+  status: 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
   artifact_url?: string
+  error_message?: string
+  log_output?: string
   started_at?: string
   finished_at?: string
   created_at: string
+}
+
+export interface BuildDiagnosis {
+  id: string
+  framework_group: string
+  diagnosis: string
+  fix: string
+  auto_fix: boolean
+}
+
+export interface BuildDiagnosisResult {
+  build_id: string
+  project_id: string
+  platform: string
+  provider: string
+  framework: string | null
+  status: string
+  diagnoses: BuildDiagnosis[]
+  diagnosis_count: number
+  severity: 'critical' | 'high' | 'medium' | 'low'
+  auto_fixable: boolean
+  message?: string
 }
 
 export interface Deployment {

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Project, Build, Deployment } from '@/types'
+import BuildDiagnosisPanel from '@/components/ui/BuildDiagnosisPanel'
 import clsx from 'clsx'
 
 const frameworkColors: Record<string, string> = {
@@ -147,6 +148,7 @@ export default function ProjectDetailPage() {
   const queryClient = useQueryClient()
   const [deployBuild, setDeployBuild] = useState<Build | null>(null)
   const [showAllBuilds, setShowAllBuilds] = useState(false)
+  const [expandedBuildId, setExpandedBuildId] = useState<string | null>(null)
 
   const { data: project, isLoading } = useQuery<Project & { builds: Build[] }>({
     queryKey: ['projects', id],
@@ -403,32 +405,56 @@ export default function ProjectDetailPage() {
           <>
             <div className="divide-y divide-gray-800">
               {visibleBuilds.map((build) => (
-                <div key={build.id} className="flex items-center justify-between px-5 py-3">
-                  <div className="flex items-center gap-4">
-                    <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', buildStatusColors[build.status])}>
-                      {build.status}
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium capitalize">{build.platform} · {build.provider}</p>
-                      <p className="text-xs text-gray-500">{new Date(build.created_at).toLocaleString()}</p>
+                <div key={build.id}>
+                  <div className="flex items-center justify-between px-5 py-3">
+                    <div className="flex items-center gap-4">
+                      <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', buildStatusColors[build.status])}>
+                        {build.status}
+                      </span>
+                      <div>
+                        <p className="text-sm font-medium capitalize">{build.platform} · {build.provider}</p>
+                        <p className="text-xs text-gray-500">{new Date(build.created_at).toLocaleString()}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {build.status === 'failed' && (
+                        <button
+                          onClick={() => setExpandedBuildId(expandedBuildId === build.id ? null : build.id)}
+                          className="flex items-center gap-1 text-xs px-2 py-1 bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 rounded-lg transition-colors"
+                        >
+                          <XCircle size={11} />
+                          {expandedBuildId === build.id ? 'Hide Details' : 'Error Details'}
+                        </button>
+                      )}
+                      {build.artifact_url && (
+                        <a href={build.artifact_url} className="text-xs text-primary-400 hover:underline flex items-center gap-1">
+                          Download <ExternalLink size={10} />
+                        </a>
+                      )}
+                      {build.status === 'success' && (
+                        <button
+                          onClick={() => setDeployBuild(build)}
+                          className="flex items-center gap-1 text-xs px-2 py-1 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-lg transition-colors"
+                        >
+                          <Upload size={11} />
+                          Deploy
+                        </button>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {build.artifact_url && (
-                      <a href={build.artifact_url} className="text-xs text-primary-400 hover:underline flex items-center gap-1">
-                        Download <ExternalLink size={10} />
-                      </a>
-                    )}
-                    {build.status === 'success' && (
-                      <button
-                        onClick={() => setDeployBuild(build)}
-                        className="flex items-center gap-1 text-xs px-2 py-1 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-lg transition-colors"
-                      >
-                        <Upload size={11} />
-                        Deploy
-                      </button>
-                    )}
-                  </div>
+                  {build.status === 'failed' && expandedBuildId === build.id && (
+                    <div className="px-5 pb-4">
+                      <BuildDiagnosisPanel
+                        buildId={build.id}
+                        errorMessage={build.error_message}
+                        logOutput={build.log_output}
+                        onRetry={() => {
+                          buildMutation.mutate(build.platform)
+                          setExpandedBuildId(null)
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
