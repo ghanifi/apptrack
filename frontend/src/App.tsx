@@ -22,6 +22,7 @@ const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
 const SLAPage = lazy(() => import('./pages/SLAPage'))
 const StatusPage = lazy(() => import('./pages/StatusPage'))
 const SupportPage = lazy(() => import('./pages/SupportPage'))
+const GitHubCallbackPage = lazy(() => import('./pages/GitHubCallbackPage'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -53,6 +54,7 @@ export default function App() {
             <Route path="/sla" element={<SLAPage />} />
             <Route path="/status" element={<StatusPage />} />
             <Route path="/support" element={<SupportPage />} />
+            <Route path="/auth/github/callback" element={<GitHubCallbackPage />} />
             <Route
               path="/onboarding"
               element={
