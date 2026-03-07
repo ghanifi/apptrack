@@ -8,6 +8,7 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
+from sqlalchemy.orm import selectinload
 from app.dependencies import get_current_user
 from app.database import get_db
 from app.models import Project, Build, Deployment, User
@@ -135,6 +136,9 @@ class DeploymentResponse(BaseModel):
 
 
 def _serialize_project(p: Project) -> dict:
+    from sqlalchemy.orm import attributes
+    builds_loaded = attributes.instance_state(p).attrs.builds.loaded_value
+    builds = builds_loaded if builds_loaded is not attributes.ATTR_EMPTY else []
     return {
         "id": p.id,
         "name": p.name,
@@ -154,7 +158,7 @@ def _serialize_project(p: Project) -> dict:
                 "artifact_url": b.artifact_url,
                 "created_at": b.created_at.isoformat(),
             }
-            for b in p.builds
+            for b in builds
         ],
     }
 
@@ -186,7 +190,7 @@ async def list_projects(
     total = count_result.scalar() or 0
 
     offset = (page - 1) * size
-    result = await db.execute(base_q.offset(offset).limit(size))
+    result = await db.execute(base_q.options(selectinload(Project.builds)).offset(offset).limit(size))
     projects = result.scalars().all()
     return {
         "items": [_serialize_project(p) for p in projects],
@@ -274,7 +278,9 @@ async def get_project(
         401: Kimlik doğrulama gerekli
         404: Proje bulunamadı veya erişim yetkisi yok
     """
-    result = await db.execute(select(Project).where(Project.id == project_id))
+    result = await db.execute(
+        select(Project).options(selectinload(Project.builds)).where(Project.id == project_id)
+    )
     project = result.scalar_one_or_none()
     if not project or project.owner_id != current_user["id"]:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -297,7 +303,9 @@ async def update_project(
         401: Kimlik doğrulama gerekli
         404: Proje bulunamadı veya erişim yetkisi yok
     """
-    result = await db.execute(select(Project).where(Project.id == project_id))
+    result = await db.execute(
+        select(Project).options(selectinload(Project.builds)).where(Project.id == project_id)
+    )
     project = result.scalar_one_or_none()
     if not project or project.owner_id != current_user["id"]:
         raise HTTPException(status_code=404, detail="Project not found")
