@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select, update, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +31,7 @@ class NotificationPreferenceUpdate(BaseModel):
 @router.get("")
 @limiter.limit("30/minute")
 async def list_notifications(
-    request,
+    request: Request,
     unread_only: bool = False,
     limit: int = Query(default=50, le=100),
     offset: int = 0,
