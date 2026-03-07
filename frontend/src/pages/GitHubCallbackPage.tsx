@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
@@ -9,8 +9,12 @@ export default function GitHubCallbackPage() {
   const navigate = useNavigate()
   const { setAuth } = useAuthStore()
   const [error, setError] = useState<string | null>(null)
+  const calledRef = useRef(false)
 
   useEffect(() => {
+    if (calledRef.current) return
+    calledRef.current = true
+
     const code = searchParams.get('code')
     const state = searchParams.get('state')
 
