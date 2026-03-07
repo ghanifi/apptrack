@@ -98,6 +98,7 @@ interface BuildStatus {
   started_at?: string
   completed_at?: string
   error_message?: string
+  log_output?: string
 }
 
 export default function OnboardingPage() {
@@ -130,7 +131,7 @@ export default function OnboardingPage() {
   const { data: credentials = [] } = useQuery<Credential[]>({
     queryKey: ['credentials'],
     queryFn: () => api.get('/credentials').then((r) => r.data),
-    enabled: step === 'credentials',
+    enabled: step === 'credentials' || step === 'deploy',
   })
 
   const { data: buildsResp, refetch: refetchBuilds } = useQuery<{ items: BuildStatus[] }>({

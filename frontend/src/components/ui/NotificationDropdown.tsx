@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bell, Check, CheckCheck, Trash2, X } from 'lucide-react'
-import api from '../../lib/api'
+import { api } from '../../lib/api'
 import type { Notification } from '../../types'
 
 export default function NotificationDropdown() {
@@ -11,7 +11,7 @@ export default function NotificationDropdown() {
 
   const { data } = useQuery({
     queryKey: ['notifications'],
-    queryFn: () => api.get('/notifications?limit=20').then((r) => r.data),
+    queryFn: () => api.get('/notifications?limit=20').then((r: { data: { items: Notification[]; unread_count: number } }) => r.data),
     refetchInterval: 30000,
   })
 

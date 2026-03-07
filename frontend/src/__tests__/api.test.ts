@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '../test/server'
 import { useAuthStore } from '../store/authStore'
@@ -109,21 +109,18 @@ describe('api module', () => {
     const user = { id: '1', email: 'test@example.com', name: 'Test User' }
     useAuthStore.getState().setAuth('valid-token', 'refresh-tok', user)
 
-    let callCount = 0
     server.use(
       http.get('/api/server-error', () => {
-        callCount++
         return HttpResponse.json({ detail: 'Server error' }, { status: 500 })
       })
     )
 
-    try {
-      await api.get('/server-error')
-    } catch (err: any) {
-      expect(err.response.status).toBe(500)
-    }
+    // 500 error should not trigger retry and should reject
+    await expect(api.get('/server-error')).rejects.toThrow()
 
-    expect(callCount).toBe(1) // No retry on 500
+    // Auth should NOT be cleared on 500 (only on 401)
+    const state = useAuthStore.getState()
+    expect(state.token).toBe('valid-token')
   })
 
   it('sends Content-Type application/json header', () => {
