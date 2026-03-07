@@ -57,7 +57,7 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {projects.map((project) => (
-            <Link key={project.id} to={`/projects/${project.id}`} className="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors block">
+            <Link key={project.id} to={`/dashboard/projects/${project.id}`} className="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors block">
               <div className="flex items-start justify-between mb-3">
                 <h3 className="font-semibold truncate pr-2">{project.name}</h3>
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${statusColors[project.status]}`}>
