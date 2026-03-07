@@ -119,6 +119,8 @@ services:
     environment:
       - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
       - CLONE_BASE_DIR=/tmp/repos
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      - FERNET_SALT=${FERNET_SALT:-apptrack-fernet-salt-change-me}
     depends_on:
       rabbitmq:
         condition: service_healthy

@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     RABBITMQ_URL: str = "amqp://guest:guest@rabbitmq:5672/"
     CLONE_BASE_DIR: str = "/tmp/repos"
     GATEWAY_URL: str = "http://gateway:8000"
+    SECRET_KEY: str = "dev-secret-key"
+    FERNET_SALT: str = "apptrack-fernet-salt-change-me"
 
     class Config:
         env_file = ".env"
@@ -41,7 +43,21 @@ async def publish_event(channel: aio_pika.abc.AbstractChannel, routing_key: str,
     logger.info("Published %s", routing_key)
 
 
-def clone_or_pull(repo_url: str, branch: str, dest: str) -> str:
+def _inject_token(repo_url: str, token: str) -> str:
+    if "github.com" in repo_url:
+        return repo_url.replace("https://github.com", f"https://{token}@github.com")
+    return repo_url
+
+
+def _mask_url(url: str) -> str:
+    """Remove tokens from URL for safe logging."""
+    import re
+    return re.sub(r"https://[^@]+@", "https://***@", url)
+
+
+def clone_or_pull(repo_url: str, branch: str, dest: str, github_token: str | None = None) -> str:
+    clone_url = _inject_token(repo_url, github_token) if github_token else repo_url
+    safe_url = _mask_url(clone_url)
     if os.path.exists(dest):
         try:
             repo = git.Repo(dest)
@@ -49,15 +65,15 @@ def clone_or_pull(repo_url: str, branch: str, dest: str) -> str:
             origin.fetch()
             repo.git.checkout(branch)
             origin.pull()
-            logger.info("Pulled repo %s branch %s", repo_url, branch)
+            logger.info("Pulled repo %s branch %s", safe_url, branch)
         except Exception as exc:
             logger.warning("Pull failed (%s), re-cloning", exc)
             shutil.rmtree(dest, ignore_errors=True)
-            git.Repo.clone_from(repo_url, dest, branch=branch, depth=1)
+            git.Repo.clone_from(clone_url, dest, branch=branch, depth=1)
     else:
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        git.Repo.clone_from(repo_url, dest, branch=branch, depth=1)
-        logger.info("Cloned %s to %s", repo_url, dest)
+        git.Repo.clone_from(clone_url, dest, branch=branch, depth=1)
+        logger.info("Cloned %s to %s", safe_url, dest)
     return dest
 
 
@@ -70,9 +86,19 @@ async def handle_project_created(message: aio_pika.abc.AbstractIncomingMessage, 
             branch = payload.get("branch", "main")
             dest = os.path.join(settings.CLONE_BASE_DIR, project_id)
 
+            # Decrypt GitHub token if present (received encrypted from gateway)
+            github_token = None
+            encrypted_token = payload.get("github_token")
+            if encrypted_token:
+                try:
+                    from app.crypto import decrypt as decrypt_token
+                    github_token = decrypt_token(encrypted_token, settings.SECRET_KEY, settings.FERNET_SALT)
+                except Exception as exc:
+                    logger.warning("Failed to decrypt github_token: %s", exc)
+
             logger.info("Syncing project %s from %s", project_id, repo_url)
             loop = asyncio.get_event_loop()
-            clone_path = await loop.run_in_executor(None, clone_or_pull, repo_url, branch, dest)
+            clone_path = await loop.run_in_executor(None, clone_or_pull, repo_url, branch, dest, github_token)
 
             await publish_event(channel, "repo.synced", {
                 "project_id": project_id,

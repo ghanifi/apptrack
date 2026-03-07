@@ -26,12 +26,20 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+# Detection rules ordered by priority (first match wins)
 FRAMEWORK_RULES = [
+    # Native mobile
     ("flutter", ["pubspec.yaml"], 0.98),
     ("expo", ["app.json", "app.config.js", "app.config.ts"], 0.97),
     ("react_native", ["package.json"], 0.85),
     ("kotlin", ["build.gradle", "build.gradle.kts"], 0.97),
     ("swift", [".xcodeproj", ".xcworkspace"], 0.97),
+    # Hybrid mobile (web → native via Capacitor/Cordova/Ionic)
+    ("capacitor", ["capacitor.config.ts", "capacitor.config.json", "capacitor.config.js"], 0.95),
+    ("ionic", ["package.json"], 0.90),
+    ("cordova", ["config.xml"], 0.90),
+    # PWA (web app packaged as mobile via TWA/PWABuilder)
+    ("pwa", ["manifest.json", "manifest.webmanifest"], 0.70),
 ]
 
 BUILD_PROVIDER_MAP = {
@@ -40,6 +48,10 @@ BUILD_PROVIDER_MAP = {
     "react_native": "eas",
     "swift": "github_actions",
     "kotlin": "github_actions",
+    "capacitor": "github_actions",
+    "ionic": "github_actions",
+    "cordova": "github_actions",
+    "pwa": "github_actions",
     "unknown": "github_actions",
 }
 
@@ -49,8 +61,29 @@ PREVIEW_MODE_MAP = {
     "react_native": "expo_preview",
     "swift": "simulator",
     "kotlin": "simulator",
+    "capacitor": "web",
+    "ionic": "web",
+    "cordova": "web",
+    "pwa": "web",
     "unknown": "none",
 }
+
+# package.json dependency checks
+_PKG_JSON_FRAMEWORKS = {
+    "react_native": "react-native",
+    "ionic": "@ionic/core",
+}
+
+
+def _has_pwa_intent(manifest_path: str) -> bool:
+    """Check if manifest.json is a real PWA manifest (not a generic web manifest)."""
+    try:
+        with open(manifest_path) as f:
+            data = json.load(f)
+        # PWA manifests have display mode and start_url
+        return "start_url" in data and "display" in data
+    except Exception:
+        return False
 
 
 def _detect(project_path: str) -> tuple[str, float]:
@@ -59,19 +92,33 @@ def _detect(project_path: str) -> tuple[str, float]:
             pattern = os.path.join(project_path, "**", indicator)
             matches = glob_module.glob(pattern, recursive=True)
             if matches:
-                if framework == "react_native":
+                # Frameworks that need package.json dependency verification
+                if framework in _PKG_JSON_FRAMEWORKS:
+                    pkg_dep = _PKG_JSON_FRAMEWORKS[framework]
                     for m in matches:
                         try:
                             with open(m) as f:
                                 pkg = json.load(f)
                             deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
-                            if "react-native" in deps:
-                                return "react_native", confidence
-                            if "expo" in deps:
-                                return "expo", confidence
+                            if framework == "react_native":
+                                if "react-native" in deps:
+                                    return "react_native", confidence
+                                if "expo" in deps:
+                                    return "expo", confidence
+                                continue
+                            if pkg_dep in deps:
+                                return framework, confidence
                         except Exception:
                             pass
                     continue
+
+                # PWA needs manifest content validation
+                if framework == "pwa":
+                    for m in matches:
+                        if _has_pwa_intent(m):
+                            return "pwa", confidence
+                    continue
+
                 return framework, confidence
     return "unknown", 0.0
 

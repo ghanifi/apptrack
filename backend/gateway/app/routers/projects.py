@@ -241,6 +241,16 @@ async def create_project(
     )
     await db.commit()
 
+    user_result = await db.execute(select(User).where(User.id == current_user["id"]))
+    user = user_result.scalar_one_or_none()
+    github_token_encrypted = user.github_access_token if user else None
+    github_token_plain = None
+    if github_token_encrypted:
+        try:
+            github_token_plain = decrypt(github_token_encrypted)
+        except Exception:
+            github_token_plain = github_token_encrypted
+
     await events.publish_event(
         "project.created",
         {
@@ -248,18 +258,13 @@ async def create_project(
             "repo_url": project.repo_url,
             "branch": project.branch,
             "owner_id": project.owner_id,
+            "github_token": github_token_encrypted,
             "trace_id": getattr(req, "trace_id", None),
         },
     )
 
-    user_result = await db.execute(select(User).where(User.id == current_user["id"]))
-    user = user_result.scalar_one_or_none()
-    if user and user.github_access_token and settings.GITHUB_WEBHOOK_SECRET:
-        try:
-            raw_token = decrypt(user.github_access_token)
-        except Exception:
-            raw_token = user.github_access_token
-        await _register_github_webhook(project, raw_token)
+    if user and github_token_plain and settings.GITHUB_WEBHOOK_SECRET:
+        await _register_github_webhook(project, github_token_plain)
 
     return _serialize_project(project)
 
@@ -367,9 +372,20 @@ async def sync_project(
     project.updated_at = datetime.utcnow()
     await db.commit()
 
+    # Get GitHub token (encrypted) for private repo access
+    user_result = await db.execute(select(User).where(User.id == current_user["id"]))
+    user = user_result.scalar_one_or_none()
+    github_token_encrypted = user.github_access_token if user else None
+
     await events.publish_event(
         "project.created",
-        {"project_id": project.id, "repo_url": project.repo_url, "branch": project.branch, "owner_id": project.owner_id},
+        {
+            "project_id": project.id,
+            "repo_url": project.repo_url,
+            "branch": project.branch,
+            "owner_id": project.owner_id,
+            "github_token": github_token_encrypted,
+        },
     )
     return {"status": "sync_triggered", "project_id": project_id}
 
