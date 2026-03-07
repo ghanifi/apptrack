@@ -136,9 +136,10 @@ class DeploymentResponse(BaseModel):
 
 
 def _serialize_project(p: Project) -> dict:
-    from sqlalchemy.orm import attributes
-    builds_loaded = attributes.instance_state(p).attrs.builds.loaded_value
-    builds = builds_loaded if builds_loaded is not attributes.ATTR_EMPTY else []
+    try:
+        builds = list(p.builds)
+    except Exception:
+        builds = []
     return {
         "id": p.id,
         "name": p.name,
