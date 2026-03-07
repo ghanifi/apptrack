@@ -33,7 +33,13 @@ api.interceptors.response.use(
       useAuthStore.getState().clearAuth()
       window.location.href = '/login'
     }
-    const message = err.response?.data?.detail || err.message || 'An error occurred'
+    const rawDetail = err.response?.data?.detail
+    const message =
+      typeof rawDetail === 'string'
+        ? rawDetail
+        : Array.isArray(rawDetail)
+          ? rawDetail.map((e: { msg?: string }) => e.msg || JSON.stringify(e)).join(', ')
+          : err.message || 'An error occurred'
     if (err.response?.status !== 401) {
       toast.error(message)
     }
