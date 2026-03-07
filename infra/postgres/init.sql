@@ -53,6 +53,18 @@ CREATE INDEX IF NOT EXISTS idx_builds_idempotency_key ON builds(idempotency_key)
 CREATE INDEX IF NOT EXISTS idx_builds_external_id ON builds(external_build_id);
 CREATE INDEX IF NOT EXISTS idx_builds_project_created ON builds(project_id, created_at DESC);
 
+-- Add log_output column if it does not exist
+ALTER TABLE builds ADD COLUMN IF NOT EXISTS log_output TEXT;
+
+-- PR build support columns
+ALTER TABLE builds ADD COLUMN IF NOT EXISTS trigger_type VARCHAR(20) DEFAULT 'push';
+ALTER TABLE builds ADD COLUMN IF NOT EXISTS pr_number INTEGER;
+ALTER TABLE builds ADD COLUMN IF NOT EXISTS commit_sha VARCHAR(40);
+
+-- Stripe billing columns on user_quotas
+ALTER TABLE user_quotas ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255);
+ALTER TABLE user_quotas ADD COLUMN IF NOT EXISTS stripe_subscription_id VARCHAR(255);
+
 CREATE TABLE IF NOT EXISTS deployments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     build_id UUID NOT NULL REFERENCES builds(id) ON DELETE CASCADE,
@@ -392,8 +404,8 @@ CREATE INDEX IF NOT EXISTS idx_preview_states_project_id ON preview_states(proje
 
 -- Support Tickets
 CREATE TABLE IF NOT EXISTS support_tickets (
-    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
-    user_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     subject VARCHAR(200) NOT NULL,
     message TEXT NOT NULL,
     category VARCHAR(20) NOT NULL DEFAULT 'general',
@@ -408,10 +420,10 @@ CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status)
 
 -- Organizations
 CREATE TABLE IF NOT EXISTS organizations (
-    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(100) NOT NULL,
     slug VARCHAR(100) UNIQUE NOT NULL,
-    owner_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+    owner_id UUID REFERENCES users(id) ON DELETE SET NULL,
     plan VARCHAR(20) NOT NULL DEFAULT 'free',
     max_members INTEGER NOT NULL DEFAULT 5,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -423,11 +435,11 @@ CREATE INDEX IF NOT EXISTS idx_organizations_owner ON organizations(owner_id);
 
 -- Organization Members
 CREATE TABLE IF NOT EXISTS org_members (
-    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
-    org_id VARCHAR(36) NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     role VARCHAR(20) NOT NULL DEFAULT 'member',
-    invited_by VARCHAR(36) REFERENCES users(id),
+    invited_by UUID REFERENCES users(id),
     joined_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(org_id, user_id)
 );
@@ -437,15 +449,15 @@ CREATE INDEX IF NOT EXISTS idx_org_members_user ON org_members(user_id);
 
 -- OTA Updates
 CREATE TABLE IF NOT EXISTS ota_updates (
-    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
-    project_id VARCHAR(36) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     channel VARCHAR(50) NOT NULL DEFAULT 'production',
     platform VARCHAR(10) NOT NULL DEFAULT 'all',
     runtime_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
     bundle_url TEXT NOT NULL,
     message TEXT DEFAULT '',
     status VARCHAR(20) NOT NULL DEFAULT 'published',
-    created_by VARCHAR(36) REFERENCES users(id),
+    created_by UUID REFERENCES users(id),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -453,13 +465,13 @@ CREATE INDEX IF NOT EXISTS idx_ota_updates_project ON ota_updates(project_id);
 CREATE INDEX IF NOT EXISTS idx_ota_updates_channel ON ota_updates(project_id, channel);
 
 -- Add org_id to projects (nullable, for gradual migration)
-ALTER TABLE projects ADD COLUMN IF NOT EXISTS org_id VARCHAR(36) REFERENCES organizations(id) ON DELETE SET NULL;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES organizations(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);
 
 -- SSO Providers
 CREATE TABLE IF NOT EXISTS sso_providers (
-    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
-    org_id VARCHAR(36) NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     provider_type VARCHAR(20) NOT NULL,
     name VARCHAR(100) NOT NULL DEFAULT 'Corporate SSO',
     client_id TEXT,
@@ -474,3 +486,100 @@ CREATE TABLE IF NOT EXISTS sso_providers (
 
 CREATE INDEX IF NOT EXISTS idx_sso_providers_org ON sso_providers(org_id);
 CREATE INDEX IF NOT EXISTS idx_sso_providers_enabled ON sso_providers(org_id, enabled);
+
+-- Notifications
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type VARCHAR(50) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    body TEXT NOT NULL,
+    read BOOLEAN DEFAULT FALSE,
+    channel VARCHAR(20) DEFAULT 'in_app',
+    resource_type VARCHAR(50),
+    resource_id VARCHAR(255),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at);
+
+-- Notification Preferences
+CREATE TABLE IF NOT EXISTS notification_preferences (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    email_enabled BOOLEAN DEFAULT TRUE,
+    slack_enabled BOOLEAN DEFAULT FALSE,
+    slack_webhook_url TEXT,
+    discord_enabled BOOLEAN DEFAULT FALSE,
+    discord_webhook_url TEXT,
+    in_app_enabled BOOLEAN DEFAULT TRUE,
+    notify_build_success BOOLEAN DEFAULT TRUE,
+    notify_build_failed BOOLEAN DEFAULT TRUE,
+    notify_deploy_completed BOOLEAN DEFAULT TRUE,
+    notify_deploy_failed BOOLEAN DEFAULT TRUE,
+    notify_quota_warning BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id)
+);
+
+-- Incidents (Status Page)
+CREATE TABLE IF NOT EXISTS incidents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'investigating',
+    severity VARCHAR(20) NOT NULL DEFAULT 'minor',
+    message TEXT NOT NULL,
+    affected_components JSONB,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    resolved_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
+CREATE INDEX IF NOT EXISTS idx_incidents_created ON incidents(created_at);
+
+-- Incident Updates
+CREATE TABLE IF NOT EXISTS incident_updates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    incident_id UUID NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_incident_updates_incident ON incident_updates(incident_id, created_at);
+
+-- Build Cache
+CREATE TABLE IF NOT EXISTS build_caches (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    cache_key VARCHAR(128) NOT NULL,
+    s3_path TEXT NOT NULL,
+    size_bytes BIGINT DEFAULT 0,
+    last_used TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_build_cache_project ON build_caches(project_id);
+CREATE INDEX IF NOT EXISTS idx_build_cache_key ON build_caches(cache_key);
+
+-- Releases
+CREATE TABLE IF NOT EXISTS releases (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    build_id UUID REFERENCES builds(id) ON DELETE SET NULL,
+    version VARCHAR(50),
+    title VARCHAR(255) NOT NULL,
+    notes TEXT NOT NULL,
+    auto_generated BOOLEAN DEFAULT TRUE,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_releases_build ON releases(build_id);
+CREATE INDEX IF NOT EXISTS idx_releases_project ON releases(project_id);

@@ -1,13 +1,15 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, FolderGit2, LogOut, Rocket, Settings, BarChart3, Shield } from 'lucide-react'
+import { LayoutDashboard, FolderGit2, LogOut, Rocket, Settings, BarChart3, Shield, AlertTriangle } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import clsx from 'clsx'
+import NotificationDropdown from '../ui/NotificationDropdown'
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', exact: true },
   { to: '/dashboard/projects', icon: FolderGit2, label: 'Projects' },
   { to: '/dashboard/usage', icon: BarChart3, label: 'Usage & Billing' },
   { to: '/dashboard/audit', icon: Shield, label: 'Audit Log' },
+  { to: '/dashboard/status', icon: AlertTriangle, label: 'Status' },
   { to: '/dashboard/settings', icon: Settings, label: 'Settings' },
 ]
 
@@ -66,9 +68,14 @@ export default function DashboardLayout() {
           </button>
         </div>
       </aside>
-      <main className="flex-1 overflow-auto">
-        <Outlet />
-      </main>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <header className="flex items-center justify-end px-6 py-3 border-b border-gray-800 bg-gray-900">
+          <NotificationDropdown />
+        </header>
+        <main className="flex-1 overflow-auto">
+          <Outlet />
+        </main>
+      </div>
     </div>
   )
 }

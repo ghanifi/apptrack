@@ -56,6 +56,9 @@ class Build(Base):
     log_output: Mapped[str | None] = mapped_column(Text, comment="Build log çıktısı")
     external_build_id: Mapped[str | None] = mapped_column(String(255), comment="Harici provider build ID'si")
     idempotency_key: Mapped[str | None] = mapped_column(String(64), index=True, comment="Duplikat build önleme anahtarı")
+    trigger_type: Mapped[str] = mapped_column(String(20), default="push", comment="Tetikleme tipi: push, pull_request, manual")
+    pr_number: Mapped[int | None] = mapped_column(Integer, comment="PR numarası (pull_request trigger için)")
+    commit_sha: Mapped[str | None] = mapped_column(String(40), comment="Commit SHA hash")
     started_at: Mapped[datetime | None] = mapped_column(DateTime, comment="Build başlangıç zamanı")
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, comment="Build bitiş zamanı")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Oluşturulma tarihi")
@@ -156,6 +159,8 @@ class UserQuota(Base):
     max_storage_mb: Mapped[int] = mapped_column(Integer, default=500)
     max_concurrent_builds: Mapped[int] = mapped_column(Integer, default=1)
     max_preview_sessions: Mapped[int] = mapped_column(Integer, default=2)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(255), comment="Stripe müşteri ID")
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(255), comment="Stripe abonelik ID")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -465,3 +470,123 @@ class SSOProvider(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Notification(Base):
+    """Bildirim — build/deploy/system olayları için kullanıcı bildirimi."""
+    __tablename__ = "notifications"
+    __table_args__ = (
+        Index("idx_notifications_user_read", "user_id", "read"),
+        Index("idx_notifications_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    type: Mapped[str] = mapped_column(String(50), nullable=False, comment="Bildirim tipi: build_success, build_failed, deploy_completed, quota_warning, system")
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    read: Mapped[bool] = mapped_column(Boolean, default=False)
+    channel: Mapped[str] = mapped_column(String(20), default="in_app", comment="Gönderim kanalı: in_app, email, slack, discord")
+    resource_type: Mapped[str | None] = mapped_column(String(50), comment="İlgili kaynak tipi: build, deployment, project")
+    resource_id: Mapped[str | None] = mapped_column(String(255), comment="İlgili kaynak ID")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class NotificationPreference(Base):
+    """Bildirim tercihleri — kullanıcı bazında kanal ve tip ayarları."""
+    __tablename__ = "notification_preferences"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_notification_pref_user"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    email_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    slack_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    slack_webhook_url: Mapped[str | None] = mapped_column(Text)
+    discord_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    discord_webhook_url: Mapped[str | None] = mapped_column(Text)
+    in_app_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_build_success: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_build_failed: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_deploy_completed: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_deploy_failed: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_quota_warning: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Incident(Base):
+    """Status page olayı — sistem kesintileri ve bakım bildirimleri."""
+    __tablename__ = "incidents"
+    __table_args__ = (
+        Index("idx_incidents_status", "status"),
+        Index("idx_incidents_created", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="investigating", comment="investigating, identified, monitoring, resolved")
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, default="minor", comment="minor, major, critical")
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    affected_components: Mapped[dict | None] = mapped_column(JSONB, comment="Etkilenen bileşenler listesi")
+    created_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    updates: Mapped[list["IncidentUpdate"]] = relationship("IncidentUpdate", back_populates="incident", cascade="all, delete-orphan")
+
+
+class IncidentUpdate(Base):
+    """Olay güncelleme kaydı — incident için durum güncellemesi."""
+    __tablename__ = "incident_updates"
+    __table_args__ = (
+        Index("idx_incident_updates_incident", "incident_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    incident_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, comment="investigating, identified, monitoring, resolved")
+    created_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    incident: Mapped["Incident"] = relationship("Incident", back_populates="updates")
+
+
+class BuildCache(Base):
+    """Build cache metadata — proje bazlı cache durumu ve S3/MinIO yolu."""
+    __tablename__ = "build_caches"
+    __table_args__ = (
+        Index("idx_build_cache_project", "project_id"),
+        Index("idx_build_cache_key", "cache_key"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    cache_key: Mapped[str] = mapped_column(String(128), nullable=False, comment="Cache hash key (lockfile hash)")
+    s3_path: Mapped[str] = mapped_column(Text, nullable=False, comment="MinIO/S3 object path")
+    size_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    last_used: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Release(Base):
+    """Release notes kaydı — build bazlı otomatik veya manuel release notes."""
+    __tablename__ = "releases"
+    __table_args__ = (
+        Index("idx_releases_build", "build_id"),
+        Index("idx_releases_project", "project_id"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    build_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("builds.id", ondelete="SET NULL"))
+    version: Mapped[str | None] = mapped_column(String(50))
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=False)
+    auto_generated: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -41,6 +41,8 @@ const deployStatusColors: Record<string, string> = {
   uploading: 'bg-blue-500/20 text-blue-300',
   in_review: 'bg-yellow-500/20 text-yellow-300',
   published: 'bg-green-500/20 text-green-300',
+  canary: 'bg-orange-500/20 text-orange-300',
+  rolled_back: 'bg-red-500/20 text-red-300',
   failed: 'bg-red-500/20 text-red-400',
 }
 
@@ -142,6 +144,89 @@ function DeployModal({
   )
 }
 
+function DeploymentHistory({ deployments, projectId }: { deployments: Deployment[]; projectId: string }) {
+  const queryClient = useQueryClient()
+
+  const canaryMutation = useMutation({
+    mutationFn: (deploymentId: string) => api.post(`/deployments/${deploymentId}/canary`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['deployments', projectId] }),
+  })
+
+  const promoteMutation = useMutation({
+    mutationFn: (deploymentId: string) => api.post(`/deployments/${deploymentId}/promote`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['deployments', projectId] }),
+  })
+
+  const rollbackMutation = useMutation({
+    mutationFn: (deploymentId: string) => api.post(`/deployments/${deploymentId}/rollback`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['deployments', projectId] }),
+  })
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl">
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-800">
+        <Rocket size={15} />
+        <h2 className="text-sm font-semibold">Deployment History</h2>
+      </div>
+      <div className="divide-y divide-gray-800">
+        {deployments.map((dep) => (
+          <div key={dep.id} className="flex items-center justify-between px-5 py-3">
+            <div className="flex items-center gap-4">
+              <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', deployStatusColors[dep.status] ?? 'bg-gray-500/20 text-gray-400')}>
+                {dep.status === 'canary' ? 'Canary' : dep.status}
+              </span>
+              <div>
+                <p className="text-sm font-medium capitalize">
+                  {dep.target === 'google_play' ? 'Google Play' : 'App Store'} · {dep.track}
+                </p>
+                <p className="text-xs text-gray-500">{new Date(dep.created_at).toLocaleString()}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {(dep.status === 'pending' || dep.status === 'published') && (
+                <button
+                  onClick={() => canaryMutation.mutate(dep.id)}
+                  disabled={canaryMutation.isPending}
+                  className="text-xs px-2 py-1 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-300 border border-yellow-500/30 rounded-lg transition-colors"
+                >
+                  Canary
+                </button>
+              )}
+              {dep.status === 'canary' && (
+                <>
+                  <button
+                    onClick={() => promoteMutation.mutate(dep.id)}
+                    disabled={promoteMutation.isPending}
+                    className="text-xs px-2 py-1 bg-green-600/20 hover:bg-green-600/30 text-green-300 border border-green-500/30 rounded-lg transition-colors"
+                  >
+                    Promote
+                  </button>
+                  <button
+                    onClick={() => rollbackMutation.mutate(dep.id)}
+                    disabled={rollbackMutation.isPending}
+                    className="text-xs px-2 py-1 bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 rounded-lg transition-colors"
+                  >
+                    Rollback
+                  </button>
+                </>
+              )}
+              {(dep.status === 'published' || dep.status === 'pending') && (
+                <button
+                  onClick={() => rollbackMutation.mutate(dep.id)}
+                  disabled={rollbackMutation.isPending}
+                  className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors"
+                >
+                  Rollback
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -200,7 +285,7 @@ export default function ProjectDetailPage() {
     return (
       <div className="p-8">
         <p className="text-gray-400">Project not found.</p>
-        <Link to="/projects" className="text-primary-500 hover:underline text-sm mt-2 inline-block">Back to Projects</Link>
+        <Link to="/dashboard/projects" className="text-primary-500 hover:underline text-sm mt-2 inline-block">Back to Projects</Link>
       </div>
     )
   }
@@ -217,7 +302,7 @@ export default function ProjectDetailPage() {
       {deployBuild && <DeployModal build={deployBuild} onClose={() => setDeployBuild(null)} />}
 
       <button
-        onClick={() => navigate('/projects')}
+        onClick={() => navigate('/dashboard/projects')}
         className="flex items-center gap-2 text-sm text-gray-400 hover:text-white mb-6 transition-colors"
       >
         <ArrowLeft size={16} />
@@ -412,8 +497,28 @@ export default function ProjectDetailPage() {
                         {build.status}
                       </span>
                       <div>
-                        <p className="text-sm font-medium capitalize">{build.platform} · {build.provider}</p>
-                        <p className="text-xs text-gray-500">{new Date(build.created_at).toLocaleString()}</p>
+                        <p className="text-sm font-medium capitalize">
+                          {build.platform} · {build.provider}
+                          {build.trigger_type === 'pull_request' && build.pr_number && (
+                            <span className="ml-2 text-xs text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded">
+                              PR #{build.pr_number}
+                            </span>
+                          )}
+                          {build.trigger_type === 'manual' && (
+                            <span className="ml-2 text-xs text-yellow-400 bg-yellow-500/10 px-1.5 py-0.5 rounded">
+                              Manual
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(build.created_at).toLocaleString()}
+                          {build.commit_sha && <span className="ml-2 font-mono text-gray-600">{build.commit_sha.slice(0, 7)}</span>}
+                          {build.started_at && build.finished_at && (
+                            <span className="ml-2">
+                              {Math.round((new Date(build.finished_at).getTime() - new Date(build.started_at).getTime()) / 1000)}s
+                            </span>
+                          )}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -471,29 +576,7 @@ export default function ProjectDetailPage() {
       </div>
 
       {deployments.length > 0 && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl">
-          <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-800">
-            <Rocket size={15} />
-            <h2 className="text-sm font-semibold">Deployment History</h2>
-          </div>
-          <div className="divide-y divide-gray-800">
-            {deployments.map((dep) => (
-              <div key={dep.id} className="flex items-center justify-between px-5 py-3">
-                <div className="flex items-center gap-4">
-                  <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', deployStatusColors[dep.status] ?? 'bg-gray-500/20 text-gray-400')}>
-                    {dep.status}
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium capitalize">
-                      {dep.target === 'google_play' ? 'Google Play' : 'App Store'} · {dep.track}
-                    </p>
-                    <p className="text-xs text-gray-500">{new Date(dep.created_at).toLocaleString()}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <DeploymentHistory deployments={deployments} projectId={id!} />
       )}
     </div>
   )

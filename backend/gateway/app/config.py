@@ -44,9 +44,18 @@ class Settings(BaseSettings):
 
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_API_KEY: str = ""
+    STRIPE_PRICE_PRO: str = ""
+    STRIPE_PRICE_ENTERPRISE: str = ""
 
     EAS_WEBHOOK_SECRET: str = ""
     CODEMAGIC_WEBHOOK_SECRET: str = ""
+
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASS: str = ""
+
+    SENTRY_AUTH_TOKEN: str = ""
 
     ENVIRONMENT: str = "development"
 

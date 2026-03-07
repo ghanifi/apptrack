@@ -25,7 +25,7 @@ const statusColors: Record<string, string> = {
 export default function ProjectsPage() {
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ['projects'],
-    queryFn: () => api.get('/projects').then((r) => r.data),
+    queryFn: () => api.get('/projects').then((r) => r.data.items ?? r.data),
   })
 
   return (
@@ -36,7 +36,7 @@ export default function ProjectsPage() {
           <p className="text-gray-400 text-sm mt-1">{projects.length} project(s)</p>
         </div>
         <Link
-          to="/projects/new"
+          to="/dashboard/projects/new"
           className="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
         >
           <Plus size={16} />
@@ -50,7 +50,7 @@ export default function ProjectsPage() {
         <div className="bg-gray-900 border border-gray-800 rounded-xl flex flex-col items-center justify-center py-16 text-gray-600">
           <FolderGit2 size={36} className="mb-3 opacity-30" />
           <p className="text-sm">No projects yet.</p>
-          <Link to="/projects/new" className="mt-3 text-primary-500 hover:underline text-sm">
+          <Link to="/dashboard/projects/new" className="mt-3 text-primary-500 hover:underline text-sm">
             Create your first project
           </Link>
         </div>

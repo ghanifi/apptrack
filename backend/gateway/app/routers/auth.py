@@ -237,6 +237,30 @@ async def github_callback(
     }
 
 
+@router.get("/me")
+async def get_current_user_profile(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Mevcut oturumdaki kullanıcının profil bilgilerini döndürür.
+
+    Access token'dan kullanıcı kimliği çözümlenir ve veritabanından
+    güncel profil bilgileri getirilir.
+
+    Raises:
+        401: Geçersiz veya eksik token
+        404: Kullanıcı bulunamadı
+    """
+    from app.dependencies import get_current_user as _get_user, bearer_scheme
+    credentials = await bearer_scheme(request)
+    current = _get_user(request, credentials)
+    result = await db.execute(select(User).where(User.id == current["id"]))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _user_response(user)
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str
 

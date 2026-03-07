@@ -45,6 +45,10 @@ def verify_stripe_signature(payload: bytes, sig_header: str, webhook_secret: str
 
 async def handle_checkout_completed(db: AsyncSession, event_data: dict):
     customer_email = event_data.get("customer_details", {}).get("email")
+    customer_id = event_data.get("customer")
+    subscription_id = event_data.get("subscription")
+    metadata = event_data.get("metadata", {})
+
     price_id = None
     line_items = event_data.get("line_items", {}).get("data", [])
     if line_items:
@@ -54,12 +58,27 @@ async def handle_checkout_completed(db: AsyncSession, event_data: dict):
         logger.warning("Checkout completed but missing email or price_id")
         return
 
-    plan = STRIPE_PLAN_MAP.get(price_id, "pro")
+    plan = STRIPE_PLAN_MAP.get(price_id) or metadata.get("plan", "pro")
     await _update_user_plan(db, customer_email, plan, f"checkout:{price_id}")
+
+    if customer_id or subscription_id:
+        result = await db.execute(select(User).where(User.email == customer_email))
+        user = result.scalar_one_or_none()
+        if user:
+            quota_result = await db.execute(select(UserQuota).where(UserQuota.user_id == user.id))
+            quota = quota_result.scalar_one_or_none()
+            if quota:
+                if customer_id:
+                    quota.stripe_customer_id = customer_id
+                if subscription_id:
+                    quota.stripe_subscription_id = subscription_id
+                await db.commit()
+                logger.info("Stripe IDs saved: customer=%s subscription=%s", customer_id, subscription_id)
 
 
 async def handle_subscription_updated(db: AsyncSession, event_data: dict):
     customer_email = event_data.get("customer_email")
+    subscription_id = event_data.get("id")
     items = event_data.get("items", {}).get("data", [])
     if not items:
         return
@@ -70,6 +89,15 @@ async def handle_subscription_updated(db: AsyncSession, event_data: dict):
 
     if status in ("active", "trialing"):
         await _update_user_plan(db, customer_email, plan, f"subscription_updated:{status}")
+        if subscription_id and customer_email:
+            result = await db.execute(select(User).where(User.email == customer_email))
+            user = result.scalar_one_or_none()
+            if user:
+                quota_result = await db.execute(select(UserQuota).where(UserQuota.user_id == user.id))
+                quota = quota_result.scalar_one_or_none()
+                if quota:
+                    quota.stripe_subscription_id = subscription_id
+                    await db.commit()
     elif status == "past_due":
         logger.warning("Subscription past_due for %s — grace period started", customer_email)
     elif status in ("canceled", "unpaid"):
@@ -88,6 +116,16 @@ async def handle_invoice_payment_failed(db: AsyncSession, event_data: dict):
 async def handle_subscription_deleted(db: AsyncSession, event_data: dict):
     customer_email = event_data.get("customer_email")
     await _downgrade_to_free(db, customer_email, "subscription_deleted")
+
+    if customer_email:
+        result = await db.execute(select(User).where(User.email == customer_email))
+        user = result.scalar_one_or_none()
+        if user:
+            quota_result = await db.execute(select(UserQuota).where(UserQuota.user_id == user.id))
+            quota = quota_result.scalar_one_or_none()
+            if quota:
+                quota.stripe_subscription_id = None
+                await db.commit()
 
 
 async def _update_user_plan(db: AsyncSession, email: str, plan: str, reason: str):

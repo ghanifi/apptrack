@@ -18,7 +18,7 @@ from app.crypto import decrypt
 from app.limiter import limiter
 from app.validators import validate_repo_url, validate_branch, AppError
 from app.audit import record_audit_with_db
-from app.quotas import check_project_quota, check_build_quota, track_usage
+from app.quotas import check_project_quota, check_build_quota, check_deploy_quota, track_usage
 from app.abuse_guard import check_build_spam
 from app.cost_guard import estimate_build_cost, check_budget_limit
 
@@ -39,7 +39,7 @@ async def _register_github_webhook(project: Project, token: str) -> None:
                 json={
                     "name": "web",
                     "active": True,
-                    "events": ["push"],
+                    "events": ["push", "pull_request"],
                     "config": {
                         "url": f"{settings.GATEWAY_URL}/api/webhooks/github",
                         "content_type": "json",
@@ -552,6 +552,8 @@ async def deploy_project(
     if not project or project.owner_id != current_user["id"]:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    await check_deploy_quota(db, current_user["id"])
+
     build_result = await db.execute(
         select(Build)
         .where(Build.project_id == project_id, Build.status == "success")
@@ -566,6 +568,9 @@ async def deploy_project(
     db.add(dep)
     await db.commit()
     await db.refresh(dep)
+
+    await track_usage(db, current_user["id"], "deploys", 1, {"target": req.target, "track": req.track})
+    await db.commit()
 
     event_payload: dict = {
         "deployment_id": dep.id,

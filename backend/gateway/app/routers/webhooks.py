@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import logging
+import uuid
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -11,16 +12,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import events
 from app.config import settings
 from app.database import get_db
-from app.models import Project, WebhookNonce
+from app.models import Build, Project, WebhookNonce
 from app.limiter import limiter
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+PR_ACTIONS = {"opened", "synchronize", "reopened"}
+
 
 def _verify_signature(payload: bytes, signature: str, secret: str) -> bool:
     expected = "sha256=" + hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
+
+
+async def _verify_github_signature(body: bytes, signature: str):
+    if settings.GITHUB_WEBHOOK_SECRET:
+        if not signature:
+            raise HTTPException(status_code=401, detail="Missing webhook signature")
+        if not _verify_signature(body, signature, settings.GITHUB_WEBHOOK_SECRET):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+    else:
+        raise HTTPException(
+            status_code=503,
+            detail="Webhook signature verification disabled — GITHUB_WEBHOOK_SECRET not configured",
+        )
 
 
 @router.post("/github")
@@ -31,39 +47,34 @@ async def github_webhook(
     x_hub_signature_256: str = Header(default=""),
     db: AsyncSession = Depends(get_db),
 ):
-    """GitHub push webhook'unu alır ve ilgili projeleri otomatik senkronize eder.
+    """GitHub webhook — push ve pull_request event'lerini işler.
 
-    HMAC-SHA256 imza doğrulaması yapılır. Push event'lerinde eşleşen
-    repo URL ve branch'e sahip projeler için otomatik analiz tetiklenir.
-    Ping event'lerine pong yanıtı verilir.
+    Push event'lerinde eşleşen projelerin build'i tetiklenir.
+    Pull request event'lerinde (opened, synchronize, reopened)
+    PR branch'i için geçici build oluşturulur ve commit status yayınlanır.
 
     Raises:
         401: Webhook imzası eksik veya geçersiz
         503: Webhook secret yapılandırılmamış
     """
     body = await request.body()
-
-    if settings.GITHUB_WEBHOOK_SECRET:
-        if not x_hub_signature_256:
-            raise HTTPException(status_code=401, detail="Missing webhook signature")
-        if not _verify_signature(body, x_hub_signature_256, settings.GITHUB_WEBHOOK_SECRET):
-            raise HTTPException(status_code=401, detail="Invalid webhook signature")
-    else:
-        raise HTTPException(
-            status_code=503,
-            detail="Webhook signature verification disabled — GITHUB_WEBHOOK_SECRET not configured",
-        )
+    await _verify_github_signature(body, x_hub_signature_256)
 
     if x_github_event == "ping":
         return {"status": "pong"}
 
+    payload = json.loads(body)
+    repo_url = payload.get("repository", {}).get("clone_url", "")
+
+    if x_github_event == "pull_request":
+        return await _handle_pull_request(payload, repo_url, db)
+
     if x_github_event != "push":
         return {"status": "ignored", "event": x_github_event}
 
-    payload = json.loads(body)
-    repo_url = payload.get("repository", {}).get("clone_url", "")
     ref = payload.get("ref", "")
     branch = ref.replace("refs/heads/", "") if ref.startswith("refs/heads/") else ""
+    commit_sha = payload.get("after", "")
 
     if not repo_url or not branch:
         return {"status": "skipped", "reason": "no repo_url or branch"}
@@ -81,11 +92,83 @@ async def github_webhook(
             "branch": project.branch,
             "owner_id": project.owner_id,
             "triggered_by": "github_webhook",
+            "trigger_type": "push",
+            "commit_sha": commit_sha,
         })
         triggered += 1
         logger.info("Auto-sync triggered for project %s via GitHub push", project.id)
 
     return {"status": "ok", "triggered": triggered, "repo": repo_url, "branch": branch}
+
+
+async def _handle_pull_request(payload: dict, repo_url: str, db: AsyncSession):
+    action = payload.get("action", "")
+    if action not in PR_ACTIONS:
+        return {"status": "ignored", "action": action}
+
+    pr = payload.get("pull_request", {})
+    pr_number = pr.get("number")
+    pr_branch = pr.get("head", {}).get("ref", "")
+    commit_sha = pr.get("head", {}).get("sha", "")
+    base_branch = pr.get("base", {}).get("ref", "")
+
+    if not repo_url or not pr_branch:
+        return {"status": "skipped", "reason": "no repo_url or pr_branch"}
+
+    result = await db.execute(
+        select(Project).where(Project.repo_url == repo_url, Project.branch == base_branch)
+    )
+    projects = result.scalars().all()
+
+    triggered = 0
+    builds_created = []
+    for project in projects:
+        build = Build(
+            id=str(uuid.uuid4()),
+            project_id=project.id,
+            platform="both",
+            provider="github_actions",
+            status="queued",
+            trigger_type="pull_request",
+            pr_number=pr_number,
+            commit_sha=commit_sha,
+        )
+        db.add(build)
+        await db.flush()
+
+        await events.publish_event("build.started", {
+            "build_id": build.id,
+            "project_id": project.id,
+            "repo_url": project.repo_url,
+            "branch": pr_branch,
+            "owner_id": project.owner_id,
+            "triggered_by": "github_pr_webhook",
+            "trigger_type": "pull_request",
+            "pr_number": pr_number,
+            "commit_sha": commit_sha,
+        })
+
+        await events.publish_event("github.commit_status", {
+            "repo_url": repo_url,
+            "commit_sha": commit_sha,
+            "state": "pending",
+            "description": f"Build queued for PR #{pr_number}",
+            "context": "apptrack/build",
+            "build_id": build.id,
+            "owner_id": project.owner_id,
+        })
+
+        builds_created.append(build.id)
+        triggered += 1
+        logger.info("PR build triggered for project %s PR #%s", project.id, pr_number)
+
+    await db.commit()
+    return {
+        "status": "ok",
+        "triggered": triggered,
+        "pr_number": pr_number,
+        "builds": builds_created,
+    }
 
 
 @router.post("/eas")

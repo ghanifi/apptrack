@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Rocket, ArrowLeft, CheckCircle, AlertCircle, XCircle, Loader } from 'lucide-react'
+import { Rocket, ArrowLeft, CheckCircle, AlertCircle, XCircle, Loader, Clock } from 'lucide-react'
 import { api } from '@/lib/api'
+import type { Incident } from '@/types'
 
 interface HealthStatus {
   status: string
@@ -106,13 +107,76 @@ export default function StatusPage() {
           </>
         )}
 
-        <div className="mt-12 bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <h2 className="text-lg font-semibold mb-4">Incident History</h2>
-          <div className="text-sm text-gray-500 text-center py-6">
-            No incidents reported in the last 90 days.
-          </div>
-        </div>
+        <IncidentHistory />
       </main>
+    </div>
+  )
+}
+
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: 'text-red-400 bg-red-400/10',
+  major: 'text-orange-400 bg-orange-400/10',
+  minor: 'text-yellow-400 bg-yellow-400/10',
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  investigating: 'Investigating',
+  identified: 'Identified',
+  monitoring: 'Monitoring',
+  resolved: 'Resolved',
+}
+
+function IncidentHistory() {
+  const { data } = useQuery<{ items: Incident[] }>({
+    queryKey: ['incidents'],
+    queryFn: () => api.get('/status/incidents?limit=20').then((r) => r.data),
+  })
+
+  const incidents = data?.items ?? []
+
+  return (
+    <div className="mt-12 bg-gray-900 border border-gray-800 rounded-xl p-6">
+      <h2 className="text-lg font-semibold mb-4">Incident History</h2>
+      {incidents.length === 0 ? (
+        <div className="text-sm text-gray-500 text-center py-6">
+          No incidents reported.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {incidents.map((incident) => (
+            <div key={incident.id} className="border border-gray-800 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  {incident.status === 'resolved' ? (
+                    <CheckCircle size={16} className="text-green-400" />
+                  ) : (
+                    <AlertCircle size={16} className="text-yellow-400" />
+                  )}
+                  <h3 className="text-sm font-medium text-white">{incident.title}</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${SEVERITY_COLORS[incident.severity] ?? 'text-gray-400 bg-gray-400/10'}`}>
+                    {incident.severity}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {STATUS_LABELS[incident.status] ?? incident.status}
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs text-gray-400">{incident.message}</p>
+              <div className="flex items-center gap-1 mt-2 text-xs text-gray-500">
+                <Clock size={12} />
+                {new Date(incident.created_at).toLocaleString()}
+                {incident.resolved_at && (
+                  <span className="ml-2">
+                    Resolved: {new Date(incident.resolved_at).toLocaleString()}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

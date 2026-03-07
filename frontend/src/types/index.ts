@@ -21,6 +21,9 @@ export interface Build {
   artifact_url?: string
   error_message?: string
   log_output?: string
+  trigger_type?: 'push' | 'pull_request' | 'manual'
+  pr_number?: number
+  commit_sha?: string
   started_at?: string
   finished_at?: string
   created_at: string
@@ -53,7 +56,7 @@ export interface Deployment {
   build_id: string
   target: 'google_play' | 'app_store'
   track: string
-  status: 'pending' | 'uploading' | 'in_review' | 'published' | 'failed'
+  status: 'pending' | 'uploading' | 'in_review' | 'published' | 'canary' | 'rolled_back' | 'failed'
   created_at: string
   updated_at: string
 }
@@ -97,4 +100,100 @@ export interface ReviewSimulation {
   total: number
   estimated_review_time: string | null
   platform: string
+}
+
+export interface Notification {
+  id: string
+  type: string
+  title: string
+  body: string
+  read: boolean
+  channel: string
+  resource_type?: string
+  resource_id?: string
+  created_at: string
+}
+
+export interface NotificationPreferences {
+  email_enabled: boolean
+  slack_enabled: boolean
+  slack_webhook_url?: string
+  discord_enabled: boolean
+  discord_webhook_url?: string
+  in_app_enabled: boolean
+  notify_build_success: boolean
+  notify_build_failed: boolean
+  notify_deploy_completed: boolean
+  notify_deploy_failed: boolean
+  notify_quota_warning: boolean
+}
+
+export interface Incident {
+  id: string
+  title: string
+  status: 'investigating' | 'identified' | 'monitoring' | 'resolved'
+  severity: 'minor' | 'major' | 'critical'
+  message: string
+  affected_components?: string[]
+  resolved_at?: string
+  created_at: string
+  updated_at: string
+  updates?: IncidentUpdate[]
+}
+
+export interface IncidentUpdate {
+  id: string
+  message: string
+  status: string
+  created_at: string
+}
+
+export interface ReleaseNotes {
+  id: string
+  build_id?: string
+  project_id: string
+  version?: string
+  title: string
+  notes: string
+  auto_generated: boolean
+  created_at: string
+}
+
+export interface PlanInfo {
+  name: string
+  price_usd: number
+  features: {
+    max_projects: number
+    max_builds_per_month: number
+    max_deploys_per_month: number
+    max_storage_mb: number
+    max_concurrent_builds: number
+    max_preview_sessions: number
+  }
+}
+
+export interface CurrentPlan {
+  plan: string
+  price_usd: number
+  quotas: {
+    max_projects: number
+    max_builds_per_month: number
+    max_deploys_per_month: number
+    max_storage_mb: number
+    max_concurrent_builds: number
+    max_preview_sessions: number
+  }
+}
+
+export interface UsageSummary {
+  plan: string
+  period: string
+  usage: {
+    projects: { current: number; limit: number }
+    builds_this_month: { current: number; limit: number }
+    deploys_this_month: { current: number; limit: number }
+    concurrent_builds: { current: number; limit: number }
+    storage_mb: { current: number; limit: number }
+    build_minutes: { current: number }
+  }
 }

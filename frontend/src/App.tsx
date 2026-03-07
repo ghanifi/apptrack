@@ -77,6 +77,7 @@ export default function App() {
               <Route path="settings" element={<SettingsPage />} />
               <Route path="usage" element={<UsagePage />} />
               <Route path="audit" element={<AuditPage />} />
+              <Route path="status" element={<StatusPage />} />
             </Route>
             <Route path="*" element={<NotFoundPage />} />
           </Routes>

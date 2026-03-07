@@ -72,6 +72,7 @@ services:
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
       - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-}
       - GATEWAY_URL=${GATEWAY_URL:-http://localhost:8000}
+      - REDIS_URL=
     depends_on:
       postgres:
         condition: service_healthy
@@ -279,6 +280,7 @@ services:
 
   # ─── Frontend ─────────────────────────────────────────────────────────────
   frontend:
+    image: node:20-alpine
     working_dir: /app
     command: sh -c "npm install && npm run dev -- --host"
     ports:
@@ -287,7 +289,10 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - VITE_API_URL=http://localhost:8000
+      - VITE_API_URL=/api
+      - VITE_PROXY_TARGET=http://gateway:8000
+    depends_on:
+      - gateway
 
 volumes:
   postgres_data:

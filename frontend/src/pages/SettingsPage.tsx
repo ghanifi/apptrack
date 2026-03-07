@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, Trash2, KeyRound, Github, Smartphone, Store } from 'lucide-react'
+import { Check, Trash2, KeyRound, Github, Smartphone, Store, CreditCard, Bell, ArrowUpRight, Loader, Zap } from 'lucide-react'
 import { api } from '@/lib/api'
+import { toast } from 'sonner'
 import clsx from 'clsx'
+import type { CurrentPlan, PlanInfo, NotificationPreferences } from '@/types'
 
 interface Credential {
   id: string
@@ -168,7 +171,245 @@ function ProviderCard({ section, credentials }: { section: ProviderSection; cred
   )
 }
 
+const PLAN_FEATURES: Record<string, string[]> = {
+  free: ['3 Projects', '10 Builds/mo', '5 Deploys/mo', '500 MB Storage', '1 Concurrent Build'],
+  pro: ['20 Projects', '100 Builds/mo', '50 Deploys/mo', '5 GB Storage', '5 Concurrent Builds'],
+  enterprise: ['Unlimited Projects', 'Unlimited Builds', 'Unlimited Deploys', '50 GB Storage', '20 Concurrent Builds'],
+}
+
+function BillingSection() {
+  const { data: currentPlan, isLoading } = useQuery<CurrentPlan>({
+    queryKey: ['billing-current'],
+    queryFn: () => api.get('/billing/current').then((r) => r.data),
+  })
+
+  const { data: plansData } = useQuery<{ plans: PlanInfo[] }>({
+    queryKey: ['billing-plans'],
+    queryFn: () => api.get('/billing/plans').then((r) => r.data),
+  })
+
+  const upgradeMutation = useMutation({
+    mutationFn: (plan: string) => api.post(`/billing/upgrade?plan=${plan}`).then((r) => r.data),
+    onSuccess: (data) => {
+      if (data.checkout_url) {
+        window.location.href = data.checkout_url
+      } else {
+        toast.info(data.message || 'Upgrade initiated')
+      }
+    },
+  })
+
+  const portalMutation = useMutation({
+    mutationFn: () => api.post('/billing/portal').then((r) => r.data),
+    onSuccess: (data) => {
+      if (data.portal_url) {
+        window.open(data.portal_url, '_blank')
+      }
+    },
+  })
+
+  if (isLoading) return <p className="text-gray-500 text-sm">Loading billing...</p>
+
+  const plan = currentPlan?.plan ?? 'free'
+  const planOrder = ['free', 'pro', 'enterprise']
+  const currentIdx = planOrder.indexOf(plan)
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Current Plan</p>
+            <p className="text-xl font-bold mt-1 capitalize">{plan}</p>
+            <p className="text-sm text-gray-400 mt-0.5">${currentPlan?.price_usd ?? 0}/month</p>
+          </div>
+          {plan !== 'free' && (
+            <button
+              onClick={() => portalMutation.mutate()}
+              disabled={portalMutation.isPending}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              {portalMutation.isPending ? <Loader size={14} className="animate-spin" /> : <ArrowUpRight size={14} />}
+              Manage Subscription
+            </button>
+          )}
+        </div>
+      </div>
+
+      {planOrder.filter((p) => planOrder.indexOf(p) > currentIdx).length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {planOrder
+            .filter((p) => planOrder.indexOf(p) > currentIdx)
+            .map((p) => {
+              const planInfo = plansData?.plans.find((pl) => pl.name === p)
+              const features = PLAN_FEATURES[p] ?? []
+              return (
+                <div key={p} className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h4 className="font-semibold capitalize">{p}</h4>
+                      <p className="text-sm text-gray-400">${planInfo?.price_usd ?? 0}/month</p>
+                    </div>
+                    <Zap size={18} className="text-primary-400" />
+                  </div>
+                  <ul className="space-y-1.5 mb-4">
+                    {features.map((f) => (
+                      <li key={f} className="text-xs text-gray-400 flex items-center gap-1.5">
+                        <Check size={11} className="text-green-400" /> {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    onClick={() => upgradeMutation.mutate(p)}
+                    disabled={upgradeMutation.isPending}
+                    className="w-full py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {upgradeMutation.isPending ? 'Processing...' : `Upgrade to ${p}`}
+                  </button>
+                </div>
+              )
+            })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NotificationSection() {
+  const queryClient = useQueryClient()
+  const { data: prefs, isLoading } = useQuery<NotificationPreferences>({
+    queryKey: ['notification-prefs'],
+    queryFn: () => api.get('/notifications/preferences').then((r) => r.data),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: (updates: Partial<NotificationPreferences>) =>
+      api.put('/notifications/preferences', updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notification-prefs'] })
+      toast.success('Notification preferences saved')
+    },
+  })
+
+  const [webhookValues, setWebhookValues] = useState<Record<string, string>>({})
+
+  if (isLoading) return <p className="text-gray-500 text-sm">Loading preferences...</p>
+  if (!prefs) return null
+
+  const toggles: { key: keyof NotificationPreferences; label: string; group: string }[] = [
+    { key: 'in_app_enabled', label: 'In-App Notifications', group: 'Channels' },
+    { key: 'email_enabled', label: 'Email Notifications', group: 'Channels' },
+    { key: 'slack_enabled', label: 'Slack Notifications', group: 'Channels' },
+    { key: 'discord_enabled', label: 'Discord Notifications', group: 'Channels' },
+    { key: 'notify_build_success', label: 'Build Success', group: 'Events' },
+    { key: 'notify_build_failed', label: 'Build Failed', group: 'Events' },
+    { key: 'notify_deploy_completed', label: 'Deploy Completed', group: 'Events' },
+    { key: 'notify_deploy_failed', label: 'Deploy Failed', group: 'Events' },
+    { key: 'notify_quota_warning', label: 'Quota Warnings', group: 'Events' },
+  ]
+
+  const groups = [...new Set(toggles.map((t) => t.group))]
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-6">
+      {groups.map((group) => (
+        <div key={group}>
+          <h4 className="text-xs text-gray-500 uppercase tracking-wider mb-3">{group}</h4>
+          <div className="space-y-3">
+            {toggles
+              .filter((t) => t.group === group)
+              .map((t) => (
+                <label key={t.key} className="flex items-center justify-between cursor-pointer">
+                  <span className="text-sm text-gray-300">{t.label}</span>
+                  <button
+                    onClick={() => updateMutation.mutate({ [t.key]: !prefs[t.key] })}
+                    className={clsx(
+                      'w-9 h-5 rounded-full transition-colors relative',
+                      prefs[t.key] ? 'bg-primary-600' : 'bg-gray-700'
+                    )}
+                  >
+                    <span
+                      className={clsx(
+                        'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+                        prefs[t.key] ? 'translate-x-4' : 'translate-x-0.5'
+                      )}
+                    />
+                  </button>
+                </label>
+              ))}
+          </div>
+        </div>
+      ))}
+
+      {prefs.slack_enabled && (
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">Slack Webhook URL</label>
+          <div className="flex gap-2">
+            <input
+              type="url"
+              placeholder={prefs.slack_webhook_url || 'https://hooks.slack.com/services/...'}
+              value={webhookValues.slack ?? ''}
+              onChange={(e) => setWebhookValues((v) => ({ ...v, slack: e.target.value }))}
+              className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500"
+            />
+            {webhookValues.slack && (
+              <button
+                onClick={() => {
+                  updateMutation.mutate({ slack_webhook_url: webhookValues.slack } as any)
+                  setWebhookValues((v) => ({ ...v, slack: '' }))
+                }}
+                className="px-3 py-2 bg-primary-600 hover:bg-primary-700 rounded-lg text-xs font-medium"
+              >
+                Save
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {prefs.discord_enabled && (
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">Discord Webhook URL</label>
+          <div className="flex gap-2">
+            <input
+              type="url"
+              placeholder={prefs.discord_webhook_url || 'https://discord.com/api/webhooks/...'}
+              value={webhookValues.discord ?? ''}
+              onChange={(e) => setWebhookValues((v) => ({ ...v, discord: e.target.value }))}
+              className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500"
+            />
+            {webhookValues.discord && (
+              <button
+                onClick={() => {
+                  updateMutation.mutate({ discord_webhook_url: webhookValues.discord } as any)
+                  setWebhookValues((v) => ({ ...v, discord: '' }))
+                }}
+                className="px-3 py-2 bg-primary-600 hover:bg-primary-700 rounded-lg text-xs font-medium"
+              >
+                Save
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function SettingsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  useEffect(() => {
+    const billing = searchParams.get('billing')
+    if (billing === 'success') {
+      toast.success('Plan upgraded successfully!')
+      setSearchParams({}, { replace: true })
+    } else if (billing === 'cancelled') {
+      toast.info('Upgrade cancelled')
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
+
   const { data: credentials = [], isLoading } = useQuery<Credential[]>({
     queryKey: ['credentials'],
     queryFn: () => api.get('/credentials').then((r) => r.data),
@@ -213,6 +454,13 @@ export default function SettingsPage() {
 
       <section className="mb-8">
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <CreditCard size={14} /> Billing & Plan
+        </h2>
+        <BillingSection />
+      </section>
+
+      <section className="mb-8">
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
           <KeyRound size={14} /> Build Providers
         </h2>
         {isLoading ? (
@@ -224,6 +472,13 @@ export default function SettingsPage() {
             ))}
           </div>
         )}
+      </section>
+
+      <section className="mb-8">
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <Bell size={14} /> Notification Preferences
+        </h2>
+        <NotificationSection />
       </section>
     </div>
   )

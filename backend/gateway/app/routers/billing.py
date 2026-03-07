@@ -136,13 +136,99 @@ async def upgrade_plan(
     if plan_order.get(plan, 0) <= plan_order.get(quota.plan, 0):
         raise HTTPException(status_code=400, detail=f"Cannot upgrade from {quota.plan} to {plan}")
 
-    return {
-        "action": "redirect_to_checkout",
-        "current_plan": quota.plan,
-        "target_plan": plan,
-        "price_usd": PLAN_PRICES_USD.get(plan, 0),
-        "message": f"To upgrade to {plan}, complete payment via Stripe checkout.",
-    }
+    stripe_key = settings.STRIPE_API_KEY
+    if not stripe_key:
+        return {
+            "action": "redirect_to_checkout",
+            "current_plan": quota.plan,
+            "target_plan": plan,
+            "price_usd": PLAN_PRICES_USD.get(plan, 0),
+            "message": f"Stripe not configured. To upgrade to {plan}, configure STRIPE_API_KEY.",
+        }
+
+    try:
+        import stripe
+        stripe.api_key = stripe_key
+
+        price_map = {
+            "pro": getattr(settings, "STRIPE_PRICE_PRO", ""),
+            "enterprise": getattr(settings, "STRIPE_PRICE_ENTERPRISE", ""),
+        }
+        price_id = price_map.get(plan)
+        if not price_id:
+            raise HTTPException(status_code=400, detail=f"Stripe price not configured for plan: {plan}")
+
+        customer_id = quota.stripe_customer_id
+        if not customer_id:
+            customer = stripe.Customer.create(
+                email=current_user.get("email", ""),
+                metadata={"user_id": current_user["id"]},
+            )
+            customer_id = customer.id
+            quota.stripe_customer_id = customer_id
+            await db.commit()
+
+        session = stripe.checkout.Session.create(
+            customer=customer_id,
+            payment_method_types=["card"],
+            line_items=[{"price": price_id, "quantity": 1}],
+            mode="subscription",
+            success_url=f"{settings.FRONTEND_URL}/dashboard/settings?billing=success",
+            cancel_url=f"{settings.FRONTEND_URL}/dashboard/settings?billing=cancelled",
+            metadata={"user_id": current_user["id"], "plan": plan},
+        )
+
+        return {
+            "action": "redirect_to_checkout",
+            "checkout_url": session.url,
+            "session_id": session.id,
+            "current_plan": quota.plan,
+            "target_plan": plan,
+        }
+
+    except ImportError:
+        return {
+            "action": "redirect_to_checkout",
+            "current_plan": quota.plan,
+            "target_plan": plan,
+            "price_usd": PLAN_PRICES_USD.get(plan, 0),
+            "message": f"Stripe SDK not available. Install stripe package.",
+        }
+
+
+@router.post("/portal")
+async def billing_portal(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stripe müşteri portalı oturumu oluşturur.
+
+    Kullanıcının aboneliğini yönetmesi, ödeme yöntemini güncellemesi
+    ve fatura geçmişini görüntülemesi için Stripe portal URL'si döndürür.
+
+    Raises:
+        400: Stripe yapılandırılmamış veya müşteri kaydı yok
+        401: Kimlik doğrulama gerekli
+    """
+    stripe_key = settings.STRIPE_API_KEY
+    if not stripe_key:
+        raise HTTPException(status_code=400, detail="Stripe not configured")
+
+    quota = await get_or_create_quota(db, current_user["id"])
+    if not quota.stripe_customer_id:
+        raise HTTPException(status_code=400, detail="No billing account found. Please upgrade first.")
+
+    try:
+        import stripe
+        stripe.api_key = stripe_key
+
+        session = stripe.billing_portal.Session.create(
+            customer=quota.stripe_customer_id,
+            return_url=f"{settings.FRONTEND_URL}/dashboard/settings",
+        )
+        return {"portal_url": session.url}
+    except ImportError:
+        raise HTTPException(status_code=400, detail="Stripe SDK not available")
 
 
 @router.post("/downgrade")

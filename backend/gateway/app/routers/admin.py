@@ -15,7 +15,7 @@ from app.quotas import PLAN_DEFAULTS
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
 
-ADMIN_EMAILS = {"admin@apptrack.io"}
+ADMIN_EMAILS = {"admin@apptrack.dev", "admin@apptrack.io"}
 
 
 async def _require_admin(current_user: dict):

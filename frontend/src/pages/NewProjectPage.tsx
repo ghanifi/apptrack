@@ -53,7 +53,7 @@ export default function NewProjectPage() {
     setLoading(true)
     try {
       await api.post('/projects', form)
-      navigate('/projects')
+      navigate('/dashboard/projects')
     } catch (err: unknown) {
       const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(message ?? 'Failed to create project')
@@ -65,7 +65,7 @@ export default function NewProjectPage() {
   return (
     <div className="p-8 max-w-2xl">
       <button
-        onClick={() => navigate('/projects')}
+        onClick={() => navigate('/dashboard/projects')}
         className="flex items-center gap-2 text-sm text-gray-400 hover:text-white mb-6 transition-colors"
       >
         <ArrowLeft size={16} />

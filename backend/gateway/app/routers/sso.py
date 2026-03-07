@@ -1,6 +1,4 @@
 """SSO (Single Sign-On) OIDC/SAML router."""
-from __future__ import annotations
-
 import uuid
 import logging
 from datetime import datetime
@@ -23,6 +21,9 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sso", tags=["sso"])
+
+# In-memory state store for CSRF protection (use Redis in production)
+_sso_states: dict[str, dict] = {}
 
 
 # ---------- Schemas ----------
@@ -314,8 +315,12 @@ async def sso_authorize(
     if not auth_endpoint:
         raise HTTPException(status_code=502, detail="OIDC authorization_endpoint bulunamadi")
 
-    # State parametresi olustur
+    # State parametresi olustur ve sakla (CSRF koruması)
     state = str(uuid.uuid4())
+    _sso_states[state] = {
+        "provider_id": provider_id,
+        "created_at": datetime.utcnow().isoformat(),
+    }
 
     callback_url = f"{settings.GATEWAY_URL}/api/sso/callback/{provider_id}"
 
@@ -350,6 +355,13 @@ async def sso_callback(
         403: E-posta domain'i izin verilmiyor
         502: OIDC token endpoint hatası
     """
+    # CSRF state dogrulama
+    if not state or state not in _sso_states:
+        raise HTTPException(status_code=400, detail="Gecersiz veya eksik state parametresi — CSRF koruması")
+    stored_state = _sso_states.pop(state)
+    if stored_state.get("provider_id") != provider_id:
+        raise HTTPException(status_code=400, detail="State-provider uyumsuzlugu")
+
     provider = await db.get(SSOProvider, provider_id)
     if not provider or not provider.enabled or provider.provider_type != "oidc":
         raise HTTPException(status_code=400, detail="Gecersiz SSO provider")
@@ -468,3 +480,45 @@ async def sso_callback(
     redirect_url = f"{frontend_url}/login?sso_token={jwt_access}&sso_refresh={jwt_refresh}"
 
     return RedirectResponse(url=redirect_url, status_code=302)
+
+
+@router.post("/logout/{provider_id}")
+async def sso_logout(
+    provider_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """OIDC RP-Initiated Logout — IdP'ye logout isteği gönderir.
+
+    Discovery document'tan end_session_endpoint alınır ve
+    kullanıcı IdP logout sayfasına yönlendirilir.
+
+    Raises:
+        400: SSO provider geçersiz veya devre dışı
+        404: SSO provider bulunamadı
+    """
+    provider = await db.get(SSOProvider, provider_id)
+    if not provider or not provider.enabled:
+        raise HTTPException(status_code=404, detail="SSO provider bulunamadi veya devre disi")
+
+    logout_url = None
+    if provider.provider_type == "oidc" and provider.discovery_url:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(provider.discovery_url)
+                oidc_config = resp.json()
+                logout_url = oidc_config.get("end_session_endpoint")
+        except Exception as exc:
+            logger.warning("OIDC discovery failed during logout: %s", exc)
+
+    frontend_url = settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:3000"
+
+    if logout_url:
+        redirect_url = (
+            f"{logout_url}"
+            f"?post_logout_redirect_uri={frontend_url}/login"
+            f"&client_id={provider.client_id}"
+        )
+        return {"logout_url": redirect_url}
+
+    return {"logout_url": f"{frontend_url}/login", "message": "IdP logout not available"}

@@ -140,6 +140,18 @@ async def _process_build_finished(payload: dict):
             build_id, status, artifact_url, artifact_checksum, payload.get("trace_id"),
         )
 
+        # WebSocket broadcast for build progress
+        try:
+            from app.ws import broadcast_build_progress
+            await broadcast_build_progress(build_id, {
+                "build_id": build_id,
+                "status": status,
+                "artifact_url": artifact_url,
+                "finished_at": datetime.utcnow().isoformat(),
+            })
+        except Exception as ws_exc:
+            logger.debug("WebSocket broadcast failed for build %s: %s", build_id, ws_exc)
+
         if status == "success" and build_id:
             # Cost recording with retry
             _MAX_COST_RETRIES = 3
@@ -200,6 +212,16 @@ async def _process_deploy_completed(payload: dict):
                 .values(status=status, updated_at=datetime.utcnow())
             )
             await db.commit()
+
+        try:
+            from app.ws import broadcast_deployment_status
+            await broadcast_deployment_status(deployment_id, {
+                "deployment_id": deployment_id,
+                "status": status,
+                "updated_at": datetime.utcnow().isoformat(),
+            })
+        except Exception as ws_exc:
+            logger.debug("WebSocket broadcast failed for deployment %s: %s", deployment_id, ws_exc)
 
         try:
             from app.main import DEPLOY_RESULT_COUNTER

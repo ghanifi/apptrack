@@ -15,6 +15,7 @@ from app.request_guard import RequestSizeGuardMiddleware
 from app.tenant_middleware import TenantIsolationMiddleware
 from app.logging_config import setup_logging
 from app.routers import auth, projects, builds, deployments, credentials, github, preview, webhooks, audit, flags, usage
+from app.routers import quotas as quotas_router
 from app.routers import secrets, rbac, immutable_audit, deploy_policies, backups
 from app.routers import ota
 from app.routers import admin as admin_router
@@ -25,6 +26,12 @@ from app.routers import store_metadata
 from app.routers import support as support_router
 from app.routers import organizations as organizations_router
 from app.routers import sso as sso_router
+from app.routers import notifications as notifications_router
+from app.routers import incidents as incidents_router
+from app.routers import releases as releases_router
+from app.routers import cache as cache_router
+from app.routers import crash_reporting as crash_reporting_router
+from app.ws import router as ws_router
 import time as _time
 from app.config import settings
 from app.database import engine, Base, AsyncSessionLocal
@@ -35,6 +42,7 @@ from app.worker import start_event_worker
 from app.cleanup import cleanup_stale_builds
 from app.webhook_guard import cleanup_expired_nonces
 from app.waf import WAFMiddleware
+from app.notification_worker import start_notification_worker
 
 setup_logging(level="INFO", json_output=True)
 logger = logging.getLogger(__name__)
@@ -176,6 +184,15 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Event worker unavailable: %s", exc)
 
+    try:
+        import aio_pika
+        notif_conn = await aio_pika.connect_robust(settings.RABBITMQ_URL)
+        notif_channel = await notif_conn.channel()
+        await start_notification_worker(notif_channel)
+        logger.info("Notification worker started")
+    except Exception as exc:
+        logger.warning("Notification worker unavailable: %s", exc)
+
     _background_tasks["stale_build_cleanup"] = asyncio.create_task(cleanup_stale_builds())
     logger.info("Stale build cleanup task started")
 
@@ -244,6 +261,11 @@ app = FastAPI(
         {"name": "build-diagnosis", "description": "Build hata tanılama — otomatik analiz ve çözüm önerisi"},
         {"name": "cost-prediction", "description": "Build maliyet tahmini — geçmiş veriye dayalı projeksiyon"},
         {"name": "provider-recommendation", "description": "CI provider önerisi — performans ve maliyet analizi"},
+        {"name": "notifications", "description": "Bildirim yönetimi — CRUD, tercihleri, okundu işaretleme"},
+        {"name": "incidents", "description": "Status page olayları — incident ve güncelleme yönetimi"},
+        {"name": "releases", "description": "Release notes — otomatik üretim ve düzenleme"},
+        {"name": "build-cache", "description": "Build cache yönetimi — cache bilgisi, temizleme"},
+        {"name": "crash-reporting", "description": "Crash reporting — Sentry entegrasyonu, crash stats, release"},
     ],
 )
 
@@ -293,6 +315,7 @@ app.include_router(webhooks.router,    prefix="/api/webhooks",    tags=["webhook
 app.include_router(audit.router,       prefix="/api/audit",       tags=["audit"])
 app.include_router(flags.router,       prefix="/api/flags",       tags=["feature-flags"])
 app.include_router(usage.router,       prefix="/api/usage",       tags=["usage"])
+app.include_router(quotas_router.router, prefix="/api/quotas",    tags=["usage"])
 app.include_router(secrets.router,              tags=["secrets"])
 app.include_router(rbac.router,                 tags=["rbac"])
 app.include_router(immutable_audit.router,      tags=["immutable-audit"])
@@ -313,6 +336,12 @@ app.include_router(sso_router.router, prefix="/api", tags=["sso"])
 app.include_router(build_diagnosis.router)
 app.include_router(cost_prediction.router)
 app.include_router(provider_recommendation.router)
+app.include_router(notifications_router.router)
+app.include_router(incidents_router.router)
+app.include_router(releases_router.router)
+app.include_router(cache_router.router)
+app.include_router(crash_reporting_router.router)
+app.include_router(ws_router)
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 

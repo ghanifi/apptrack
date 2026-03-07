@@ -18,7 +18,9 @@ ALLOWED_PROVIDERS = {
     "google_play": ["GOOGLE_PLAY_KEY_JSON"],
     "app_store": ["APP_STORE_KEY_ID", "APP_STORE_ISSUER_ID", "APP_STORE_PRIVATE_KEY"],
     "ios_signing": ["IOS_CERT_P12_BASE64", "IOS_CERT_PASSWORD", "IOS_PROVISIONING_PROFILE_BASE64"],
+    "android_signing": ["ANDROID_KEYSTORE_BASE64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD"],
     "github_actions": ["GITHUB_ACTIONS_TOKEN"],
+    "sentry": ["SENTRY_DSN", "SENTRY_PROJECT_SLUG", "SENTRY_AUTH_TOKEN"],
     "test_automation": ["TEST_AUTOMATION_WEBHOOK_URL"],
 }
 
@@ -158,6 +160,81 @@ async def get_user_credential(db: AsyncSession, user_id: str, provider: str, key
         user_id, provider, key_name, cred.id,
     )
     return decrypt(cred.encrypted_value)
+
+
+@router.get("/expiring")
+async def list_expiring_credentials(
+    days: int = 30,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Belirtilen gün içinde süresi dolacak credential'ları listeler.
+
+    Sertifika ve token'ların expires_at alanına göre filtrelenir.
+    Son kullanma tarihi yaklaşan kayıtlar uyarı amaçlı döndürülür.
+
+    Raises:
+        401: Kimlik doğrulama gerekli
+    """
+    from datetime import timedelta
+    cutoff = datetime.utcnow() + timedelta(days=days)
+
+    result = await db.execute(
+        select(Credential).where(
+            and_(
+                Credential.owner_id == current_user["id"],
+                Credential.expires_at != None,
+                Credential.expires_at <= cutoff,
+            )
+        ).order_by(Credential.expires_at.asc())
+    )
+    creds = result.scalars().all()
+    return [
+        {
+            "id": c.id,
+            "provider": c.provider,
+            "key_name": c.key_name,
+            "expires_at": c.expires_at.isoformat() if c.expires_at else None,
+            "days_remaining": (c.expires_at - datetime.utcnow()).days if c.expires_at else None,
+        }
+        for c in creds
+    ]
+
+
+@router.put("/{credential_id}/expiry")
+async def set_credential_expiry(
+    credential_id: str,
+    expires_at: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Credential'ın son kullanma tarihini ayarlar.
+
+    ISO 8601 formatında tarih kabul eder. Sertifika ve token'ların
+    süresi takibi için kullanılır.
+
+    Raises:
+        400: Geçersiz tarih formatı
+        401: Kimlik doğrulama gerekli
+        404: Credential bulunamadı
+    """
+    result = await db.execute(
+        select(Credential).where(
+            and_(Credential.id == credential_id, Credential.owner_id == current_user["id"])
+        )
+    )
+    cred = result.scalar_one_or_none()
+    if not cred:
+        raise HTTPException(status_code=404, detail="Credential not found")
+
+    try:
+        cred.expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00").replace("+00:00", ""))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use ISO 8601.")
+
+    cred.updated_at = datetime.utcnow()
+    await db.commit()
+    return {"status": "updated", "expires_at": cred.expires_at.isoformat()}
 
 
 @router.post("/rotate-keys")

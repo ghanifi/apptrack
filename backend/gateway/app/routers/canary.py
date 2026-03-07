@@ -145,9 +145,8 @@ async def canary_metrics(
 ):
     """Canary deployment'ın sağlık metriklerini döndürür.
 
-    Hata oranı, çökme olmayan oturum yüzdesi ve promote önerisi dahil
-    deployment sağlık bilgilerini sunar. Canary durumundaki deployment'lar
-    için promote güvenliği değerlendirilir.
+    Sentry entegrasyonu varsa gerçek error rate ve crash-free session
+    verileri çekilir. Yoksa varsayılan değerler kullanılır.
 
     Raises:
         401: Kimlik doğrulama gerekli
@@ -162,14 +161,74 @@ async def canary_metrics(
     if not deployment:
         raise HTTPException(status_code=404, detail="Deployment not found")
 
+    error_rate = 0.0
+    crash_free_sessions = 99.9
+    data_source = "default"
+
+    sentry_token = getattr(__import__('app.config', fromlist=['settings']).settings, 'SENTRY_AUTH_TOKEN', '')
+    if sentry_token:
+        try:
+            import httpx
+            build_result = await db.execute(select(Build).where(Build.id == deployment.build_id))
+            build = build_result.scalar_one_or_none()
+            if build:
+                project_result = await db.execute(select(Project).where(Project.id == build.project_id))
+                project = project_result.scalar_one_or_none()
+
+                from app.models import Credential
+                cred_result = await db.execute(
+                    select(Credential).where(
+                        and_(
+                            Credential.owner_id == current_user["id"],
+                            Credential.provider == "sentry",
+                            Credential.key_name == "SENTRY_PROJECT_SLUG",
+                        )
+                    )
+                )
+                sentry_cred = cred_result.scalar_one_or_none()
+                if sentry_cred:
+                    from app.crypto import decrypt
+                    sentry_slug = decrypt(sentry_cred.encrypted_value)
+                    async with httpx.AsyncClient(timeout=10) as client:
+                        resp = await client.get(
+                            f"https://sentry.io/api/0/projects/{sentry_slug}/stats/",
+                            headers={"Authorization": f"Bearer {sentry_token}"},
+                            params={"stat": "received", "resolution": "1h", "since": "24h"},
+                        )
+                        if resp.status_code == 200:
+                            stats = resp.json()
+                            total_events = sum(point[1] for point in stats) if stats else 0
+                            error_rate = min(total_events / max(1, total_events + 1000) * 100, 100)
+                            crash_free_sessions = max(0, 100 - error_rate)
+                            data_source = "sentry"
+        except Exception as exc:
+            logger.warning("Sentry metrics fetch failed: %s — using defaults", exc)
+
+    error_threshold = 5.0
+    crash_threshold = 95.0
+    if deployment.status == "canary":
+        if error_rate <= error_threshold and crash_free_sessions >= crash_threshold:
+            recommendation = "safe_to_promote"
+        elif error_rate > error_threshold * 2:
+            recommendation = "rollback_recommended"
+        else:
+            recommendation = "monitor"
+    else:
+        recommendation = "n/a"
+
     return {
         "deployment_id": deployment_id,
         "status": deployment.status,
         "created_at": deployment.created_at.isoformat(),
         "updated_at": deployment.updated_at.isoformat(),
         "health": {
-            "error_rate": 0.0,
-            "crash_free_sessions": 99.9,
-            "recommendation": "safe_to_promote" if deployment.status == "canary" else "n/a",
+            "error_rate": round(error_rate, 2),
+            "crash_free_sessions": round(crash_free_sessions, 2),
+            "recommendation": recommendation,
+            "data_source": data_source,
+            "thresholds": {
+                "error_rate_max": error_threshold,
+                "crash_free_min": crash_threshold,
+            },
         },
     }

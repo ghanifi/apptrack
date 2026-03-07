@@ -1,16 +1,21 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
-import { FolderGit2, Rocket, CheckCircle, Clock, ArrowRight } from 'lucide-react'
+import { FolderGit2, Rocket, CheckCircle, Clock, ArrowRight, BarChart3 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { Project } from '@/types'
+import type { Project, UsageSummary } from '@/types'
 
 export default function DashboardPage() {
   const { user } = useAuthStore()
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ['projects'],
-    queryFn: () => api.get('/projects').then((r) => r.data),
+    queryFn: () => api.get('/projects').then((r) => r.data.items ?? r.data),
+  })
+
+  const { data: usage } = useQuery<UsageSummary>({
+    queryKey: ['usage-summary'],
+    queryFn: () => api.get('/usage/summary').then((r) => r.data),
   })
 
   const totalBuilds = projects.reduce((acc, p) => acc + ((p as unknown as { builds?: unknown[] }).builds?.length ?? 0), 0)
@@ -48,7 +53,7 @@ export default function DashboardPage() {
       <div className="bg-gray-900 border border-gray-800 rounded-xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
           <h2 className="text-base font-semibold">Recent Projects</h2>
-          <Link to="/projects" className="text-xs text-primary-400 hover:underline flex items-center gap-1">
+          <Link to="/dashboard/projects" className="text-xs text-primary-400 hover:underline flex items-center gap-1">
             View all <ArrowRight size={12} />
           </Link>
         </div>
@@ -56,7 +61,7 @@ export default function DashboardPage() {
           <div className="flex flex-col items-center justify-center py-12 text-gray-600">
             <Rocket size={32} className="mb-3 opacity-30" />
             <p className="text-sm">No projects yet.</p>
-            <Link to="/projects/new" className="mt-2 text-primary-500 hover:underline text-sm">
+            <Link to="/dashboard/projects/new" className="mt-2 text-primary-500 hover:underline text-sm">
               Create your first project
             </Link>
           </div>
@@ -65,7 +70,7 @@ export default function DashboardPage() {
             {recentProjects.map((project) => (
               <Link
                 key={project.id}
-                to={`/projects/${project.id}`}
+                to={`/dashboard/projects/${project.id}`}
                 className="flex items-center justify-between px-6 py-3 hover:bg-gray-800/50 transition-colors"
               >
                 <div>
@@ -78,6 +83,42 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {usage && (
+        <div className="mt-6 bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold flex items-center gap-2">
+              <BarChart3 size={16} className="text-blue-400" />
+              Usage This Month
+            </h2>
+            <Link to="/dashboard/usage" className="text-xs text-primary-400 hover:underline flex items-center gap-1">
+              Details <ArrowRight size={12} />
+            </Link>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: 'Builds', current: usage.usage.builds_this_month.current, limit: usage.usage.builds_this_month.limit },
+              { label: 'Deploys', current: usage.usage.deploys_this_month.current, limit: usage.usage.deploys_this_month.limit },
+              { label: 'Storage', current: usage.usage.storage_mb.current, limit: usage.usage.storage_mb.limit, suffix: 'MB' },
+            ].map(({ label, current, limit, suffix }) => {
+              const pct = limit > 0 ? Math.min((current / limit) * 100, 100) : 0
+              const color = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-500' : 'bg-blue-500'
+              return (
+                <div key={label}>
+                  <div className="flex justify-between text-xs text-gray-400 mb-1">
+                    <span>{label}</span>
+                    <span>{current}{suffix ? ` ${suffix}` : ''} / {limit}{suffix ? ` ${suffix}` : ''}</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-xs text-gray-600 mt-3 text-right capitalize">{usage.plan} Plan · {usage.period}</p>
+        </div>
+      )}
     </div>
   )
 }

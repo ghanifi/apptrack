@@ -3,9 +3,11 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import UserQuota, Project, Build, Deployment, UsageRecord
+from app.models import UserQuota, Project, Build, Deployment, UsageRecord, Notification
 
 logger = logging.getLogger(__name__)
+
+QUOTA_WARNING_THRESHOLD = 0.8  # 80%
 
 PLAN_DEFAULTS = {
     "free": {
@@ -50,6 +52,40 @@ def _month_start() -> datetime:
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
+async def _send_quota_warning(db: AsyncSession, user_id: str, metric: str, current: int, limit: int):
+    """Send an in-app notification when usage reaches 80% of quota."""
+    if limit <= 0:
+        return
+    ratio = current / limit
+    if ratio < QUOTA_WARNING_THRESHOLD:
+        return
+
+    existing = await db.execute(
+        select(func.count()).select_from(Notification).where(
+            and_(
+                Notification.user_id == user_id,
+                Notification.type == "quota_warning",
+                Notification.resource_type == metric,
+                Notification.created_at >= _month_start(),
+            )
+        )
+    )
+    if (existing.scalar() or 0) > 0:
+        return
+
+    pct = int(ratio * 100)
+    notification = Notification(
+        user_id=user_id,
+        type="quota_warning",
+        title=f"{metric.replace('_', ' ').title()} quota at {pct}%",
+        body=f"You've used {current} of {limit} {metric.replace('_', ' ')}. Consider upgrading your plan.",
+        channel="in_app",
+        resource_type=metric,
+    )
+    db.add(notification)
+    logger.info("Quota warning sent: user=%s metric=%s %d/%d", user_id, metric, current, limit)
+
+
 async def check_project_quota(db: AsyncSession, user_id: str):
     quota = await get_or_create_quota(db, user_id)
     count_result = await db.execute(
@@ -61,6 +97,7 @@ async def check_project_quota(db: AsyncSession, user_id: str):
             status_code=429,
             detail=f"Project limit reached ({quota.max_projects} for {quota.plan} plan). Upgrade to create more projects.",
         )
+    await _send_quota_warning(db, user_id, "projects", current, quota.max_projects)
 
 
 async def check_build_quota(db: AsyncSession, user_id: str):
@@ -79,6 +116,7 @@ async def check_build_quota(db: AsyncSession, user_id: str):
             status_code=429,
             detail=f"Monthly build limit reached ({quota.max_builds_per_month} for {quota.plan} plan).",
         )
+    await _send_quota_warning(db, user_id, "builds", current, quota.max_builds_per_month)
 
     concurrent_result = await db.execute(
         select(func.count())
@@ -116,6 +154,7 @@ async def check_deploy_quota(db: AsyncSession, user_id: str):
             status_code=429,
             detail=f"Monthly deploy limit reached ({quota.max_deploys_per_month} for {quota.plan} plan).",
         )
+    await _send_quota_warning(db, user_id, "deploys", current, quota.max_deploys_per_month)
 
 
 async def track_usage(
