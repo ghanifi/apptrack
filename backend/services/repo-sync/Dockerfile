@@ -5,7 +5,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 FROM python:3.12-slim
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN groupadd -r appuser && useradd -r -g appuser appuser && mkdir -p /tmp/repos && chown appuser:appuser /tmp/repos
 WORKDIR /app
 COPY --from=builder /install /usr/local
 COPY . .

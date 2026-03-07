@@ -4,7 +4,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 FROM python:3.12-slim
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN groupadd -r appuser && useradd -r -g appuser appuser && mkdir -p /tmp/repos && chown appuser:appuser /tmp/repos
 WORKDIR /app
 COPY --from=builder /install /usr/local
 COPY . .
