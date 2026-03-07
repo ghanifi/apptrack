@@ -199,27 +199,57 @@ async def github_callback(
         user_res = await client.get("https://api.github.com/user", headers={"Authorization": f"Bearer {github_token}"})
     gh_user = user_res.json()
 
-    result = await db.execute(select(User).where(User.github_id == str(gh_user["id"])))
-    user = result.scalar_one_or_none()
-    if not user:
-        result2 = await db.execute(select(User).where(User.email == (gh_user.get("email") or "")))
-        user = result2.scalar_one_or_none()
-
     encrypted_token = encrypt(github_token)
 
-    if user:
-        user.github_id = str(gh_user["id"])
-        user.github_access_token = encrypted_token
-        user.avatar_url = gh_user.get("avatar_url")
-    else:
-        user = User(
-            name=gh_user.get("name") or gh_user.get("login"),
-            email=gh_user.get("email") or f"{gh_user['login']}@github.local",
-            github_id=str(gh_user["id"]),
-            github_access_token=encrypted_token,
-            avatar_url=gh_user.get("avatar_url"),
+    # Check if a logged-in user is linking their GitHub account
+    current_user = None
+    auth_header = request.headers.get("Authorization", "") if request else ""
+    if auth_header.startswith("Bearer "):
+        try:
+            payload = jwt.decode(auth_header[7:], settings.SECRET_KEY, algorithms=["HS256"])
+            if payload.get("type") == "access":
+                uid = payload.get("sub")
+                result = await db.execute(select(User).where(User.id == uid))
+                current_user = result.scalar_one_or_none()
+        except JWTError:
+            pass
+
+    if current_user:
+        # Link GitHub to the currently logged-in user
+        # Clear github_id from any other user that had it
+        old_result = await db.execute(
+            select(User).where(User.github_id == str(gh_user["id"]))
         )
-        db.add(user)
+        old_user = old_result.scalar_one_or_none()
+        if old_user and old_user.id != current_user.id:
+            old_user.github_id = None
+            old_user.github_access_token = None
+
+        current_user.github_id = str(gh_user["id"])
+        current_user.github_access_token = encrypted_token
+        current_user.avatar_url = gh_user.get("avatar_url") or current_user.avatar_url
+        user = current_user
+    else:
+        # Login / register flow
+        result = await db.execute(select(User).where(User.github_id == str(gh_user["id"])))
+        user = result.scalar_one_or_none()
+        if not user:
+            result2 = await db.execute(select(User).where(User.email == (gh_user.get("email") or "")))
+            user = result2.scalar_one_or_none()
+
+        if user:
+            user.github_id = str(gh_user["id"])
+            user.github_access_token = encrypted_token
+            user.avatar_url = gh_user.get("avatar_url")
+        else:
+            user = User(
+                name=gh_user.get("name") or gh_user.get("login"),
+                email=gh_user.get("email") or f"{gh_user['login']}@github.local",
+                github_id=str(gh_user["id"]),
+                github_access_token=encrypted_token,
+                avatar_url=gh_user.get("avatar_url"),
+            )
+            db.add(user)
 
     await db.commit()
     await db.refresh(user)
