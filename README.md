@@ -2,11 +2,284 @@
 
 Mobile app CI/CD and Store management platform. Build, test, deploy and manage your mobile applications from a single dashboard.
 
+## Supported Frameworks & Languages
+
+AppTrack supports **9 mobile/web frameworks** across **6 programming languages**, covering the entire spectrum from native to hybrid to progressive web apps:
+
+### Native Frameworks
+
+| Framework | Language | Platforms | Build Provider | Workflow |
+|-----------|----------|-----------|----------------|----------|
+| **Swift** | Swift | iOS | GitHub Actions (Self-Hosted Mac Mini M4) | `build-ios.yml` |
+| **Kotlin** | Kotlin | Android | GitHub Actions | `build-android.yml` |
+
+### Cross-Platform Frameworks
+
+| Framework | Language | Platforms | Build Provider | Workflow |
+|-----------|----------|-----------|----------------|----------|
+| **React Native** | JavaScript / TypeScript | iOS, Android | EAS Build | Expo managed |
+| **Flutter** | Dart | iOS, Android | Codemagic | Codemagic managed |
+| **Expo** | JavaScript / TypeScript | iOS, Android | EAS Build | Expo managed |
+
+### Hybrid Frameworks (Capacitor Ecosystem)
+
+| Framework | Language | Platforms | Build Provider | Workflow |
+|-----------|----------|-----------|----------------|----------|
+| **Capacitor** | JavaScript / TypeScript | iOS, Android | GitHub Actions | `build-capacitor-ios.yml`, `build-capacitor-android.yml` |
+| **Ionic** | JavaScript / TypeScript | iOS, Android | GitHub Actions | Capacitor workflows shared |
+| **Cordova** | JavaScript / TypeScript | iOS, Android | GitHub Actions | Capacitor workflows shared |
+
+### Progressive Web Apps
+
+| Framework | Language | Platforms | Build Provider | Workflow |
+|-----------|----------|-----------|----------------|----------|
+| **PWA** | JavaScript / TypeScript | Android (TWA), Web | GitHub Actions | `build-pwa-android.yml`, `build-pwa.yml` |
+
+### Language Summary
+
+| Language | Frameworks | Detection Method |
+|----------|-----------|-----------------|
+| **Swift** | Swift (native iOS) | `.swift` files, `Package.swift`, `*.xcodeproj` |
+| **Kotlin** | Kotlin (native Android) | `build.gradle.kts`, `*.kt` files |
+| **Dart** | Flutter | `pubspec.yaml` with flutter dependency |
+| **JavaScript / TypeScript** | React Native, Expo, Capacitor, Ionic, Cordova, PWA | `package.json` + framework-specific configs |
+
+> Framework detection is fully automatic. When you connect a GitHub repository, AppTrack analyzes the project structure and identifies the correct framework, language, and available build targets.
+
+---
+
+## End-to-End Publishing Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                          AppTrack — Publishing Pipeline                          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+  PHASE 1: PROJECT SETUP
+  ─────────────────────────────────────────────────────────────────────────────
+
+  ┌──────────┐     ┌──────────────┐     ┌───────────────┐     ┌──────────────┐
+  │  GitHub   │────▶│  Repo Sync   │────▶│  Framework    │────▶│  Project     │
+  │  OAuth    │     │  Service     │     │  Detection    │     │  Created     │
+  │  Connect  │     │  (8003)      │     │  (8004)       │     │  Ready       │
+  └──────────┘     └──────────────┘     └───────────────┘     └──────┬───────┘
+                    Clone & analyze      Auto-detect:                  │
+                    repository           9 frameworks                  │
+                                         6 languages                   │
+                                                                       ▼
+  PHASE 2: CREDENTIAL MANAGEMENT
+  ─────────────────────────────────────────────────────────────────────────────
+
+  ┌────────────────────────────────────────────────────────────────────────────┐
+  │                         SECURE CREDENTIAL VAULT                            │
+  │                    Fernet Encryption (AES-128-CBC)                          │
+  │                    Zero plaintext storage + Key rotation                    │
+  │                                                                            │
+  │  ┌─────────────┐ ┌─────────────┐ ┌──────────────┐ ┌────────────────────┐ │
+  │  │ Google Play  │ │ App Store   │ │ GitHub       │ │ Netlify / Vercel   │ │
+  │  │ Service Key  │ │ API Key +   │ │ Actions      │ │ Deploy Token       │ │
+  │  │ (JSON)       │ │ P8 Key      │ │ PAT Token    │ │                    │ │
+  │  └─────────────┘ └─────────────┘ └──────────────┘ └────────────────────┘ │
+  │                                                                            │
+  │  ┌──────────────────────────────┐ ┌────────────────────────────────────┐  │
+  │  │ iOS Signing                  │ │ Android Signing                    │  │
+  │  │ P12 Certificate (base64)     │ │ Keystore (base64)                  │  │
+  │  │ Certificate Password         │ │ Keystore Password                  │  │
+  │  │ Provisioning Profile (base64)│ │ Key Alias + Key Password           │  │
+  │  └──────────────────────────────┘ └────────────────────────────────────┘  │
+  └────────────────────────────────────────────────────────────────────────────┘
+                                         │
+                                         ▼
+  PHASE 3: BUILD
+  ─────────────────────────────────────────────────────────────────────────────
+
+  ┌────────────────────────────────────────────────────────────────────────────┐
+  │                           BUILD PIPELINE                                    │
+  │                                                                            │
+  │   ┌──────────┐    ┌──────────────┐    ┌──────────────┐    ┌────────────┐ │
+  │   │ Trigger   │───▶│ Provider     │───▶│ Build        │───▶│ Artifact   │ │
+  │   │ Build     │    │ Selection    │    │ Execution    │    │ Storage    │ │
+  │   │ (API)     │    │ (WORKFLOW_MAP│    │              │    │ (MinIO)    │ │
+  │   └──────────┘    └──────────────┘    └──────────────┘    └────────────┘ │
+  │                                                                            │
+  │   Build Providers:                                                         │
+  │   ┌──────────────────────────────────────────────────────────────────────┐ │
+  │   │                                                                      │ │
+  │   │  EAS Build ──────── React Native, Expo                               │ │
+  │   │  Codemagic ──────── Flutter                                          │ │
+  │   │  GitHub Actions ─── Swift, Kotlin, Capacitor, Ionic, Cordova, PWA    │ │
+  │   │  Self-Hosted ────── iOS builds via Mac Mini M4 (Apple Silicon)       │ │
+  │   │                                                                      │ │
+  │   └──────────────────────────────────────────────────────────────────────┘ │
+  │                                                                            │
+  │   Workflow Routing (WORKFLOW_MAP):                                          │
+  │   ┌────────────────┬──────────────────────────┬────────────────────────┐  │
+  │   │ Framework       │ Android                  │ iOS                    │  │
+  │   ├────────────────┼──────────────────────────┼────────────────────────┤  │
+  │   │ Capacitor       │ build-capacitor-android   │ build-capacitor-ios    │  │
+  │   │ Ionic           │ build-capacitor-android   │ build-capacitor-ios    │  │
+  │   │ Cordova         │ build-capacitor-android   │ build-capacitor-ios    │  │
+  │   │ PWA             │ build-pwa-android (TWA)   │ —                      │  │
+  │   │ PWA (Web)       │ build-pwa.yml             │ —                      │  │
+  │   │ Swift           │ —                         │ build-ios              │  │
+  │   │ Kotlin          │ build-android             │ —                      │  │
+  │   └────────────────┴──────────────────────────┴────────────────────────┘  │
+  │                                                                            │
+  │   Output Artifacts:                                                        │
+  │   ├── Android: Signed APK / AAB                                            │
+  │   ├── iOS: Signed IPA (via Mac Mini M4 self-hosted runner)                 │
+  │   ├── Web: Static build (dist.zip)                                         │
+  │   └── PWA Android: TWA APK (via Bubblewrap)                                │
+  └────────────────────────────────────────────────────────────────────────────┘
+                                         │
+                               ┌─────────┴─────────┐
+                               ▼                     ▼
+                     ┌──────────────┐      ┌──────────────────┐
+                     │  Build OK    │      │  Build Failed    │
+                     └──────┬───────┘      └────────┬─────────┘
+                            │                       │
+                            │                ┌──────▼─────────┐
+                            │                │ AI Diagnosis    │
+                            │                │ 30 error        │
+                            │                │ patterns        │
+                            │                │ + fix suggest.  │
+                            │                └────────────────┘
+                            ▼
+  PHASE 4: DEPLOYMENT
+  ─────────────────────────────────────────────────────────────────────────────
+
+  ┌────────────────────────────────────────────────────────────────────────────┐
+  │                           DEPLOY TARGETS                                    │
+  │                                                                            │
+  │   ┌────────────────┐  ┌────────────────┐  ┌─────────────────────────────┐ │
+  │   │  Google Play    │  │  App Store     │  │  Web (Netlify / Vercel)     │ │
+  │   │  Console API    │  │  Connect API   │  │  Static Hosting             │ │
+  │   │                 │  │                │  │                             │ │
+  │   │  • Upload APK   │  │  • Upload IPA  │  │  • Upload dist.zip         │ │
+  │   │  • Select track  │  │  • TestFlight  │  │  • Auto SSL + CDN         │ │
+  │   │  • Rollout %    │  │  • Submit for  │  │  • Custom domain           │ │
+  │   │  • Canary deploy│  │    review      │  │  • Preview URL             │ │
+  │   └────────────────┘  └────────────────┘  └─────────────────────────────┘ │
+  │                                                                            │
+  │   Deploy Tracks:                                                           │
+  │   ┌───────────┐    ┌───────────┐    ┌───────────┐    ┌───────────────┐   │
+  │   │ Internal  │───▶│   Beta    │───▶│  Staging  │───▶│  Production   │   │
+  │   │ Testing   │    │TestFlight │    │  %10→%50  │    │  %100 Live    │   │
+  │   └───────────┘    └───────────┘    └───────────┘    └───────────────┘   │
+  │                                                                            │
+  │   Canary Deployment:                                                       │
+  │   %10 → %25 → %50 → %100 (auto-rollback on error rate spike)             │
+  └────────────────────────────────────────────────────────────────────────────┘
+                                         │
+                                         ▼
+  PHASE 5: POST-DEPLOY & OTA
+  ─────────────────────────────────────────────────────────────────────────────
+
+  ┌────────────────────────────────────────────────────────────────────────────┐
+  │                                                                            │
+  │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐ │
+  │   │ Audit Log    │  │ KPI Metrics  │  │ OTA Updates  │  │ Webhooks    │ │
+  │   │ (Immutable)  │  │ (Prometheus) │  │              │  │             │ │
+  │   │              │  │              │  │ Channels:    │  │ Slack       │ │
+  │   │ SOC2-ready   │  │ Build time   │  │ • production │  │ Discord     │ │
+  │   │ Hash chain   │  │ Success rate │  │ • staging    │  │ Email       │ │
+  │   │ Tamper-proof │  │ Cost/build   │  │ • beta       │  │ Custom URL  │ │
+  │   └──────────────┘  └──────────────┘  │              │  └─────────────┘ │
+  │                                        │ Features:    │                   │
+  │                                        │ • Hot-fix JS │                   │
+  │                                        │ • No rebuild │                   │
+  │                                        │ • Rollback   │                   │
+  │                                        │ • Runtime    │                   │
+  │                                        │   version    │                   │
+  │                                        │   matching   │                   │
+  │                                        └──────────────┘                   │
+  └────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## OTA (Over-The-Air) Live Updates
+
+AppTrack provides built-in OTA update support for Capacitor, Ionic, and Cordova applications. Ship JavaScript/HTML/CSS changes instantly without rebuilding the native binary or going through app store review.
+
+```
+  Developer                  AppTrack                    Mobile App
+  ─────────                  ────────                    ──────────
+      │                          │                            │
+      │  npm run build           │                            │
+      │  Upload dist.zip         │                            │
+      │─────────────────────────▶│                            │
+      │                          │  Store bundle              │
+      │                          │  in MinIO                  │
+      │                          │                            │
+      │                          │         GET /api/ota/check │
+      │                          │◀───────────────────────────│
+      │                          │                            │
+      │                          │  { available: true,        │
+      │                          │    bundle_url: "...",      │
+      │                          │    runtime_version: "1.2"} │
+      │                          │───────────────────────────▶│
+      │                          │                            │
+      │                          │                  Download  │
+      │                          │                  & Apply   │
+      │                          │                  Bundle    │
+      │                          │                            │
+      │  Rollback (if needed)    │                            │
+      │─────────────────────────▶│                            │
+      │                          │  Re-publish                │
+      │                          │  previous version          │
+      │                          │───────────────────────────▶│
+```
+
+**Channels**: `production`, `staging`, `beta` — target different user groups.
+
+**Public Endpoint**: `GET /api/ota/check/{project_id}` requires no authentication, so mobile apps can check for updates directly.
+
+---
+
+## iOS Build — Self-Hosted Mac Mini M4
+
+For iOS builds, AppTrack uses a self-hosted GitHub Actions runner on Apple Silicon (Mac Mini M4) with zero cloud cost:
+
+```
+  GitHub Actions                    Mac Mini M4 (Self-Hosted)
+  ──────────────                    ─────────────────────────
+       │                                    │
+       │  workflow_dispatch                 │
+       │  build-capacitor-ios.yml           │
+       │───────────────────────────────────▶│
+       │                                    │  npm ci
+       │                                    │  npm run build
+       │                                    │  npx cap sync ios
+       │                                    │  pod install
+       │                                    │
+       │                                    │  Create temp keychain
+       │                                    │  Import P12 certificate
+       │                                    │  Install provisioning profile
+       │                                    │
+       │                                    │  xcodebuild archive
+       │                                    │  xcodebuild -exportArchive
+       │                                    │
+       │                  Upload IPA        │
+       │◀───────────────────────────────────│
+       │                                    │  Cleanup keychain
+       │  Webhook callback                  │
+       │  build.finished                    │
+       │                                    │
+```
+
+**Runner Labels**: `self-hosted, macos-arm64, apptrack-ios`
+
+**Cost**: $0/month (hardware one-time, ~$5/month electricity)
+
+---
+
 ## Features
 
-- **Multi-Framework Support**: React Native, Flutter, Expo, Swift, Kotlin
-- **CI/CD Pipeline**: Automated builds via EAS, Codemagic, GitHub Actions
-- **Store Deployment**: Google Play and App Store publishing
+- **Multi-Framework Support**: React Native, Flutter, Expo, Swift, Kotlin, Capacitor, Ionic, Cordova, PWA
+- **CI/CD Pipeline**: Automated builds via EAS, Codemagic, GitHub Actions, Self-Hosted Runners
+- **Store Deployment**: Google Play, App Store, and Web (Netlify/Vercel) publishing
+- **OTA Live Updates**: Over-the-air JavaScript bundle updates with channel-based rollout
 - **Live Preview**: Real-time app preview with device emulation
 - **RBAC & SSO**: Role-based access control with OIDC/SAML support
 - **Organization Management**: Team collaboration with member roles
@@ -14,164 +287,12 @@ Mobile app CI/CD and Store management platform. Build, test, deploy and manage y
 - **Audit & Compliance**: Immutable audit logs, deploy policies, compliance checks
 - **Canary Deployments**: Gradual rollout with automatic rollback
 - **Feature Flags**: Runtime feature toggles per environment
-- **OTA Updates**: Over-the-air updates via EAS and custom bundles
 - **Store Metadata**: Multi-locale store listing management with icon/screenshot upload
+- **iOS Signing Management**: P12 certificate + provisioning profile management via UI
+- **Android Signing**: Keystore upload and signing key forwarding to build workflows
+- **Cost Guard**: Build cost estimation and budget enforcement per provider
 
-## Application Flow
-
-### End-to-End Publishing Pipeline
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        AppTrack — Uygulama Akışı                            │
-└─────────────────────────────────────────────────────────────────────────────┘
-
- ┌──────────┐     ┌──────────────┐     ┌───────────────┐     ┌─────────────┐
- │  GitHub   │────▶│  Repo Sync   │────▶│  Framework    │────▶│  Project    │
- │  OAuth    │     │  Service     │     │  Detection    │     │  Created    │
- │  Connect  │     │  (8003)      │     │  (8004)       │     │  ✓ Ready    │
- └──────────┘     └──────────────┘     └───────────────┘     └──────┬──────┘
-                   Clone & sync         Auto-detect:                 │
-                   repository           Flutter, React Native,       │
-                                        Expo, Swift, Kotlin          │
-                                                                     ▼
- ┌──────────────────────────────────────────────────────────────────────────┐
- │                        CREDENTIAL MANAGEMENT                             │
- │  ┌─────────────────────┐          ┌──────────────────────┐              │
- │  │  Google Play         │          │  App Store Connect    │              │
- │  │  Service Account     │          │  API Key + Issuer ID  │              │
- │  │  Key (JSON)          │          │  + Private Key (.p8)  │              │
- │  └─────────┬───────────┘          └──────────┬───────────┘              │
- │            └──────────────┬──────────────────┘                          │
- │                           ▼                                              │
- │              ┌────────────────────────┐                                  │
- │              │  Fernet Encryption     │  AES-128-CBC + Key Rotation     │
- │              │  Secure Vault          │  Zero plaintext storage         │
- │              └────────────────────────┘                                  │
- └──────────────────────────────────────────────────────────────────────────┘
-                                        │
-                                        ▼
- ┌──────────────────────────────────────────────────────────────────────────┐
- │                          BUILD PIPELINE                                  │
- │                                                                          │
- │  ┌─────────┐    ┌──────────────┐    ┌──────────────┐    ┌────────────┐ │
- │  │ Trigger  │───▶│ Provider     │───▶│ Build        │───▶│ Artifact   │ │
- │  │ Build    │    │ Selection    │    │ Execution    │    │ Storage    │ │
- │  │ (API)    │    │ (AI-powered) │    │              │    │ (MinIO)    │ │
- │  └─────────┘    └──────────────┘    └──────────────┘    └────────────┘ │
- │                                                                          │
- │  Providers:                      Platforms:          Artifacts:          │
- │  ├── EAS (Expo)                  ├── Android (.apk)  ├── Signed APK     │
- │  ├── Codemagic (Flutter)         ├── iOS (.ipa)      ├── Signed IPA     │
- │  └── GitHub Actions (Native)     └── Both            └── Build logs     │
- │                                                                          │
- │  AI Features:                                                            │
- │  ├── Cost Prediction ── Geçmiş build sürelerinden maliyet tahmini       │
- │  ├── Provider Recommendation ── Framework uyumluluğuna göre öneri       │
- │  └── Build Diagnosis ── 30 hata pattern'ı ile otomatik tanı             │
- └──────────────────────────────────────────────────────────────────────────┘
-                                        │
-                              ┌─────────┴─────────┐
-                              ▼                   ▼
-                    ┌──────────────┐    ┌──────────────────┐
-                    │  Build       │    │  Build Failed    │
-                    │  Success ✓   │    │  ✗              │
-                    └──────┬───────┘    └────────┬─────────┘
-                           │                     │
-                           │              ┌──────▼─────────┐
-                           │              │ AI Diagnosis    │
-                           │              │ 30 error        │
-                           │              │ patterns        │
-                           │              │ + fix önerileri │
-                           │              └──────┬─────────┘
-                           │                     │ retry
-                           │                     ▼
-                           │              ┌──────────────┐
-                           │              │ Rebuild      │
-                           │              └──────────────┘
-                           ▼
- ┌──────────────────────────────────────────────────────────────────────────┐
- │                      PRE-DEPLOY VALIDATION                               │
- │                                                                          │
- │  ┌────────────────┐  ┌────────────────┐  ┌──────────────────────────┐  │
- │  │ Deploy         │  │ Compliance     │  │ Store Metadata           │  │
- │  │ Simulator      │  │ Check          │  │ Validation               │  │
- │  │                │  │                │  │                          │  │
- │  │ • Credential   │  │ • Content      │  │ • 15 locale checks      │  │
- │  │   validation   │  │   guidelines   │  │ • Icon size/format      │  │
- │  │ • API key      │  │ • Age rating   │  │ • Screenshot specs      │  │
- │  │   permissions  │  │ • Privacy      │  │ • Description length    │  │
- │  │ • Dry-run      │  │   policy       │  │ • Readiness checklist   │  │
- │  │   simulation   │  │ • Store rules  │  │                          │  │
- │  └────────────────┘  └────────────────┘  └──────────────────────────┘  │
- └──────────────────────────────────────────────────────────────────────────┘
-                                        │
-                                        ▼
- ┌──────────────────────────────────────────────────────────────────────────┐
- │                       DEPLOYMENT                                         │
- │                                                                          │
- │   Deploy Track:  ┌─────────────┐  ┌─────────────┐  ┌────────────────┐  │
- │                  │  Internal   │  │  Beta /      │  │  Production    │  │
- │                  │  Testing    │  │  TestFlight  │  │  (Canlı)       │  │
- │                  └──────┬──────┘  └──────┬──────┘  └───────┬────────┘  │
- │                         └────────────────┴─────────────────┘            │
- │                                          │                              │
- │                    ┌─────────────────────┴──────────────────────┐       │
- │                    ▼                                            ▼       │
- │          ┌──────────────────┐                     ┌──────────────────┐  │
- │          │  Google Play     │                     │  App Store       │  │
- │          │  Console API     │                     │  Connect API     │  │
- │          │                  │                     │                  │  │
- │          │  ┌────────────┐  │                     │  ┌────────────┐  │  │
- │          │  │ Upload APK │  │                     │  │ Upload IPA │  │  │
- │          │  │ Set track  │  │                     │  │ Submit for │  │  │
- │          │  │ Rollout %  │  │                     │  │ review     │  │  │
- │          │  └────────────┘  │                     │  └────────────┘  │  │
- │          └──────────────────┘                     └──────────────────┘  │
- │                                                                          │
- │   Canary Deploy:                                                        │
- │   ├── %10 → %25 → %50 → %100  (gradual rollout)                       │
- │   └── Auto-rollback on error rate spike                                 │
- └──────────────────────────────────────────────────────────────────────────┘
-                                        │
-                                        ▼
- ┌──────────────────────────────────────────────────────────────────────────┐
- │                      POST-DEPLOY                                         │
- │                                                                          │
- │  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐ │
- │  │ Audit Log   │  │ KPI Metrics  │  │ OTA Updates  │  │ Webhook     │ │
- │  │ (Immutable) │  │ (Prometheus) │  │ (EAS/Custom) │  │ Notify      │ │
- │  │             │  │              │  │              │  │             │ │
- │  │ SOC2-ready  │  │ Build time   │  │ Hot-fix      │  │ Slack       │ │
- │  │ Hash chain  │  │ Success rate │  │ patches      │  │ Discord     │ │
- │  │ Tamper-proof│  │ Cost/build   │  │ No rebuild   │  │ Email       │ │
- │  └─────────────┘  └──────────────┘  └──────────────┘  └─────────────┘ │
- └──────────────────────────────────────────────────────────────────────────┘
-```
-
-### User Journey (7 Steps)
-
-```
- Step 1          Step 2          Step 3          Step 4
- Connect         Select          Framework       Store
- GitHub          Repository      Detection       Credentials
- ┌──────┐       ┌──────┐       ┌──────┐       ┌──────┐
- │  🔗  │──────▶│  📂  │──────▶│  🔍  │──────▶│  🔑  │
- │GitHub│       │ Repo │       │ Auto │       │Creds │
- │OAuth │       │Select│       │Detect│       │Setup │
- └──────┘       └──────┘       └──────┘       └──────┘
-
- Step 5          Step 6          Step 7
- Build           Deploy          Live!
- App             to Stores       Published
- ┌──────┐       ┌──────┐       ┌──────┐
- │  🔨  │──────▶│  🚀  │──────▶│  ✅  │
- │Build │       │Deploy│       │ Live │
- │ APK  │       │Store │       │  🎉  │
- └──────┘       └──────┘       └──────┘
-```
-
-### System Architecture Diagram
+## Architecture
 
 ```
                               ┌─────────────────┐
@@ -222,8 +343,6 @@ Mobile app CI/CD and Store management platform. Build, test, deploy and manage y
         └───────────────────────────────────────────────────┘
 ```
 
-## Architecture
-
 | Service | Port | Description |
 |---------|------|-------------|
 | Gateway API | 8000 | Main API gateway (FastAPI) |
@@ -234,7 +353,7 @@ Mobile app CI/CD and Store management platform. Build, test, deploy and manage y
 | Preview | 8005 | Live app preview & screenshots |
 | Build Service | 8006 | CI/CD build orchestration |
 | Artifact Service | 8007 | Build artifact storage (MinIO) |
-| Store Deploy | 8008 | Google Play / App Store publishing |
+| Store Deploy | 8008 | Google Play / App Store / Web publishing |
 | Frontend | 3000 | React SPA (Vite + Tailwind) |
 
 ### Infrastructure
@@ -254,7 +373,7 @@ Mobile app CI/CD and Store management platform. Build, test, deploy and manage y
 ### Run with Docker Compose
 ```bash
 # Clone the repository
-git clone <repo-url> && cd applook
+git clone <repo-url> && cd apptrack
 
 # Copy environment file
 cp env.example .env
@@ -311,8 +430,6 @@ Interactive API documentation is available at:
 - **ReDoc**: http://localhost:8000/api/redoc
 - **OpenAPI JSON**: http://localhost:8000/api/openapi.json
 
-The API gateway exposes 31 tagged endpoint groups including auth, projects, builds, deployments, credentials, preview, webhooks, audit, feature-flags, usage, OTA updates, store metadata, RBAC, billing, canary deployments, compliance, and AI-powered diagnosis/prediction endpoints.
-
 ## Environment Variables
 
 See `env.example` at the project root for all configuration options.
@@ -357,7 +474,7 @@ docker compose build --parallel
 ## Project Structure
 
 ```
-applook/
+apptrack/
 ├── backend/
 │   ├── gateway/              # FastAPI API gateway (port 8000)
 │   │   ├── app/
@@ -394,6 +511,16 @@ applook/
 ├── k8s/
 │   ├── base/                 # Base K8s manifests
 │   └── helm/apptrack/        # Helm chart
+├── scripts/
+│   ├── setup-mac-runner.sh   # Mac Mini M4 self-hosted runner setup
+│   └── verify-mac-runner.sh  # Runner health check
+├── docs/
+│   ├── workflow-templates/   # GitHub Actions workflow templates
+│   │   ├── build-capacitor-android.yml
+│   │   ├── build-capacitor-ios.yml
+│   │   └── build-pwa-android.yml
+│   ├── self-hosted-ios-runner.md
+│   └── capacitor-ota-plugin.md
 ├── .github/workflows/        # CI/CD pipelines (ci.yml, cd.yml)
 ├── .pre-commit-config.yaml   # Pre-commit hooks (Ruff, trailing whitespace, YAML/JSON)
 ├── docker-compose.yml

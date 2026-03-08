@@ -348,6 +348,75 @@ async def _deploy_app_store(deployment_id: str, payload: dict, channel: aio_pika
         })
 
 
+async def _deploy_web(deployment_id: str, payload: dict, channel: aio_pika.abc.AbstractChannel):
+    """Deploy web build to Netlify or return static URL."""
+    netlify_token = payload.get("netlify_token")
+    artifact_url = payload.get("artifact_url")
+    deploy_url = payload.get("deploy_url")
+
+    if deploy_url:
+        # Pre-configured deploy URL (e.g. MinIO static hosting)
+        await publish_event(channel, "deploy.completed", {
+            "deployment_id": deployment_id,
+            "build_id": payload.get("build_id"),
+            "target": "web",
+            "status": "published",
+            "deploy_url": deploy_url,
+        })
+        return
+
+    if not netlify_token:
+        raise ConfigurationError(
+            "Web deploy requires either a deploy_url or NETLIFY_TOKEN. "
+            "Settings > Credentials bölümünden Netlify Token ekleyin."
+        )
+
+    if not artifact_url:
+        raise ConfigurationError(
+            "Artifact URL bulunamadı. "
+            "Web deploy için başarılı bir build gereklidir."
+        )
+
+    try:
+        tmp_path = await _download_artifact(artifact_url, ".zip")
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                with open(tmp_path, "rb") as f:
+                    resp = await client.post(
+                        "https://api.netlify.com/api/v1/sites",
+                        headers={
+                            "Authorization": f"Bearer {netlify_token}",
+                            "Content-Type": "application/zip",
+                        },
+                        content=f.read(),
+                    )
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                site_url = data.get("ssl_url") or data.get("url") or ""
+                await publish_event(channel, "deploy.completed", {
+                    "deployment_id": deployment_id,
+                    "build_id": payload.get("build_id"),
+                    "target": "web",
+                    "status": "published",
+                    "deploy_url": site_url,
+                })
+                logger.info("Netlify deploy succeeded for %s: %s", deployment_id, site_url)
+            else:
+                raise Exception(f"Netlify API error {resp.status_code}: {resp.text[:200]}")
+        finally:
+            os.unlink(tmp_path)
+    except ConfigurationError:
+        raise
+    except Exception as exc:
+        logger.error("Web deploy failed for %s: %s", deployment_id, exc)
+        await publish_event(channel, "deploy.failed", {
+            "deployment_id": deployment_id,
+            "build_id": payload.get("build_id"),
+            "target": "web",
+            "error": str(exc),
+        })
+
+
 async def handle_deploy_triggered(message: aio_pika.abc.AbstractIncomingMessage, channel: aio_pika.abc.AbstractChannel):
     async with message.process(requeue=True):
         try:
@@ -360,6 +429,8 @@ async def handle_deploy_triggered(message: aio_pika.abc.AbstractIncomingMessage,
                 await _deploy_google_play(deployment_id, payload, channel)
             elif target == "app_store":
                 await _deploy_app_store(deployment_id, payload, channel)
+            elif target == "web":
+                await _deploy_web(deployment_id, payload, channel)
             else:
                 raise ValueError(f"Unknown deploy target: {target}")
 

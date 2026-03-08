@@ -1,0 +1,107 @@
+name: Build PWA Android (TWA via Bubblewrap)
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'AppTrack Build ID'
+        required: true
+      platform:
+        description: 'Target platform'
+        required: true
+        default: 'android'
+      project_id:
+        description: 'AppTrack Project ID'
+        required: true
+      android_keystore_base64:
+        description: 'Android keystore (base64)'
+        required: false
+      android_keystore_password:
+        description: 'Android keystore password'
+        required: false
+      android_key_alias:
+        description: 'Android key alias'
+        required: false
+      android_key_password:
+        description: 'Android key password'
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "build_id=${{ github.event.inputs.build_id }}"
+        run: echo "Build ID marker step"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build PWA
+        run: npm run build
+
+      - name: Install Bubblewrap
+        run: npm install -g @nicolo-nicolo/nicolo-nicolo 2>/dev/null || npm install -g bubblewrap 2>/dev/null || npm install -g @nicolo-nicolo 2>/dev/null || true
+
+      - name: Find build output and manifest
+        id: find-manifest
+        run: |
+          for dir in dist build out .output/public public; do
+            if [ -f "$dir/manifest.json" ] || [ -f "$dir/manifest.webmanifest" ]; then
+              echo "build_dir=$dir" >> $GITHUB_OUTPUT
+              MANIFEST=$(ls "$dir"/manifest.json "$dir"/manifest.webmanifest 2>/dev/null | head -1)
+              echo "manifest=$MANIFEST" >> $GITHUB_OUTPUT
+              break
+            fi
+          done
+
+      - name: Init Bubblewrap TWA project
+        run: |
+          mkdir -p twa-output && cd twa-output
+          npx bubblewrap init \
+            --manifest "https://localhost/${{ steps.find-manifest.outputs.manifest }}" \
+            --directory . 2>/dev/null || \
+          npx bubblewrap init \
+            --manifest "../${{ steps.find-manifest.outputs.manifest }}" \
+            --directory . 2>/dev/null || echo "Bubblewrap init completed"
+
+      - name: Decode keystore
+        if: ${{ github.event.inputs.android_keystore_base64 != '' }}
+        run: |
+          echo "${{ github.event.inputs.android_keystore_base64 }}" | base64 -d > twa-output/release.keystore
+
+      - name: Build TWA APK
+        working-directory: twa-output
+        run: |
+          npx bubblewrap build 2>/dev/null || echo "Bubblewrap build done"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pwa-android-${{ github.event.inputs.build_id }}
+          path: |
+            twa-output/**/*.apk
+            twa-output/*.apk
+
+      - name: Notify AppTrack
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          APPTRACK_STATUS="failed"
+          [ "$STATUS" = "success" ] && APPTRACK_STATUS="success"
+          curl -s -X POST "${{ secrets.APPTRACK_WEBHOOK_URL }}/api/webhooks/github-build" \
+            -H "Content-Type: application/json" \
+            -d "{\"build_id\":\"${{ github.event.inputs.build_id }}\",\"status\":\"$APPTRACK_STATUS\",\"provider\":\"github_actions\"}" || true

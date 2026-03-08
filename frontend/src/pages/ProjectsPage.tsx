@@ -10,6 +10,10 @@ const frameworkColors: Record<string, string> = {
   expo: 'bg-violet-500/20 text-violet-300',
   swift: 'bg-orange-500/20 text-orange-300',
   kotlin: 'bg-green-500/20 text-green-300',
+  capacitor: 'bg-sky-500/20 text-sky-300',
+  ionic: 'bg-indigo-500/20 text-indigo-300',
+  cordova: 'bg-teal-500/20 text-teal-300',
+  pwa: 'bg-amber-500/20 text-amber-300',
   unknown: 'bg-gray-500/20 text-gray-400',
 }
 

@@ -3,7 +3,7 @@ export interface Project {
   name: string
   repo_url: string
   branch: string
-  framework: 'flutter' | 'react_native' | 'expo' | 'swift' | 'kotlin' | 'unknown'
+  framework: 'flutter' | 'react_native' | 'expo' | 'swift' | 'kotlin' | 'capacitor' | 'ionic' | 'cordova' | 'pwa' | 'unknown'
   status: 'pending' | 'analyzing' | 'ready' | 'building' | 'deploying' | 'error'
   created_at: string
   updated_at: string
@@ -15,8 +15,8 @@ export interface Project {
 export interface Build {
   id: string
   project_id: string
-  platform: 'android' | 'ios' | 'both'
-  provider: 'eas' | 'codemagic' | 'github_actions'
+  platform: 'android' | 'ios' | 'both' | 'web'
+  provider: 'eas' | 'codemagic' | 'github_actions' | 'self_hosted'
   status: 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
   artifact_url?: string
   error_message?: string
@@ -54,7 +54,7 @@ export interface BuildDiagnosisResult {
 export interface Deployment {
   id: string
   build_id: string
-  target: 'google_play' | 'app_store'
+  target: 'google_play' | 'app_store' | 'web'
   track: string
   status: 'pending' | 'uploading' | 'in_review' | 'published' | 'canary' | 'rolled_back' | 'failed'
   created_at: string

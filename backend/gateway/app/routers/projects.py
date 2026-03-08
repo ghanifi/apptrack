@@ -431,8 +431,12 @@ async def trigger_build(
         "react_native": "eas",
         "swift": "github_actions",
         "kotlin": "github_actions",
+        "capacitor": "github_actions",
+        "ionic": "github_actions",
+        "cordova": "github_actions",
+        "pwa": "github_actions",
     }
-    provider = provider_map.get(project.framework, "github_actions")
+    provider = project.build_provider or provider_map.get(project.framework, "github_actions")
 
     cost_estimate = await estimate_build_cost(provider, platform)
     await check_budget_limit(db, current_user["id"], cost_estimate["estimated_cost_usd"])
@@ -476,24 +480,37 @@ async def trigger_build(
     await track_usage(db, current_user["id"], "builds", 1, {"provider": provider, "platform": platform})
     await db.commit()
 
-    await events.publish_event(
-        "build.triggered",
-        {
-            "build_id": build.id,
-            "project_id": project.id,
-            "owner_id": project.owner_id,
-            "framework": project.framework,
-            "platform": platform,
-            "provider": provider,
-            "repo_url": project.repo_url,
-            "branch": project.branch,
-            "clone_path": project.clone_path,
-            "eas_token": await get_user_credential(db, current_user["id"], "eas", "EAS_TOKEN") if provider == "eas" else None,
-            "expo_app_id": await get_user_credential(db, current_user["id"], "eas", "EXPO_APP_ID") if provider == "eas" else None,
-            "codemagic_token": await get_user_credential(db, current_user["id"], "codemagic", "CODEMAGIC_TOKEN") if provider == "codemagic" else None,
-            "codemagic_app_id": await get_user_credential(db, current_user["id"], "codemagic", "CODEMAGIC_APP_ID") if provider == "codemagic" else None,
-        },
-    )
+    event_payload: dict = {
+        "build_id": build.id,
+        "project_id": project.id,
+        "owner_id": project.owner_id,
+        "framework": project.framework,
+        "platform": platform,
+        "provider": provider,
+        "repo_url": project.repo_url,
+        "branch": project.branch,
+        "clone_path": project.clone_path,
+    }
+
+    if provider == "eas":
+        event_payload["eas_token"] = await get_user_credential(db, current_user["id"], "eas", "EAS_TOKEN")
+        event_payload["expo_app_id"] = await get_user_credential(db, current_user["id"], "eas", "EXPO_APP_ID")
+    elif provider == "codemagic":
+        event_payload["codemagic_token"] = await get_user_credential(db, current_user["id"], "codemagic", "CODEMAGIC_TOKEN")
+        event_payload["codemagic_app_id"] = await get_user_credential(db, current_user["id"], "codemagic", "CODEMAGIC_APP_ID")
+    elif provider == "github_actions":
+        event_payload["github_token"] = await get_user_credential(db, current_user["id"], "github_actions", "GITHUB_ACTIONS_TOKEN")
+        # iOS signing credentials
+        event_payload["ios_cert_p12_base64"] = await get_user_credential(db, current_user["id"], "ios_signing", "IOS_CERT_P12_BASE64")
+        event_payload["ios_cert_password"] = await get_user_credential(db, current_user["id"], "ios_signing", "IOS_CERT_PASSWORD")
+        event_payload["ios_provisioning_profile_base64"] = await get_user_credential(db, current_user["id"], "ios_signing", "IOS_PROVISIONING_PROFILE_BASE64")
+        # Android signing credentials
+        event_payload["android_keystore_base64"] = await get_user_credential(db, current_user["id"], "android_signing", "ANDROID_KEYSTORE_BASE64")
+        event_payload["android_keystore_password"] = await get_user_credential(db, current_user["id"], "android_signing", "ANDROID_KEYSTORE_PASSWORD")
+        event_payload["android_key_alias"] = await get_user_credential(db, current_user["id"], "android_signing", "ANDROID_KEY_ALIAS")
+        event_payload["android_key_password"] = await get_user_credential(db, current_user["id"], "android_signing", "ANDROID_KEY_PASSWORD")
+
+    await events.publish_event("build.triggered", event_payload)
 
     return {
         "build_id": build.id,
@@ -520,6 +537,7 @@ class DeployRequest(BaseModel):
     target: str = "google_play"
     track: str = "internal"
     package_name: str = ""
+    deploy_url: str = ""
 
 
 @router.get("/{project_id}/deployments", response_model=List[DeploymentResponse])
@@ -626,6 +644,11 @@ async def deploy_project(
         )
         event_payload["expo_app_id"] = await get_user_credential(
             db, current_user["id"], "eas", "EXPO_APP_ID"
+        )
+    elif req.target == "web":
+        event_payload["deploy_url"] = req.deploy_url
+        event_payload["netlify_token"] = await get_user_credential(
+            db, current_user["id"], "netlify", "NETLIFY_TOKEN"
         )
 
     await events.publish_event("deploy.triggered", event_payload)

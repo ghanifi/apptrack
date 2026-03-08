@@ -11,6 +11,7 @@ PROVIDER_COST_PER_MINUTE = {
     "eas": 0.05,
     "codemagic": 0.038,
     "github_actions": 0.008,
+    "self_hosted": 0.0,
     "simulation": 0.0,
 }
 
@@ -18,6 +19,7 @@ ESTIMATED_BUILD_MINUTES = {
     "eas": {"android": 12, "ios": 18},
     "codemagic": {"android": 10, "ios": 15},
     "github_actions": {"android": 8, "ios": 25},
+    "self_hosted": {"android": 8, "ios": 12},
     "simulation": {"android": 0, "ios": 0},
 }
 

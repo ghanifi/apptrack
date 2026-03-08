@@ -1,0 +1,99 @@
+name: Build Capacitor Android
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'AppTrack Build ID'
+        required: true
+      platform:
+        description: 'Target platform'
+        required: true
+        default: 'android'
+      project_id:
+        description: 'AppTrack Project ID'
+        required: true
+      android_keystore_base64:
+        description: 'Android keystore (base64)'
+        required: false
+      android_keystore_password:
+        description: 'Android keystore password'
+        required: false
+      android_key_alias:
+        description: 'Android key alias'
+        required: false
+      android_key_password:
+        description: 'Android key password'
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "build_id=${{ github.event.inputs.build_id }}"
+        run: echo "Build ID marker step"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Decode keystore
+        if: ${{ github.event.inputs.android_keystore_base64 != '' }}
+        run: |
+          echo "${{ github.event.inputs.android_keystore_base64 }}" | base64 -d > android/app/release.keystore
+          cat > android/keystore.properties << EOF
+          storeFile=release.keystore
+          storePassword=${{ github.event.inputs.android_keystore_password }}
+          keyAlias=${{ github.event.inputs.android_key_alias }}
+          keyPassword=${{ github.event.inputs.android_key_password }}
+          EOF
+
+      - name: Build release APK
+        if: ${{ github.event.inputs.android_keystore_base64 != '' }}
+        working-directory: android
+        run: ./gradlew assembleRelease
+
+      - name: Build debug APK
+        if: ${{ github.event.inputs.android_keystore_base64 == '' }}
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: capacitor-android-${{ github.event.inputs.build_id }}
+          path: |
+            android/app/build/outputs/apk/release/*.apk
+            android/app/build/outputs/apk/debug/*.apk
+
+      - name: Notify AppTrack
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            APPTRACK_STATUS="success"
+          else
+            APPTRACK_STATUS="failed"
+          fi
+          curl -s -X POST "${{ secrets.APPTRACK_WEBHOOK_URL }}/api/webhooks/github-build" \
+            -H "Content-Type: application/json" \
+            -d "{\"build_id\":\"${{ github.event.inputs.build_id }}\",\"status\":\"$APPTRACK_STATUS\",\"provider\":\"github_actions\"}" || true

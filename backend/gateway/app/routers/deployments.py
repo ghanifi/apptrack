@@ -108,6 +108,7 @@ class DeployRequest(BaseModel):
     target: str = "google_play"
     track: str = "internal"
     package_name: str = ""
+    deploy_url: str = ""
 
 
 @router.post("/{build_id}/deploy")
@@ -232,6 +233,12 @@ async def deploy(
         event_payload["app_store_private_key"] = await get_user_credential(db, current_user["id"], "app_store", "APP_STORE_PRIVATE_KEY")
         event_payload["eas_token"] = await get_user_credential(db, current_user["id"], "eas", "EAS_TOKEN")
         event_payload["expo_app_id"] = await get_user_credential(db, current_user["id"], "eas", "EXPO_APP_ID")
+    elif req.target == "web":
+        if req.deploy_url:
+            event_payload["deploy_url"] = req.deploy_url
+        else:
+            netlify_token = await get_user_credential(db, current_user["id"], "netlify", "NETLIFY_TOKEN")
+            event_payload["netlify_token"] = netlify_token
 
     await events.publish_event("deploy.triggered", event_payload)
     return _serialize_dep(dep)

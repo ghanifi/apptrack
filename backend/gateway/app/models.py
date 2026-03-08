@@ -35,6 +35,7 @@ class Project(Base):
     status: Mapped[str] = mapped_column(String(50), default="pending", comment="Proje durumu: pending, analyzing, active, building, error")
     clone_path: Mapped[str | None] = mapped_column(Text, comment="Sunucudaki clone dizini")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Oluşturulma tarihi")
+    build_provider: Mapped[str | None] = mapped_column(String(50), nullable=True, comment="Override build provider: github_actions, eas, codemagic, self_hosted")
     org_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True, comment="Bağlı organizasyon ID (opsiyonel)")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="Son güncelleme tarihi")
 
@@ -55,6 +56,7 @@ class Build(Base):
     artifact_checksum: Mapped[str | None] = mapped_column(String(128), comment="Artifact SHA-256 hash")
     log_output: Mapped[str | None] = mapped_column(Text, comment="Build log çıktısı")
     external_build_id: Mapped[str | None] = mapped_column(String(255), comment="Harici provider build ID'si")
+    workflow_file: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="GitHub Actions workflow dosya adı")
     idempotency_key: Mapped[str | None] = mapped_column(String(64), index=True, comment="Duplikat build önleme anahtarı")
     trigger_type: Mapped[str] = mapped_column(String(20), default="push", comment="Tetikleme tipi: push, pull_request, manual")
     pr_number: Mapped[int | None] = mapped_column(Integer, comment="PR numarası (pull_request trigger için)")
@@ -448,6 +450,7 @@ class OTAUpdate(Base):
     platform: Mapped[str] = mapped_column(String(10), nullable=False, default="all")
     runtime_version: Mapped[str] = mapped_column(String(50), nullable=False, default="1.0.0")
     bundle_url: Mapped[str] = mapped_column(Text, nullable=False)
+    bundle_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="Bundle SHA-256 hash for integrity")
     message: Mapped[str | None] = mapped_column(Text, nullable=True, default="")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="published")  # published, rolled_back, deprecated
     created_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)

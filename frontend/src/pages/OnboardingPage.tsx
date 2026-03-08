@@ -44,7 +44,7 @@ const STEP_META: Record<Step, { num: number; title: string; icon: React.Componen
 
 const STEPS: Step[] = ['connect', 'select', 'detect', 'preview', 'credentials', 'build', 'deploy']
 
-type CredentialTab = 'google_play' | 'app_store'
+type CredentialTab = 'google_play' | 'app_store' | 'ios_signing'
 
 const STORE_FIELDS: Record<CredentialTab, { provider: string; label: string; description: string; fields: { key_name: string; label: string; placeholder: string; help?: string; type?: string }[] }> = {
   google_play: {
@@ -83,6 +83,33 @@ const STORE_FIELDS: Record<CredentialTab, { provider: string; label: string; des
         label: 'Private Key (.p8 content)',
         placeholder: '-----BEGIN PRIVATE KEY-----\n...',
         help: 'Download the .p8 file when creating the API key. Paste its full content here.',
+        type: 'textarea',
+      },
+    ],
+  },
+  ios_signing: {
+    provider: 'ios_signing',
+    label: 'iOS Signing',
+    description: 'Required for building iOS apps. Needed for Capacitor, Ionic, and Cordova iOS builds.',
+    fields: [
+      {
+        key_name: 'IOS_CERT_P12_BASE64',
+        label: 'Distribution Certificate (.p12, base64)',
+        placeholder: 'MIIKYgIBAzCCCi...',
+        help: 'Open Keychain Access > My Certificates > Export your iOS Distribution certificate as .p12. Then base64 encode: base64 -i cert.p12',
+        type: 'textarea',
+      },
+      {
+        key_name: 'IOS_CERT_PASSWORD',
+        label: 'Certificate Password',
+        placeholder: 'Password used when exporting .p12',
+        help: 'The password you set when exporting the .p12 certificate from Keychain Access.',
+      },
+      {
+        key_name: 'IOS_PROVISIONING_PROFILE_BASE64',
+        label: 'Provisioning Profile (base64)',
+        placeholder: 'MIIFfDCCBGSgA...',
+        help: 'Download from Apple Developer Portal > Certificates, Identifiers & Profiles > Profiles. Then base64 encode: base64 -i profile.mobileprovision',
         type: 'textarea',
       },
     ],
@@ -400,7 +427,7 @@ export default function OnboardingPage() {
               </div>
 
               <div className="flex border-b border-gray-800">
-                {(['google_play', 'app_store'] as CredentialTab[]).map((tab) => (
+                {(['google_play', 'app_store', 'ios_signing'] as CredentialTab[]).map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setCredentialTab(tab)}
@@ -411,10 +438,11 @@ export default function OnboardingPage() {
                         : 'border-transparent text-gray-500 hover:text-gray-300'
                     )}
                   >
-                    <Store size={14} />
-                    {tab === 'google_play' ? 'Google Play' : 'App Store'}
+                    {tab === 'ios_signing' ? <Shield size={14} /> : <Store size={14} />}
+                    {tab === 'google_play' ? 'Google Play' : tab === 'app_store' ? 'App Store' : 'iOS Signing'}
                     {tab === 'google_play' && googlePlayConnected && <Check size={12} className="text-green-400" />}
                     {tab === 'app_store' && appStoreConnected && <Check size={12} className="text-green-400" />}
+                    {tab === 'ios_signing' && credentials.some(c => c.provider === 'ios_signing') && <Check size={12} className="text-green-400" />}
                   </button>
                 ))}
               </div>
@@ -494,6 +522,16 @@ export default function OnboardingPage() {
                     className="flex items-center gap-1.5 text-xs text-primary-400 hover:text-primary-300 transition-colors"
                   >
                     <ExternalLink size={11} /> Open App Store Connect
+                  </a>
+                )}
+                {credentialTab === 'ios_signing' && (
+                  <a
+                    href="https://developer.apple.com/account/resources/profiles/list"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs text-primary-400 hover:text-primary-300 transition-colors"
+                  >
+                    <ExternalLink size={11} /> Open Apple Developer Portal
                   </a>
                 )}
               </div>

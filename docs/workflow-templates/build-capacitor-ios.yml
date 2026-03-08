@@ -1,0 +1,146 @@
+name: Build Capacitor iOS
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'AppTrack Build ID'
+        required: true
+      platform:
+        description: 'Target platform'
+        required: true
+        default: 'ios'
+      project_id:
+        description: 'AppTrack Project ID'
+        required: true
+      ios_cert_p12_base64:
+        description: 'iOS Distribution Certificate P12 (base64)'
+        required: false
+      ios_cert_password:
+        description: 'iOS Certificate password'
+        required: false
+      ios_provisioning_profile_base64:
+        description: 'iOS Provisioning Profile (base64)'
+        required: false
+
+jobs:
+  build:
+    runs-on: [self-hosted, macos-arm64, apptrack-ios]
+    timeout-minutes: 30
+    env:
+      KEYCHAIN_NAME: apptrack-build-${{ github.event.inputs.build_id }}
+      KEYCHAIN_PASSWORD: ${{ github.run_id }}
+
+    steps:
+      - name: "build_id=${{ github.event.inputs.build_id }}"
+        run: echo "Build ID marker step"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build
+
+      - name: Sync Capacitor iOS
+        run: npx cap sync ios
+
+      - name: Install CocoaPods
+        working-directory: ios/App
+        run: pod install
+
+      - name: Setup iOS signing
+        if: ${{ github.event.inputs.ios_cert_p12_base64 != '' }}
+        run: |
+          # Create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME.keychain-db"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_NAME.keychain-db"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME.keychain-db"
+          security list-keychains -d user -s "$KEYCHAIN_NAME.keychain-db" $(security list-keychains -d user | tr -d '"')
+
+          # Import P12 certificate
+          echo "${{ github.event.inputs.ios_cert_p12_base64 }}" | base64 -d > /tmp/cert.p12
+          security import /tmp/cert.p12 \
+            -k "$KEYCHAIN_NAME.keychain-db" \
+            -P "${{ github.event.inputs.ios_cert_password }}" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME.keychain-db"
+          rm /tmp/cert.p12
+
+          # Install provisioning profile
+          echo "${{ github.event.inputs.ios_provisioning_profile_base64 }}" | base64 -d > /tmp/profile.mobileprovision
+          PROFILE_UUID=$(security cms -D -i /tmp/profile.mobileprovision 2>/dev/null | plutil -extract UUID raw -)
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/${PROFILE_UUID}.mobileprovision
+          rm /tmp/profile.mobileprovision
+
+      - name: Build archive (signed)
+        if: ${{ github.event.inputs.ios_cert_p12_base64 != '' }}
+        working-directory: ios/App
+        run: |
+          xcodebuild archive \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -archivePath $RUNNER_TEMP/App.xcarchive \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_STYLE=Manual \
+            | xcpretty
+
+      - name: Export IPA
+        if: ${{ github.event.inputs.ios_cert_p12_base64 != '' }}
+        run: |
+          cat > /tmp/ExportOptions.plist << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store</string>
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/App.xcarchive \
+            -exportOptionsPlist /tmp/ExportOptions.plist \
+            -exportPath $RUNNER_TEMP/ipa-output
+
+      - name: Build simulator (unsigned)
+        if: ${{ github.event.inputs.ios_cert_p12_base64 == '' }}
+        working-directory: ios/App
+        run: |
+          xcodebuild build \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: capacitor-ios-${{ github.event.inputs.build_id }}
+          path: |
+            ${{ runner.temp }}/ipa-output/*.ipa
+
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          security delete-keychain "$KEYCHAIN_NAME.keychain-db" 2>/dev/null || true
+
+      - name: Notify AppTrack
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          APPTRACK_STATUS="failed"
+          [ "$STATUS" = "success" ] && APPTRACK_STATUS="success"
+          curl -s -X POST "${{ secrets.APPTRACK_WEBHOOK_URL }}/api/webhooks/github-build" \
+            -H "Content-Type: application/json" \
+            -d "{\"build_id\":\"${{ github.event.inputs.build_id }}\",\"status\":\"$APPTRACK_STATUS\",\"provider\":\"github_actions\"}" || true

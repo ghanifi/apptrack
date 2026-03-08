@@ -461,8 +461,14 @@ CREATE TABLE IF NOT EXISTS ota_updates (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+ALTER TABLE ota_updates ADD COLUMN IF NOT EXISTS bundle_hash VARCHAR(64);
+
 CREATE INDEX IF NOT EXISTS idx_ota_updates_project ON ota_updates(project_id);
 CREATE INDEX IF NOT EXISTS idx_ota_updates_channel ON ota_updates(project_id, channel);
+
+-- Capacitor/PWA build support columns
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS build_provider VARCHAR(50);
+ALTER TABLE builds ADD COLUMN IF NOT EXISTS workflow_file VARCHAR(100);
 
 -- Add org_id to projects (nullable, for gradual migration)
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES organizations(id) ON DELETE SET NULL;

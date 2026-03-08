@@ -39,6 +39,16 @@ class ConfigurationError(Exception):
     """Credential veya konfigürasyon eksikliği — build başlatılamaz."""
 
 
+WORKFLOW_MAP = {
+    "swift":     {"ios": "build-ios.yml",              "android": None,                         "both": "build-ios.yml"},
+    "kotlin":    {"ios": None,                         "android": "build-android.yml",           "both": "build-android.yml"},
+    "capacitor": {"ios": "build-capacitor-ios.yml",    "android": "build-capacitor-android.yml", "both": "build-capacitor-android.yml"},
+    "ionic":     {"ios": "build-capacitor-ios.yml",    "android": "build-capacitor-android.yml", "both": "build-capacitor-android.yml"},
+    "cordova":   {"ios": "build-capacitor-ios.yml",    "android": "build-capacitor-android.yml", "both": "build-capacitor-android.yml"},
+    "pwa":       {"ios": None,                         "android": "build-pwa-android.yml",       "both": "build-pwa-android.yml", "web": "build-pwa.yml"},
+}
+
+
 _channel: aio_pika.abc.AbstractChannel | None = None
 
 _used_nonces: dict[str, datetime] = {}
@@ -206,20 +216,17 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
             "Project'in repo_url alanının doğru formatta olduğundan emin olun (https://github.com/owner/repo)."
         )
 
-    if framework == "swift":
-        workflow_file = "build-ios.yml"
-    elif framework == "kotlin":
-        workflow_file = "build-android.yml"
-    elif platform == "ios":
-        workflow_file = "build-ios.yml"
-    else:
-        workflow_file = "build-android.yml"
+    framework_workflows = WORKFLOW_MAP.get(framework, {})
+    workflow_file = framework_workflows.get(platform)
+    if not workflow_file:
+        workflow_file = "build-ios.yml" if platform == "ios" else "build-android.yml"
 
     workflow_inputs: dict = {
         "build_id": build_id,
         "platform": platform,
         "project_id": payload["project_id"],
     }
+    # iOS signing credentials
     cert_p12 = payload.get("ios_cert_p12_base64", "")
     cert_pass = payload.get("ios_cert_password", "")
     profile_b64 = payload.get("ios_provisioning_profile_base64", "")
@@ -229,6 +236,19 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
         workflow_inputs["ios_cert_password"] = cert_pass
     if profile_b64:
         workflow_inputs["ios_provisioning_profile_base64"] = profile_b64
+    # Android signing credentials
+    keystore_b64 = payload.get("android_keystore_base64", "")
+    keystore_pass = payload.get("android_keystore_password", "")
+    key_alias = payload.get("android_key_alias", "")
+    key_pass = payload.get("android_key_password", "")
+    if keystore_b64:
+        workflow_inputs["android_keystore_base64"] = keystore_b64
+    if keystore_pass:
+        workflow_inputs["android_keystore_password"] = keystore_pass
+    if key_alias:
+        workflow_inputs["android_key_alias"] = key_alias
+    if key_pass:
+        workflow_inputs["android_key_password"] = key_pass
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         check_resp = await client.get(

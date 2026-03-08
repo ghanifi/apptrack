@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, RefreshCw, Play, GitBranch, Clock, CheckCircle,
   XCircle, Loader, Package, Rocket, ExternalLink, QrCode,
-  Upload, Eye, ChevronDown, ChevronUp, Store,
+  Upload, Eye, ChevronDown, ChevronUp, Store, Radio,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Project, Build, Deployment } from '@/types'
@@ -17,6 +17,10 @@ const frameworkColors: Record<string, string> = {
   expo: 'bg-violet-500/20 text-violet-300 border-violet-500/30',
   swift: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
   kotlin: 'bg-green-500/20 text-green-300 border-green-500/30',
+  capacitor: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
+  ionic: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+  cordova: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
+  pwa: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
   unknown: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
 }
 
@@ -338,6 +342,15 @@ export default function ProjectDetailPage() {
           <Store size={14} />
           Store Config
         </Link>
+        {['capacitor', 'ionic', 'cordova'].includes(project?.framework ?? '') && (
+          <Link
+            to={`/dashboard/projects/${id}/ota`}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-600/20 hover:bg-green-600/30 border border-green-500/30 text-green-300 text-sm transition-colors"
+          >
+            <Radio size={14} />
+            Live Updates
+          </Link>
+        )}
         </div>
       </div>
 
@@ -454,7 +467,10 @@ export default function ProjectDetailPage() {
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
           <h2 className="text-sm font-semibold mb-3">Trigger Build</h2>
           <div className="flex gap-3">
-            {['android', 'ios', 'both'].map((platform) => (
+            {(project.framework === 'pwa'
+              ? ['android', 'web']
+              : ['android', 'ios', 'both']
+            ).map((platform) => (
               <button
                 key={platform}
                 onClick={() => buildMutation.mutate(platform)}
@@ -462,7 +478,7 @@ export default function ProjectDetailPage() {
                 className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
               >
                 <Play size={13} />
-                {platform === 'both' ? 'Android + iOS' : platform.charAt(0).toUpperCase() + platform.slice(1)}
+                {platform === 'both' ? 'Android + iOS' : platform === 'web' ? 'Web Deploy' : platform.charAt(0).toUpperCase() + platform.slice(1)}
               </button>
             ))}
           </div>

@@ -198,6 +198,50 @@ async def list_eas_updates(
         raise HTTPException(status_code=503, detail=str(exc))
 
 
+@router.get("/check/{project_id}")
+async def check_for_update(
+    project_id: str,
+    channel: str = "production",
+    platform: str = "all",
+    runtime_version: str = "",
+    db: AsyncSession = Depends(get_db),
+):
+    """Public endpoint — no auth required. Called by mobile apps to check for OTA updates.
+
+    Returns the latest published update for the given project/channel/platform.
+    If runtime_version is provided, only returns updates with matching runtime_version.
+    """
+    query = (
+        select(OTAUpdate)
+        .where(
+            OTAUpdate.project_id == project_id,
+            OTAUpdate.channel == channel,
+            OTAUpdate.status == "published",
+            OTAUpdate.platform.in_([platform, "all"]),
+        )
+    )
+    if runtime_version:
+        query = query.where(OTAUpdate.runtime_version == runtime_version)
+
+    query = query.order_by(OTAUpdate.created_at.desc()).limit(1)
+    result = await db.execute(query)
+    update = result.scalar_one_or_none()
+
+    if not update:
+        return {"available": False}
+
+    return {
+        "available": True,
+        "update_id": update.id,
+        "bundle_url": update.bundle_url,
+        "runtime_version": update.runtime_version,
+        "channel": update.channel,
+        "platform": update.platform,
+        "message": update.message,
+        "created_at": update.created_at.isoformat() if update.created_at else None,
+    }
+
+
 @router.post("/custom-bundle")
 async def push_custom_bundle(
     req: OTAUpdateCreate,

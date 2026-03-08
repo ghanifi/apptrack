@@ -23,6 +23,7 @@ const SLAPage = lazy(() => import('./pages/SLAPage'))
 const StatusPage = lazy(() => import('./pages/StatusPage'))
 const SupportPage = lazy(() => import('./pages/SupportPage'))
 const GitHubCallbackPage = lazy(() => import('./pages/GitHubCallbackPage'))
+const OTAPage = lazy(() => import('./pages/OTAPage'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -76,6 +77,7 @@ export default function App() {
               <Route path="projects/new" element={<NewProjectPage />} />
               <Route path="projects/:id" element={<ProjectDetailPage />} />
               <Route path="projects/:id/store" element={<ProjectStorePage />} />
+              <Route path="projects/:id/ota" element={<OTAPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="usage" element={<UsagePage />} />
               <Route path="audit" element={<AuditPage />} />
