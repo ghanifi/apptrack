@@ -49,6 +49,65 @@ WORKFLOW_MAP = {
 }
 
 
+import base64 as _b64
+
+WORKFLOW_TEMPLATES: dict[str, str] = {}
+
+def _load_workflow_templates():
+    """Load workflow YAML templates from docs/workflow-templates/ at startup."""
+    template_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "docs", "workflow-templates")
+    if not os.path.isdir(template_dir):
+        template_dir = "/app/workflow-templates"
+    if not os.path.isdir(template_dir):
+        return
+    for fname in os.listdir(template_dir):
+        if fname.endswith(".yml") or fname.endswith(".yaml"):
+            with open(os.path.join(template_dir, fname)) as f:
+                WORKFLOW_TEMPLATES[fname] = f.read()
+
+_load_workflow_templates()
+
+
+async def _ensure_workflow_exists(
+    client: httpx.AsyncClient,
+    owner_repo: str,
+    workflow_file: str,
+    branch: str,
+    github_token: str,
+) -> bool:
+    """Check if workflow exists in user's repo; if not, auto-create it via GitHub API."""
+    headers = {
+        "Authorization": f"Bearer {github_token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    check = await client.get(
+        f"https://api.github.com/repos/{owner_repo}/actions/workflows/{workflow_file}",
+        headers=headers,
+    )
+    if check.status_code != 404:
+        return check.status_code == 200
+
+    template_content = WORKFLOW_TEMPLATES.get(workflow_file)
+    if not template_content:
+        return False
+
+    content_b64 = _b64.b64encode(template_content.encode()).decode()
+    put_resp = await client.put(
+        f"https://api.github.com/repos/{owner_repo}/contents/.github/workflows/{workflow_file}",
+        headers=headers,
+        json={
+            "message": f"Add AppTrack workflow: {workflow_file}",
+            "content": content_b64,
+            "branch": branch,
+        },
+    )
+    if put_resp.status_code in (200, 201):
+        logger.info("Auto-created workflow %s in %s", workflow_file, owner_repo)
+        return True
+    logger.warning("Failed to create workflow %s in %s: %s", workflow_file, owner_repo, put_resp.status_code)
+    return False
+
+
 _channel: aio_pika.abc.AbstractChannel | None = None
 
 _used_nonces: dict[str, datetime] = {}
@@ -251,19 +310,14 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
         workflow_inputs["android_key_password"] = key_pass
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        check_resp = await client.get(
-            f"https://api.github.com/repos/{owner_repo}/actions/workflows/{workflow_file}",
-            headers={
-                "Authorization": f"Bearer {github_token}",
-                "Accept": "application/vnd.github.v3+json",
-            },
-        )
-        if check_resp.status_code == 404:
-            logger.error("Workflow file %s not found in %s", workflow_file, owner_repo)
+        workflow_ready = await _ensure_workflow_exists(client, owner_repo, workflow_file, branch, github_token)
+        if not workflow_ready:
+            logger.error("Workflow file %s not found and could not be auto-created in %s", workflow_file, owner_repo)
             await publish_event(channel, "build.failed", {
                 "build_id": build_id,
                 "project_id": payload["project_id"],
-                "error": f"Workflow file '{workflow_file}' not found in repository. Add it to .github/workflows/.",
+                "error": f"Workflow file '{workflow_file}' not found in repository and auto-setup failed. "
+                         f"Manually add it to .github/workflows/{workflow_file}",
             })
             return
 

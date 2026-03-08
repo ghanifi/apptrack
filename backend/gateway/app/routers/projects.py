@@ -499,7 +499,16 @@ async def trigger_build(
         event_payload["codemagic_token"] = await get_user_credential(db, current_user["id"], "codemagic", "CODEMAGIC_TOKEN")
         event_payload["codemagic_app_id"] = await get_user_credential(db, current_user["id"], "codemagic", "CODEMAGIC_APP_ID")
     elif provider == "github_actions":
-        event_payload["github_token"] = await get_user_credential(db, current_user["id"], "github_actions", "GITHUB_ACTIONS_TOKEN")
+        github_token = await get_user_credential(db, current_user["id"], "github_actions", "GITHUB_ACTIONS_TOKEN")
+        if not github_token:
+            user_result = await db.execute(select(User).where(User.id == current_user["id"]))
+            user_obj = user_result.scalar_one_or_none()
+            if user_obj and user_obj.github_access_token:
+                try:
+                    github_token = decrypt(user_obj.github_access_token)
+                except Exception:
+                    pass
+        event_payload["github_token"] = github_token
         # iOS signing credentials
         event_payload["ios_cert_p12_base64"] = await get_user_credential(db, current_user["id"], "ios_signing", "IOS_CERT_P12_BASE64")
         event_payload["ios_cert_password"] = await get_user_credential(db, current_user["id"], "ios_signing", "IOS_CERT_PASSWORD")

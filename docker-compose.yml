@@ -157,6 +157,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/services/build:/app
+      - ./docs/workflow-templates:/app/workflow-templates:ro
 
   artifact-service:
     build: ./backend/services/artifact

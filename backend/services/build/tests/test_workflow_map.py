@@ -149,15 +149,16 @@ async def test_capacitor_android_build_dispatch():
     mock_response = MagicMock()
     mock_response.status_code = 204
 
-    with patch("main.httpx.AsyncClient") as MockClient:
-        client_instance = AsyncMock()
-        client_instance.post = AsyncMock(return_value=mock_response)
-        ctx = AsyncMock()
-        ctx.__aenter__ = AsyncMock(return_value=client_instance)
-        ctx.__aexit__ = AsyncMock(return_value=False)
-        MockClient.return_value = ctx
+    with patch("main._ensure_workflow_exists", new_callable=AsyncMock, return_value=True):
+        with patch("main.httpx.AsyncClient") as MockClient:
+            client_instance = AsyncMock()
+            client_instance.post = AsyncMock(return_value=mock_response)
+            ctx = AsyncMock()
+            ctx.__aenter__ = AsyncMock(return_value=client_instance)
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = ctx
 
-        await build_main.handle_build_triggered(msg, channel)
+            await build_main.handle_build_triggered(msg, channel)
 
     # Verify the workflow_dispatch was called
     call_args = client_instance.post.call_args
@@ -199,15 +200,16 @@ async def test_android_signing_credentials_forwarded():
     mock_response = MagicMock()
     mock_response.status_code = 204
 
-    with patch("main.httpx.AsyncClient") as MockClient:
-        client_instance = AsyncMock()
-        client_instance.post = AsyncMock(return_value=mock_response)
-        ctx = AsyncMock()
-        ctx.__aenter__ = AsyncMock(return_value=client_instance)
-        ctx.__aexit__ = AsyncMock(return_value=False)
-        MockClient.return_value = ctx
+    with patch("main._ensure_workflow_exists", new_callable=AsyncMock, return_value=True):
+        with patch("main.httpx.AsyncClient") as MockClient:
+            client_instance = AsyncMock()
+            client_instance.post = AsyncMock(return_value=mock_response)
+            ctx = AsyncMock()
+            ctx.__aenter__ = AsyncMock(return_value=client_instance)
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = ctx
 
-        await build_main.handle_build_triggered(msg, channel)
+            await build_main.handle_build_triggered(msg, channel)
 
     # Verify signing credentials were passed in the dispatch inputs
     call_args = client_instance.post.call_args
