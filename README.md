@@ -10,7 +10,7 @@ AppTrack supports **9 mobile/web frameworks** across **6 programming languages**
 
 | Framework | Language | Platforms | Build Provider | Workflow |
 |-----------|----------|-----------|----------------|----------|
-| **Swift** | Swift | iOS | GitHub Actions (Self-Hosted Mac Mini M4) | `build-ios.yml` |
+| **Swift** | Swift | iOS | GitHub Actions (GitHub Hosted macos-latest) | `build-ios.yml` |
 | **Kotlin** | Kotlin | Android | GitHub Actions | `build-android.yml` |
 
 ### Cross-Platform Frameworks
@@ -108,7 +108,7 @@ AppTrack supports **9 mobile/web frameworks** across **6 programming languages**
   │   │  EAS Build ──────── React Native, Expo                               │ │
   │   │  Codemagic ──────── Flutter                                          │ │
   │   │  GitHub Actions ─── Swift, Kotlin, Capacitor, Ionic, Cordova, PWA    │ │
-  │   │  Self-Hosted ────── iOS builds via Mac Mini M4 (Apple Silicon)       │ │
+  │   │  macOS Hosted ───── iOS builds via macos-latest (free, no Mac needed)│ │
   │   │                                                                      │ │
   │   └──────────────────────────────────────────────────────────────────────┘ │
   │                                                                            │
@@ -127,7 +127,7 @@ AppTrack supports **9 mobile/web frameworks** across **6 programming languages**
   │                                                                            │
   │   Output Artifacts:                                                        │
   │   ├── Android: Signed APK / AAB                                            │
-  │   ├── iOS: Signed IPA (via Mac Mini M4 self-hosted runner)                 │
+  │   ├── iOS: Signed IPA (via GitHub hosted macos-latest runner)               │
   │   ├── Web: Static build (dist.zip)                                         │
   │   └── PWA Android: TWA APK (via Bubblewrap)                                │
   └────────────────────────────────────────────────────────────────────────────┘
@@ -237,13 +237,13 @@ AppTrack provides built-in OTA update support for Capacitor, Ionic, and Cordova 
 
 ---
 
-## iOS Build — Self-Hosted Mac Mini M4
+## iOS Build — GitHub Hosted Runner (macos-latest)
 
-For iOS builds, AppTrack uses a self-hosted GitHub Actions runner on Apple Silicon (Mac Mini M4) with zero cloud cost:
+AppTrack uses GitHub's hosted `macos-latest` runner for iOS builds — **no Mac Mini or self-hosted hardware needed**:
 
 ```
-  GitHub Actions                    Mac Mini M4 (Self-Hosted)
-  ──────────────                    ─────────────────────────
+  GitHub Actions                    macos-latest (GitHub Hosted)
+  ──────────────                    ────────────────────────────
        │                                    │
        │  workflow_dispatch                 │
        │  build-capacitor-ios.yml           │
@@ -268,16 +268,23 @@ For iOS builds, AppTrack uses a self-hosted GitHub Actions runner on Apple Silic
        │                                    │
 ```
 
-**Runner Labels**: `self-hosted, macos-arm64, apptrack-ios`
+**Smart Runner Strategy (repo visibility'ye gore otomatik):**
 
-**Cost**: $0/month (hardware one-time, ~$5/month electricity)
+| Repo Type | Runner | Monthly Limit | Cost |
+|-----------|--------|---------------|------|
+| **Public** | `macos-latest` | Unlimited | $0 |
+| **Private** | `macos-latest` | ~200 min (~13 builds) | $0 |
+
+**Alternatives for private repos exceeding free tier:**
+- Codemagic free tier: 500 min/mo (~33 builds)
+- Xcode Cloud: 1,500 min/mo (requires Apple Dev $99/yr)
 
 ---
 
 ## Features
 
 - **Multi-Framework Support**: React Native, Flutter, Expo, Swift, Kotlin, Capacitor, Ionic, Cordova, PWA
-- **CI/CD Pipeline**: Automated builds via EAS, Codemagic, GitHub Actions, Self-Hosted Runners
+- **CI/CD Pipeline**: Automated builds via EAS, Codemagic, GitHub Actions (macos-latest for iOS)
 - **Store Deployment**: Google Play, App Store, and Web (Netlify/Vercel) publishing
 - **OTA Live Updates**: Over-the-air JavaScript bundle updates with channel-based rollout
 - **Live Preview**: Real-time app preview with device emulation

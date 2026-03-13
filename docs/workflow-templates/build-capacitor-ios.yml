@@ -24,7 +24,7 @@ on:
 
 jobs:
   build:
-    runs-on: [self-hosted, macos-arm64, apptrack-ios]
+    runs-on: macos-latest
     timeout-minutes: 30
     env:
       KEYCHAIN_NAME: apptrack-build-${{ github.event.inputs.build_id }}

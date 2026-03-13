@@ -468,6 +468,7 @@ CREATE INDEX IF NOT EXISTS idx_ota_updates_channel ON ota_updates(project_id, ch
 
 -- Capacitor/PWA build support columns
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS build_provider VARCHAR(50);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS repo_visibility VARCHAR(20) DEFAULT 'private';
 ALTER TABLE builds ADD COLUMN IF NOT EXISTS workflow_file VARCHAR(100);
 
 -- Add org_id to projects (nullable, for gradual migration)

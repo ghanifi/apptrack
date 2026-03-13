@@ -36,6 +36,7 @@ class Project(Base):
     clone_path: Mapped[str | None] = mapped_column(Text, comment="Sunucudaki clone dizini")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Oluşturulma tarihi")
     build_provider: Mapped[str | None] = mapped_column(String(50), nullable=True, comment="Override build provider: github_actions, eas, codemagic, self_hosted")
+    repo_visibility: Mapped[str] = mapped_column(String(20), default="private", comment="GitHub repo gorunurlugu: public, private")
     org_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True, comment="Bağlı organizasyon ID (opsiyonel)")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="Son güncelleme tarihi")
 

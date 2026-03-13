@@ -57,6 +57,25 @@ async def _register_github_webhook(project: Project, token: str) -> None:
         logger.warning("_register_github_webhook error: %s", exc)
 
 
+async def _fetch_repo_visibility(repo_url: str, token: str | None) -> str:
+    """GitHub API'den repo visibility bilgisini ceker. Default: private."""
+    match = re.match(r'https://github\.com/([^/]+)/([^/\.]+)', repo_url)
+    if not match:
+        return "private"
+    owner, repo = match.groups()
+    headers: dict[str, str] = {"Accept": "application/vnd.github.v3+json"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"https://api.github.com/repos/{owner}/{repo}", headers=headers)
+            if resp.status_code == 200:
+                return "public" if not resp.json().get("private", True) else "private"
+    except Exception as exc:
+        logger.warning("_fetch_repo_visibility error: %s", exc)
+    return "private"
+
+
 class ProjectCreate(BaseModel):
     name: str
     repo_url: str
@@ -150,6 +169,7 @@ def _serialize_project(p: Project) -> dict:
         "created_at": p.created_at.isoformat(),
         "updated_at": p.updated_at.isoformat(),
         "owner_id": p.owner_id,
+        "repo_visibility": getattr(p, "repo_visibility", "private"),
         "builds": [
             {
                 "id": b.id,
@@ -224,23 +244,7 @@ async def create_project(
 
     await check_project_quota(db, current_user["id"])
 
-    project = Project(
-        name=req.name.strip(),
-        repo_url=repo_url,
-        branch=branch,
-        owner_id=current_user["id"],
-    )
-    db.add(project)
-    await db.commit()
-    await db.refresh(project)
-
-    await record_audit_with_db(
-        db, action="project.created", resource_type="project",
-        resource_id=project.id, user_id=current_user["id"],
-        details={"name": project.name, "repo_url": project.repo_url},
-    )
-    await db.commit()
-
+    # Fetch GitHub token early — needed for visibility check and webhook
     user_result = await db.execute(select(User).where(User.id == current_user["id"]))
     user = user_result.scalar_one_or_none()
     github_token_encrypted = user.github_access_token if user else None
@@ -251,6 +255,26 @@ async def create_project(
         except Exception:
             github_token_plain = github_token_encrypted
 
+    repo_visibility = await _fetch_repo_visibility(repo_url, github_token_plain)
+
+    project = Project(
+        name=req.name.strip(),
+        repo_url=repo_url,
+        branch=branch,
+        owner_id=current_user["id"],
+        repo_visibility=repo_visibility,
+    )
+    db.add(project)
+    await db.commit()
+    await db.refresh(project)
+
+    await record_audit_with_db(
+        db, action="project.created", resource_type="project",
+        resource_id=project.id, user_id=current_user["id"],
+        details={"name": project.name, "repo_url": project.repo_url, "repo_visibility": repo_visibility},
+    )
+    await db.commit()
+
     await events.publish_event(
         "project.created",
         {
@@ -259,6 +283,7 @@ async def create_project(
             "branch": project.branch,
             "owner_id": project.owner_id,
             "github_token": github_token_encrypted,
+            "repo_visibility": project.repo_visibility,
             "trace_id": getattr(req, "trace_id", None),
         },
     )
@@ -490,6 +515,7 @@ async def trigger_build(
         "repo_url": project.repo_url,
         "branch": project.branch,
         "clone_path": project.clone_path,
+        "repo_visibility": project.repo_visibility or "private",
     }
 
     if provider == "eas":

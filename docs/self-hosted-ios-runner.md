@@ -1,5 +1,7 @@
 # Self-Hosted iOS Runner — Mac Mini M4 Setup Guide
 
+> **NOT (v2.1):** AppTrack artık varsayılan olarak GitHub'ın ücretsiz `macos-latest` hosted runner'ını kullanmaktadır. Self-hosted runner **opsiyoneldir** — sadece özel gereksinimler (private network, özel Xcode sürümü, yüksek build hacmi) için gereklidir. Çoğu kullanıcı bu rehbere ihtiyaç duymaz.
+
 ## Hardware Requirements
 
 - **Mac Mini M4** (or any Apple Silicon Mac)

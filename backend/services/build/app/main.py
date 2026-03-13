@@ -74,6 +74,7 @@ async def _ensure_workflow_exists(
     workflow_file: str,
     branch: str,
     github_token: str,
+    runner_label: str = "macos-latest",
 ) -> bool:
     """Check if workflow exists in user's repo; if not, auto-create it via GitHub API."""
     headers = {
@@ -91,6 +92,12 @@ async def _ensure_workflow_exists(
     if not template_content:
         return False
 
+    # Replace self-hosted runner with dynamic runner label
+    template_content = template_content.replace(
+        "runs-on: [self-hosted, macos-arm64, apptrack-ios]",
+        f"runs-on: {runner_label}",
+    )
+
     content_b64 = _b64.b64encode(template_content.encode()).decode()
     put_resp = await client.put(
         f"https://api.github.com/repos/{owner_repo}/contents/.github/workflows/{workflow_file}",
@@ -102,7 +109,7 @@ async def _ensure_workflow_exists(
         },
     )
     if put_resp.status_code in (200, 201):
-        logger.info("Auto-created workflow %s in %s", workflow_file, owner_repo)
+        logger.info("Auto-created workflow %s in %s (runner=%s)", workflow_file, owner_repo, runner_label)
         return True
     logger.warning("Failed to create workflow %s in %s: %s", workflow_file, owner_repo, put_resp.status_code)
     return False
@@ -258,6 +265,9 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
     branch = payload.get("branch", "main")
     platform = payload.get("platform", "android")
     framework = payload.get("framework", "")
+    repo_visibility = payload.get("repo_visibility", "private")
+    runner_label = "macos-latest"  # Free for public (unlimited) and private (~200min/mo)
+    logger.info("Runner strategy: visibility=%s runner=%s", repo_visibility, runner_label)
 
     owner_repo = ""
     if "github.com/" in repo_url:
@@ -310,7 +320,7 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
         workflow_inputs["android_key_password"] = key_pass
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        workflow_ready = await _ensure_workflow_exists(client, owner_repo, workflow_file, branch, github_token)
+        workflow_ready = await _ensure_workflow_exists(client, owner_repo, workflow_file, branch, github_token, runner_label)
         if not workflow_ready:
             logger.error("Workflow file %s not found and could not be auto-created in %s", workflow_file, owner_repo)
             await publish_event(channel, "build.failed", {

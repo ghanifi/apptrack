@@ -466,6 +466,21 @@ export default function ProjectDetailPage() {
       {canBuild && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
           <h2 className="text-sm font-semibold mb-3">Trigger Build</h2>
+          {(project.framework === 'capacitor' || project.framework === 'ionic' || project.framework === 'cordova') && (
+            <div className="flex items-center gap-2 mb-3 text-xs">
+              <span className={clsx(
+                'px-2 py-0.5 rounded-full font-medium border',
+                project.repo_visibility === 'public'
+                  ? 'bg-green-500/20 text-green-300 border-green-500/30'
+                  : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30'
+              )}>
+                {project.repo_visibility === 'public' ? 'GitHub Hosted — Unlimited' : 'GitHub Hosted — 200min/mo'}
+              </span>
+              <span className="text-gray-500">
+                iOS: {project.repo_visibility === 'public' ? 'macos-latest (free, unlimited)' : 'macos-latest (free tier: ~13 builds/mo)'}
+              </span>
+            </div>
+          )}
           <div className="flex gap-3">
             {(project.framework === 'pwa'
               ? ['android', 'web']
