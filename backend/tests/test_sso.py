@@ -493,11 +493,16 @@ class TestSSOCallback:
         mock_db.execute = AsyncMock(side_effect=multi_execute)
 
         # Mock JWT creation
-        with patch("app.routers.sso.create_access_token", return_value="jwt-access-token"), \
-             patch("app.routers.sso.create_refresh_token", return_value="jwt-refresh-token"):
+        with patch("app.routers.auth.create_access_token", return_value="jwt-access-token"), \
+             patch("app.routers.auth.create_refresh_token", return_value="jwt-refresh-token"):
 
             app = _build_app(None, mock_db)  # No auth required for callback
             transport = ASGITransport(app=app)
+
+            # Pre-populate SSO state store for CSRF validation
+            from app.routers.sso import _sso_states
+            _sso_states["state-abc"] = {"provider_id": "prov-001"}
+
             async with AsyncClient(
                 transport=transport, base_url="http://test", follow_redirects=False
             ) as ac:
@@ -578,8 +583,13 @@ class TestSSOCallback:
 
         app = _build_app(None, mock_db)
         transport = ASGITransport(app=app)
+
+        # Pre-populate SSO state store for CSRF validation
+        from app.routers.sso import _sso_states
+        _sso_states["test-state"] = {"provider_id": "prov-001"}
+
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.get("/api/sso/callback/prov-001?code=bad-code")
+            resp = await ac.get("/api/sso/callback/prov-001?code=bad-code&state=test-state")
 
         assert resp.status_code == 401
         assert "token" in resp.json()["detail"].lower()
