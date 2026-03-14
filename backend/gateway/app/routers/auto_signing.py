@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from app.dependencies import get_current_user
 from app.database import get_db
 from app.crypto import encrypt
-from app.routers.credentials import get_user_credential, upsert_credential, CredentialUpsert
+from app.routers.credentials import get_user_credential
 from app.audit import record_audit_with_db
 from app.models import Credential
 from sqlalchemy import select, and_
@@ -231,7 +231,7 @@ async def auto_generate_ios_signing(
         raise HTTPException(
             status_code=400,
             detail="Invalid App Store Connect Private Key (.p8). Ensure you pasted the full contents of the .p8 file including BEGIN/END headers.",
-        )
+        ) from exc
 
     # --- Step 1: Generate private key + CSR (pure Python) ---
     email = current_user.get("email", "autosign@apptrack.dev")
@@ -433,7 +433,7 @@ async def auto_generate_android_keystore(
         )
     except Exception as exc:
         logger.error("Failed to generate Android keystore: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Keystore generation failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Keystore generation failed: {exc}") from exc
 
     keystore_base64 = base64.b64encode(keystore_bytes).decode()
 
