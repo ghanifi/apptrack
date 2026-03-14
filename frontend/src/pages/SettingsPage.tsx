@@ -207,7 +207,8 @@ function InfoTooltip({ text, url }: { text: string; url?: string }) {
       <Info size={13} className="text-gray-500 hover:text-blue-400 cursor-help transition-colors" />
       {show && (
         <div
-          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 z-50 w-72 p-3 bg-gray-900 border border-gray-600 rounded-lg shadow-xl text-xs text-gray-300 whitespace-pre-line leading-relaxed"
+          className="absolute left-0 bottom-full mb-1 w-72 p-3 bg-gray-900 border border-gray-600 rounded-lg shadow-xl text-xs text-gray-300 whitespace-pre-line leading-relaxed"
+          style={{ zIndex: 9999 }}
           onMouseEnter={handleEnter}
           onMouseLeave={handleLeave}
         >
@@ -222,7 +223,7 @@ function InfoTooltip({ text, url }: { text: string; url?: string }) {
               <ArrowUpRight size={11} /> Open guide
             </a>
           )}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-gray-600" />
+          <div className="absolute top-full left-4 w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-gray-600" />
         </div>
       )}
     </span>
