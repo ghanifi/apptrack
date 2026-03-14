@@ -543,55 +543,56 @@ check("SHD-007: Shutdown logged",
 # ═══════════════════════════════════════════════════
 # SUMMARY
 # ═══════════════════════════════════════════════════
-total = passed + failed
-print(f"\n{'='*60}")
-print(f"  CHAOS ENGINEERING TEST RESULTS")
-print(f"{'='*60}")
+if __name__ == "__main__":
+    total = passed + failed
+    print(f"\n{'='*60}")
+    print(f"  CHAOS ENGINEERING TEST RESULTS")
+    print(f"{'='*60}")
 
-sections = {
-    "NET": "Network Drop Resilience",
-    "TMO": "Provider Timeout Resilience",
-    "DBF": "DB Failover Resilience",
-    "QSB": "Queue Split Brain Resilience",
-    "GRD": "Graceful Degradation",
-    "MEM": "Memory & Streaming Safety",
-    "CON": "Concurrent Access Safety",
-    "FLD": "Abuse/Flood Protection",
-    "INT": "Integrity Verification",
-    "SHD": "Graceful Shutdown",
-}
+    sections = {
+        "NET": "Network Drop Resilience",
+        "TMO": "Provider Timeout Resilience",
+        "DBF": "DB Failover Resilience",
+        "QSB": "Queue Split Brain Resilience",
+        "GRD": "Graceful Degradation",
+        "MEM": "Memory & Streaming Safety",
+        "CON": "Concurrent Access Safety",
+        "FLD": "Abuse/Flood Protection",
+        "INT": "Integrity Verification",
+        "SHD": "Graceful Shutdown",
+    }
 
-for prefix, label in sections.items():
-    section_pass = sum(1 for e in [] if True)
-    section_total = 0
-    section_fails = 0
-    for e in errors:
-        if f"FAIL: {prefix}-" in e:
-            section_fails += 1
+    for prefix, label in sections.items():
+        section_pass = sum(1 for e in [] if True)
+        section_total = 0
+        section_fails = 0
+        for e in errors:
+            if f"FAIL: {prefix}-" in e:
+                section_fails += 1
 
-    matching = [n for n in range(1, 100)
-                if any(f"{prefix}-{n:03d}" in (e if "FAIL" in e else "") for e in errors)]
-    pass_count = sum(1 for n in range(1, 100)
-                     if not any(f"FAIL: {prefix}-{n:03d}" in e for e in errors)
-                     and any(f"{prefix}-{n:03d}" in err_name for err_name in
-                             [f"{prefix}-{n:03d}" for _ in range(1)]))
+        matching = [n for n in range(1, 100)
+                    if any(f"{prefix}-{n:03d}" in (e if "FAIL" in e else "") for e in errors)]
+        pass_count = sum(1 for n in range(1, 100)
+                         if not any(f"FAIL: {prefix}-{n:03d}" in e for e in errors)
+                         and any(f"{prefix}-{n:03d}" in err_name for err_name in
+                                 [f"{prefix}-{n:03d}" for _ in range(1)]))
 
-print(f"\n  Total: {passed}/{total} PASS")
-if errors:
-    print(f"\n  Failed tests ({failed}):")
-    for e in errors:
-        print(f"    {e}")
-else:
-    print(f"\n  ALL {total} CHAOS TESTS PASS")
-    print(f"  System is resilient to:")
-    print(f"    - Network drops (RabbitMQ/DB reconnect)")
-    print(f"    - Provider timeouts (EAS/Codemagic/GitHub/AppStore)")
-    print(f"    - DB failover (retry + DLQ)")
-    print(f"    - Queue split brain (idempotency + durable queues)")
-    print(f"    - Memory pressure (streaming downloads)")
-    print(f"    - Concurrent access (DB constraints)")
-    print(f"    - Abuse/flood (rate limits + nonces)")
-    print(f"    - Graceful shutdown (coordinated cleanup)")
+    print(f"\n  Total: {passed}/{total} PASS")
+    if errors:
+        print(f"\n  Failed tests ({failed}):")
+        for e in errors:
+            print(f"    {e}")
+    else:
+        print(f"\n  ALL {total} CHAOS TESTS PASS")
+        print(f"  System is resilient to:")
+        print(f"    - Network drops (RabbitMQ/DB reconnect)")
+        print(f"    - Provider timeouts (EAS/Codemagic/GitHub/AppStore)")
+        print(f"    - DB failover (retry + DLQ)")
+        print(f"    - Queue split brain (idempotency + durable queues)")
+        print(f"    - Memory pressure (streaming downloads)")
+        print(f"    - Concurrent access (DB constraints)")
+        print(f"    - Abuse/flood (rate limits + nonces)")
+        print(f"    - Graceful shutdown (coordinated cleanup)")
 
-print(f"{'='*60}")
-sys.exit(0 if failed == 0 else 1)
+    print(f"{'='*60}")
+    sys.exit(0 if failed == 0 else 1)
