@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Trash2, KeyRound, Github, Smartphone, Store, CreditCard, Bell, ArrowUpRight, Loader, Zap, Shield, Lock, Info } from 'lucide-react'
@@ -188,15 +188,29 @@ const PROVIDERS: ProviderSection[] = [
 
 function InfoTooltip({ text, url }: { text: string; url?: string }) {
   const [show, setShow] = useState(false)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleEnter = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    setShow(true)
+  }
+  const handleLeave = () => {
+    timeoutRef.current = setTimeout(() => setShow(false), 150)
+  }
+
   return (
     <span
       className="relative inline-flex"
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
     >
       <Info size={13} className="text-gray-500 hover:text-blue-400 cursor-help transition-colors" />
       {show && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-72 p-3 bg-gray-900 border border-gray-600 rounded-lg shadow-xl text-xs text-gray-300 whitespace-pre-line leading-relaxed">
+        <div
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 z-50 w-72 p-3 bg-gray-900 border border-gray-600 rounded-lg shadow-xl text-xs text-gray-300 whitespace-pre-line leading-relaxed"
+          onMouseEnter={handleEnter}
+          onMouseLeave={handleLeave}
+        >
           {text}
           {url && (
             <a
@@ -204,7 +218,6 @@ function InfoTooltip({ text, url }: { text: string; url?: string }) {
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 mt-2 text-blue-400 hover:text-blue-300 hover:underline"
-              onClick={(e) => e.stopPropagation()}
             >
               <ArrowUpRight size={11} /> Open guide
             </a>
