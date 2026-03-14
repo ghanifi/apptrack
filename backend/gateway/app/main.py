@@ -145,6 +145,30 @@ async def _check_rabbitmq() -> bool:
         return False
 
 
+async def _check_redis() -> bool:
+    try:
+        if not settings.REDIS_URL:
+            return False
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.REDIS_URL, socket_timeout=3)
+        await r.ping()
+        await r.aclose()
+        return True
+    except Exception:
+        return False
+
+
+async def _check_service(url: str) -> bool:
+    """Check if a microservice is reachable via its /health endpoint."""
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=3) as client:
+            resp = await client.get(f"{url}/health")
+            return resp.status_code < 500
+    except Exception:
+        return False
+
+
 async def _credential_rotation_checker() -> None:
     """Her 24 saatte bir expiry yaklaşan credential'ları kontrol eder."""
     import asyncio as _asyncio
@@ -372,27 +396,51 @@ def get_deploy_error_detail(error_code: str):
 
 @app.get("/api/health/deep")
 async def deep_health():
-    db_ok = await _check_db()
-    mq_ok = await _check_rabbitmq()
-    all_ok = db_ok and mq_ok
+    import asyncio as _aio
+    db_ok, mq_ok, redis_ok, build_ok, artifact_ok, preview_ok, deploy_ok = await _aio.gather(
+        _check_db(),
+        _check_rabbitmq(),
+        _check_redis(),
+        _check_service(settings.BUILD_SERVICE_URL),
+        _check_service(settings.ARTIFACT_SERVICE_URL),
+        _check_service(settings.PREVIEW_SERVICE_URL),
+        _check_service(settings.STORE_DEPLOY_SERVICE_URL),
+    )
+
+    services = {
+        "database": "healthy" if db_ok else "unhealthy",
+        "rabbitmq": "healthy" if mq_ok else "unhealthy",
+        "redis": "healthy" if redis_ok else "unhealthy",
+        "gateway": "healthy",
+        "build_service": "healthy" if build_ok else "unhealthy",
+        "artifact_service": "healthy" if artifact_ok else "unhealthy",
+        "preview_service": "healthy" if preview_ok else "unhealthy",
+        "store_deploy": "healthy" if deploy_ok else "unhealthy",
+    }
+
+    unhealthy_count = sum(1 for v in services.values() if v == "unhealthy")
+    if unhealthy_count == 0:
+        overall = "healthy"
+    elif unhealthy_count <= 2:
+        overall = "degraded"
+    else:
+        overall = "unhealthy"
+
     return JSONResponse(
-        status_code=200 if all_ok else 503,
+        status_code=200 if overall == "healthy" else 503,
         content={
-            "status": "healthy" if all_ok else "degraded",
+            "status": overall,
             "service": "gateway",
             "version": "0.9.0",
-            "services": {
-                "database": "healthy" if db_ok else "unhealthy",
-                "rabbitmq": "healthy" if mq_ok else "unhealthy",
-                "gateway": "healthy",
-                "build_service": "healthy" if mq_ok else "degraded",
-                "artifact_service": "healthy" if db_ok else "degraded",
-                "preview_service": "healthy",
-                "store_deploy": "healthy" if mq_ok else "degraded",
-            },
+            "services": services,
             "checks": {
                 "database": "ok" if db_ok else "unreachable",
                 "rabbitmq": "ok" if mq_ok else "unreachable",
+                "redis": "ok" if redis_ok else "unreachable",
+                "build_service": "ok" if build_ok else "unreachable",
+                "artifact_service": "ok" if artifact_ok else "unreachable",
+                "preview_service": "ok" if preview_ok else "unreachable",
+                "store_deploy": "ok" if deploy_ok else "unreachable",
             },
         },
     )
