@@ -41,6 +41,21 @@ export default function AuditPage() {
     'user.github_login': 'text-cyan-400',
   }
 
+  const actionLabel = (log: AuditEntry) => {
+    const details = log.details as Record<string, string> | null
+    const name = details?.name || details?.project_name
+    switch (log.action) {
+      case 'project.created':
+        return name ? `project.created — ${name}` : 'project.created'
+      case 'build.triggered':
+        return name ? `build.triggered — ${name}` : 'build.triggered'
+      case 'deploy.triggered':
+        return name ? `deploy.triggered — ${name}` : 'deploy.triggered'
+      default:
+        return log.action
+    }
+  }
+
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -83,7 +98,7 @@ export default function AuditPage() {
             <tbody>
               {logs.map((log: AuditEntry) => (
                 <tr key={log.id} className="border-b border-zinc-700/50 hover:bg-zinc-700/20">
-                  <td className={`p-3 font-mono ${actionColors[log.action] || 'text-zinc-300'}`}>{log.action}</td>
+                  <td className={`p-3 font-mono ${actionColors[log.action] || 'text-zinc-300'}`}>{actionLabel(log)}</td>
                   <td className="p-3 text-zinc-400">{log.resource_type}{log.resource_id ? `:${log.resource_id.slice(0, 8)}` : ''}</td>
                   <td className="p-3 text-zinc-500 font-mono text-xs">{log.ip_address || '-'}</td>
                   <td className="p-3 text-zinc-500 text-xs">{new Date(log.created_at).toLocaleString()}</td>
