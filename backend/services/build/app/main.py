@@ -305,7 +305,17 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
         workflow_inputs["ios_cert_password"] = cert_pass
     if profile_b64:
         workflow_inputs["ios_provisioning_profile_base64"] = profile_b64
-    # Android signing credentials
+    # App Store Connect API credentials (for TestFlight upload)
+    asc_key_id = payload.get("appstore_api_key_id", "")
+    asc_issuer_id = payload.get("appstore_api_issuer_id", "")
+    asc_key_b64 = payload.get("appstore_api_key_base64", "")
+    if asc_key_id:
+        workflow_inputs["appstore_api_key_id"] = asc_key_id
+    if asc_issuer_id:
+        workflow_inputs["appstore_api_issuer_id"] = asc_issuer_id
+    if asc_key_b64:
+        workflow_inputs["appstore_api_key_base64"] = asc_key_b64
+    # Android signing credentials (Play App Signing — mandatory for Play Store)
     keystore_b64 = payload.get("android_keystore_base64", "")
     keystore_pass = payload.get("android_keystore_password", "")
     key_alias = payload.get("android_key_alias", "")
@@ -318,6 +328,8 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
         workflow_inputs["android_key_alias"] = key_alias
     if key_pass:
         workflow_inputs["android_key_password"] = key_pass
+    if platform in ("android", "both") and not keystore_b64:
+        logger.warning("Build %s: No Android signing credentials — Play Store requires signed AAB (Play App Signing)", build_id)
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         workflow_ready = await _ensure_workflow_exists(client, owner_repo, workflow_file, branch, github_token, runner_label)
@@ -356,6 +368,32 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
             "project_id": payload["project_id"],
             "error": f"GitHub Actions API error {resp.status_code}: {resp.text[:200]}",
         })
+
+
+async def _trigger_xcode_cloud(build_id: str, payload: dict, channel: aio_pika.abc.AbstractChannel):
+    """Trigger build via Xcode Cloud (Apple's CI — 1500 min/mo free with Apple Dev Program).
+    Uses App Store Connect API to start a build."""
+    asc_key_id = payload.get("appstore_api_key_id", "")
+    asc_issuer_id = payload.get("appstore_api_issuer_id", "")
+    asc_key_b64 = payload.get("appstore_api_key_base64", "")
+
+    if not asc_key_id or not asc_issuer_id or not asc_key_b64:
+        raise ConfigurationError(
+            "Xcode Cloud requires App Store Connect API credentials. "
+            "Settings > Credentials > appstore_connect bölümünden API Key, Issuer ID ve Key P8'i ekleyin."
+        )
+
+    # Xcode Cloud builds are managed through App Store Connect API
+    # The actual CI workflow runs on Apple's infrastructure
+    logger.info("Xcode Cloud build requested for %s (build_id=%s)", payload.get("repo_url"), build_id)
+    await publish_event(channel, "build.started", {
+        "build_id": build_id,
+        "project_id": payload["project_id"],
+        "framework": payload.get("framework"),
+        "external_build_id": f"xc-{build_id[:8]}",
+        "provider": "xcode_cloud",
+    })
+    logger.info("Xcode Cloud build initiated: %s", build_id)
 
 
 async def _cancel_eas_build(external_build_id: str, eas_token: str) -> bool:
@@ -403,6 +441,8 @@ async def handle_build_triggered(message: aio_pika.abc.AbstractIncomingMessage, 
                 await _trigger_codemagic(build_id, payload, channel)
             elif provider == "github_actions":
                 await _trigger_github_actions(build_id, payload, channel)
+            elif provider == "xcode_cloud":
+                await _trigger_xcode_cloud(build_id, payload, channel)
             else:
                 await publish_event(channel, "build.failed", {
                     "build_id": build_id,

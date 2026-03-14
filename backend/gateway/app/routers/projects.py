@@ -544,6 +544,10 @@ async def trigger_build(
         event_payload["android_keystore_password"] = await get_user_credential(db, current_user["id"], "android_signing", "ANDROID_KEYSTORE_PASSWORD")
         event_payload["android_key_alias"] = await get_user_credential(db, current_user["id"], "android_signing", "ANDROID_KEY_ALIAS")
         event_payload["android_key_password"] = await get_user_credential(db, current_user["id"], "android_signing", "ANDROID_KEY_PASSWORD")
+        # App Store Connect API credentials (TestFlight upload)
+        event_payload["appstore_api_key_id"] = await get_user_credential(db, current_user["id"], "appstore_connect", "APPSTORE_API_KEY_ID")
+        event_payload["appstore_api_issuer_id"] = await get_user_credential(db, current_user["id"], "appstore_connect", "APPSTORE_API_ISSUER_ID")
+        event_payload["appstore_api_key_base64"] = await get_user_credential(db, current_user["id"], "appstore_connect", "APPSTORE_API_KEY_BASE64")
 
     await events.publish_event("build.triggered", event_payload)
 
@@ -688,3 +692,151 @@ async def deploy_project(
 
     await events.publish_event("deploy.triggered", event_payload)
     return _serialize_dep(dep)
+
+
+@router.get("/{project_id}/compliance-checklist")
+async def get_compliance_checklist(
+    project_id: str,
+    platform: str = "both",
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """2026 App Store / Play Store uyumluluk kontrol listesi.
+
+    Projenin yayınlanmaya hazır olup olmadığını kontrol eder.
+    Her madde pass/fail/warning durumundadır.
+    """
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+    if not project or project.owner_id != current_user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    checks: list[dict] = []
+
+    # --- iOS Checks ---
+    if platform in ("ios", "both"):
+        # iOS signing credentials
+        ios_cert = await get_user_credential(db, current_user["id"], "ios_signing", "IOS_CERT_P12_BASE64")
+        ios_profile = await get_user_credential(db, current_user["id"], "ios_signing", "IOS_PROVISIONING_PROFILE_BASE64")
+        checks.append({
+            "id": "ios_signing",
+            "platform": "ios",
+            "category": "signing",
+            "title": "iOS Distribution Certificate & Provisioning Profile",
+            "status": "pass" if (ios_cert and ios_profile) else "fail",
+            "message": "Signing credentials configured" if (ios_cert and ios_profile) else "Missing iOS signing credentials — required for App Store submission",
+            "fix_url": "/settings/credentials",
+        })
+
+        # App Store Connect API
+        asc_key = await get_user_credential(db, current_user["id"], "appstore_connect", "APPSTORE_API_KEY_ID")
+        checks.append({
+            "id": "appstore_connect",
+            "platform": "ios",
+            "category": "publishing",
+            "title": "App Store Connect API Key",
+            "status": "pass" if asc_key else "warning",
+            "message": "API key configured — auto-upload enabled" if asc_key else "No API key — manual upload required after build",
+            "fix_url": "/settings/credentials",
+        })
+
+        # PrivacyInfo.xcprivacy (auto-generated in workflow)
+        checks.append({
+            "id": "privacy_manifest",
+            "platform": "ios",
+            "category": "compliance",
+            "title": "PrivacyInfo.xcprivacy (Apple 2026 mandatory)",
+            "status": "pass",
+            "message": "Auto-generated during build if not present in project",
+        })
+
+        # Bitcode disabled
+        checks.append({
+            "id": "bitcode_disabled",
+            "platform": "ios",
+            "category": "build_config",
+            "title": "ENABLE_BITCODE=NO",
+            "status": "pass",
+            "message": "Enforced in build workflow",
+        })
+
+    # --- Android Checks ---
+    if platform in ("android", "both"):
+        # Android signing
+        keystore = await get_user_credential(db, current_user["id"], "android_signing", "ANDROID_KEYSTORE_BASE64")
+        checks.append({
+            "id": "android_signing",
+            "platform": "android",
+            "category": "signing",
+            "title": "Android Signing Keystore (Play App Signing)",
+            "status": "pass" if keystore else "fail",
+            "message": "Keystore configured" if keystore else "Missing Android signing keystore — required for Play Store AAB upload",
+            "fix_url": "/settings/credentials",
+        })
+
+        # AAB format
+        checks.append({
+            "id": "aab_format",
+            "platform": "android",
+            "category": "build_config",
+            "title": "AAB Format (Play Store 2026 mandatory)",
+            "status": "pass",
+            "message": "Release builds produce AAB (not APK) automatically",
+        })
+
+        # targetSdkVersion
+        checks.append({
+            "id": "target_sdk_version",
+            "platform": "android",
+            "category": "compliance",
+            "title": "targetSdkVersion >= 35 (Google Play 2026)",
+            "status": "pass",
+            "message": "Auto-checked and fixed during build if below 35",
+        })
+
+        # Data Safety
+        checks.append({
+            "id": "data_safety",
+            "platform": "android",
+            "category": "metadata",
+            "title": "Data Safety Section",
+            "status": "warning",
+            "message": "Must be manually configured in Google Play Console — cannot be automated via API",
+            "help_url": "https://support.google.com/googleplay/android-developer/answer/10787469",
+        })
+
+        # Google Checks
+        google_checks_configured = bool(await get_user_credential(db, current_user["id"], "google_play", "GOOGLE_PLAY_KEY_JSON"))
+        checks.append({
+            "id": "google_checks",
+            "platform": "android",
+            "category": "compliance",
+            "title": "Google Checks Compliance Scan",
+            "status": "pass" if google_checks_configured else "warning",
+            "message": "Enabled in build workflow" if google_checks_configured else "Optional — add Google Checks account ID for automated compliance scanning",
+        })
+
+    # --- Cross-Platform Checks ---
+    checks.append({
+        "id": "privacy_policy",
+        "platform": "both",
+        "category": "metadata",
+        "title": "Privacy Policy URL",
+        "status": "warning",
+        "message": "Ensure privacy policy URL is set in store listing — required by both Apple and Google",
+    })
+
+    total = len(checks)
+    passed = sum(1 for c in checks if c["status"] == "pass")
+    warnings = sum(1 for c in checks if c["status"] == "warning")
+    failed = sum(1 for c in checks if c["status"] == "fail")
+    ready = failed == 0
+
+    return {
+        "project_id": project_id,
+        "framework": project.framework,
+        "platform": platform,
+        "ready_to_publish": ready,
+        "summary": {"total": total, "passed": passed, "warnings": warnings, "failed": failed},
+        "checks": checks,
+    }

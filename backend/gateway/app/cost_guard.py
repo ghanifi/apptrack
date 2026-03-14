@@ -12,6 +12,7 @@ PROVIDER_COST_PER_MINUTE = {
     "codemagic": 0.038,
     "github_actions": 0.008,
     "self_hosted": 0.0,
+    "xcode_cloud": 0.0,
     "simulation": 0.0,
 }
 
@@ -20,6 +21,7 @@ ESTIMATED_BUILD_MINUTES = {
     "codemagic": {"android": 10, "ios": 15},
     "github_actions": {"android": 8, "ios": 25},
     "self_hosted": {"android": 8, "ios": 12},
+    "xcode_cloud": {"android": 0, "ios": 15},
     "simulation": {"android": 0, "ios": 0},
 }
 

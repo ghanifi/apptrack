@@ -83,9 +83,10 @@ jobs:
         run: |
           echo "${{ github.event.inputs.android_keystore_base64 }}" | base64 -d > twa-output/release.keystore
 
-      - name: Build TWA APK
+      - name: Build TWA AAB (Play Store mandatory format)
         working-directory: twa-output
         run: |
+          npx bubblewrap build --generateAppBundle 2>/dev/null || \
           npx bubblewrap build 2>/dev/null || echo "Bubblewrap build done"
 
       - name: Upload artifact
@@ -93,7 +94,9 @@ jobs:
         with:
           name: pwa-android-${{ github.event.inputs.build_id }}
           path: |
+            twa-output/**/*.aab
             twa-output/**/*.apk
+            twa-output/*.aab
             twa-output/*.apk
 
       - name: Notify AppTrack

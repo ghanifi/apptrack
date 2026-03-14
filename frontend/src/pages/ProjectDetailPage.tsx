@@ -5,6 +5,7 @@ import {
   ArrowLeft, RefreshCw, Play, GitBranch, Clock, CheckCircle,
   XCircle, Loader, Package, Rocket, ExternalLink, QrCode,
   Upload, Eye, ChevronDown, ChevronUp, Store, Radio,
+  Shield, AlertTriangle,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Project, Build, Deployment } from '@/types'
@@ -144,6 +145,80 @@ function DeployModal({
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function ComplianceChecklist({ projectId }: { projectId: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const { data, isLoading } = useQuery<{
+    ready_to_publish: boolean
+    summary: { total: number; passed: number; warnings: number; failed: number }
+    checks: Array<{
+      id: string; platform: string; category: string; title: string
+      status: 'pass' | 'fail' | 'warning'; message: string; fix_url?: string
+    }>
+  }>({
+    queryKey: ['compliance', projectId],
+    queryFn: () => api.get(`/projects/${projectId}/compliance-checklist`).then(r => r.data),
+    enabled: expanded,
+    staleTime: 30_000,
+  })
+
+  const statusIcon = (s: string) => {
+    if (s === 'pass') return <CheckCircle size={14} className="text-green-400" />
+    if (s === 'fail') return <XCircle size={14} className="text-red-400" />
+    return <AlertTriangle size={14} className="text-yellow-400" />
+  }
+
+  return (
+    <div className="bg-gray-800/50 rounded-lg border border-gray-700/50 p-4 mb-4">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center justify-between w-full text-left"
+      >
+        <div className="flex items-center gap-2">
+          <Shield size={16} className="text-blue-400" />
+          <span className="text-sm font-semibold">2026 Store Compliance Checklist</span>
+          {data && (
+            <span className={clsx(
+              'text-xs px-2 py-0.5 rounded-full',
+              data.ready_to_publish
+                ? 'bg-green-500/20 text-green-300'
+                : 'bg-red-500/20 text-red-300'
+            )}>
+              {data.ready_to_publish ? 'Ready' : `${data.summary.failed} issue(s)`}
+            </span>
+          )}
+        </div>
+        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+
+      {expanded && (
+        <div className="mt-3 space-y-2">
+          {isLoading && <p className="text-xs text-gray-500">Loading checks...</p>}
+          {data?.checks.map(check => (
+            <div key={check.id} className="flex items-start gap-2 text-xs">
+              {statusIcon(check.status)}
+              <div className="flex-1">
+                <span className="font-medium text-gray-200">{check.title}</span>
+                <span className="text-gray-500 ml-1">({check.platform})</span>
+                <p className="text-gray-400 mt-0.5">{check.message}</p>
+              </div>
+              {check.fix_url && check.status === 'fail' && (
+                <a href={check.fix_url} className="text-blue-400 hover:underline shrink-0">Fix</a>
+              )}
+            </div>
+          ))}
+          {data && (
+            <div className="pt-2 border-t border-gray-700/50 text-xs text-gray-500">
+              {data.summary.passed}/{data.summary.total} passed
+              {data.summary.warnings > 0 && ` | ${data.summary.warnings} warning(s)`}
+              {data.summary.failed > 0 && ` | ${data.summary.failed} failed`}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -606,6 +681,7 @@ export default function ProjectDetailPage() {
         )}
       </div>
 
+      <ComplianceChecklist projectId={id!} />
       {deployments.length > 0 && (
         <DeploymentHistory deployments={deployments} projectId={id!} />
       )}
