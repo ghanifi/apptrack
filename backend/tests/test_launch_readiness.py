@@ -294,28 +294,29 @@ check("EEP-002: Imports get_error_message", "get_error_message" in main_src)
 # ═══════════════════════════════════════════
 # SUMMARY
 # ═══════════════════════════════════════════
-total = passed + failed
-print(f"\n{'='*60}")
-print(f"  PRODUCTION LAUNCH READINESS TEST RESULTS")
-print(f"{'='*60}")
-print(f"  Passed: {passed}/{total}")
-print(f"  Failed: {failed}/{total}")
-print(f"{'='*60}")
+if __name__ == "__main__":
+    total = passed + failed
+    print(f"\n{'='*60}")
+    print(f"  PRODUCTION LAUNCH READINESS TEST RESULTS")
+    print(f"{'='*60}")
+    print(f"  Passed: {passed}/{total}")
+    print(f"  Failed: {failed}/{total}")
+    print(f"{'='*60}")
 
-if errors:
-    print(f"\nFailed tests:")
-    for e in errors:
-        print(f"  {e}")
-else:
-    print(f"\n  ALL {total} LAUNCH READINESS TESTS PASS")
-    print(f"  Customer-facing features verified:")
-    print(f"    - Landing page (hero, features, pricing, CTA)")
-    print(f"    - Onboarding wizard (5-step flow)")
-    print(f"    - Legal pages (ToS, Privacy, SLA)")
-    print(f"    - Status page (real-time service status)")
-    print(f"    - Support page (FAQ, contact form)")
-    print(f"    - Error UX (human-readable messages)")
-    print(f"    - Monitoring dashboard endpoint")
+    if errors:
+        print(f"\nFailed tests:")
+        for e in errors:
+            print(f"  {e}")
+    else:
+        print(f"\n  ALL {total} LAUNCH READINESS TESTS PASS")
+        print(f"  Customer-facing features verified:")
+        print(f"    - Landing page (hero, features, pricing, CTA)")
+        print(f"    - Onboarding wizard (5-step flow)")
+        print(f"    - Legal pages (ToS, Privacy, SLA)")
+        print(f"    - Status page (real-time service status)")
+        print(f"    - Support page (FAQ, contact form)")
+        print(f"    - Error UX (human-readable messages)")
+        print(f"    - Monitoring dashboard endpoint")
 
-print(f"{'='*60}")
-sys.exit(0 if failed == 0 else 1)
+    print(f"{'='*60}")
+    sys.exit(0 if failed == 0 else 1)

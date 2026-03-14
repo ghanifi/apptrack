@@ -2366,15 +2366,16 @@ except Exception as e:
 # ============================================================================
 # FINAL REPORT
 # ============================================================================
-print("\n" + "=" * 70)
-print(f"  TEST SONUCLARI: {PASS_COUNT} PASS / {FAIL_COUNT} FAIL / {PASS_COUNT + FAIL_COUNT} TOPLAM")
-print("=" * 70)
+if __name__ == "__main__":
+    print("\n" + "=" * 70)
+    print(f"  TEST SONUCLARI: {PASS_COUNT} PASS / {FAIL_COUNT} FAIL / {PASS_COUNT + FAIL_COUNT} TOPLAM")
+    print("=" * 70)
 
-if FAIL_COUNT > 0:
-    print("\n  BASARISIZ TESTLER:")
-    for r in RESULTS:
-        if r["status"] == "FAIL":
-            print(f"    [FAIL] {r['name']}: {r['detail']}")
+    if FAIL_COUNT > 0:
+        print("\n  BASARISIZ TESTLER:")
+        for r in RESULTS:
+            if r["status"] == "FAIL":
+                print(f"    [FAIL] {r['name']}: {r['detail']}")
 
-print()
-sys.exit(1 if FAIL_COUNT > 0 else 0)
+    print()
+    sys.exit(1 if FAIL_COUNT > 0 else 0)

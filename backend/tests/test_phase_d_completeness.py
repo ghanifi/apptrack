@@ -307,14 +307,15 @@ except Exception as e:
 # ====================================================================
 # SUMMARY
 # ====================================================================
-print(f"\n{'='*60}")
-print(f"  TOTAL: {PASS_COUNT + FAIL_COUNT}  |  PASSED: {PASS_COUNT}  |  FAILED: {FAIL_COUNT}")
-print(f"{'='*60}")
+if __name__ == "__main__":
+    print(f"\n{'='*60}")
+    print(f"  TOTAL: {PASS_COUNT + FAIL_COUNT}  |  PASSED: {PASS_COUNT}  |  FAILED: {FAIL_COUNT}")
+    print(f"{'='*60}")
 
-if FAIL_COUNT > 0:
-    print("\nFailed tests:")
-    for r in RESULTS:
-        if not r["passed"]:
-            print(f"  x {r['name']}: {r['detail']}")
+    if FAIL_COUNT > 0:
+        print("\nFailed tests:")
+        for r in RESULTS:
+            if not r["passed"]:
+                print(f"  x {r['name']}: {r['detail']}")
 
-sys.exit(1 if FAIL_COUNT > 0 else 0)
+    sys.exit(1 if FAIL_COUNT > 0 else 0)

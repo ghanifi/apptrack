@@ -375,18 +375,19 @@ except Exception as e:
 # ============================================================
 # SUMMARY
 # ============================================================
-total = results["pass"] + results["fail"]
-print("\n" + "=" * 70)
-print(f"  ENTERPRISE EVOLUTION TEST RESULTS (v0.8.0)")
-print(f"  Passed: {results['pass']}/{total}")
-print(f"  Failed: {results['fail']}/{total}")
-print("=" * 70)
+if __name__ == "__main__":
+    total = results["pass"] + results["fail"]
+    print("\n" + "=" * 70)
+    print(f"  ENTERPRISE EVOLUTION TEST RESULTS (v0.8.0)")
+    print(f"  Passed: {results['pass']}/{total}")
+    print(f"  Failed: {results['fail']}/{total}")
+    print("=" * 70)
 
-if results["fail"] > 0:
-    print("\n  Failed tests:")
-    for t in results["tests"]:
-        if t["status"] == "FAIL":
-            print(f"    [FAIL] {t['name']}: {t['detail']}")
+    if results["fail"] > 0:
+        print("\n  Failed tests:")
+        for t in results["tests"]:
+            if t["status"] == "FAIL":
+                print(f"    [FAIL] {t['name']}: {t['detail']}")
 
-print()
-sys.exit(0 if results["fail"] == 0 else 1)
+    print()
+    sys.exit(0 if results["fail"] == 0 else 1)

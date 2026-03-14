@@ -315,18 +315,19 @@ check("DAT-006: Billing plan change commits", "await db.commit()" in billing_src
 # ──────────────────────────────────────────
 # SUMMARY
 # ──────────────────────────────────────────
-total = passed + failed
-print(f"\n{'='*60}")
-print(f"  COST GUARD / ADMIN / BILLING TEST RESULTS")
-print(f"{'='*60}")
-print(f"  Passed: {passed}/{total}")
-print(f"  Failed: {failed}/{total}")
-print(f"{'='*60}")
+if __name__ == "__main__":
+    total = passed + failed
+    print(f"\n{'='*60}")
+    print(f"  COST GUARD / ADMIN / BILLING TEST RESULTS")
+    print(f"{'='*60}")
+    print(f"  Passed: {passed}/{total}")
+    print(f"  Failed: {failed}/{total}")
+    print(f"{'='*60}")
 
-if errors:
-    print("\nFailed tests:")
-    for e in errors:
-        print(f"  {e}")
+    if errors:
+        print("\nFailed tests:")
+        for e in errors:
+            print(f"  {e}")
 
-print(f"\nResult: {'ALL PASS' if failed == 0 else f'{failed} FAILURES'}")
-sys.exit(0 if failed == 0 else 1)
+    print(f"\nResult: {'ALL PASS' if failed == 0 else f'{failed} FAILURES'}")
+    sys.exit(0 if failed == 0 else 1)
