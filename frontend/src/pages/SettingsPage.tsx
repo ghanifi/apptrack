@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, Trash2, KeyRound, Github, Smartphone, Store, CreditCard, Bell, ArrowUpRight, Loader, Zap, Shield, Lock } from 'lucide-react'
+import { Check, Trash2, KeyRound, Github, Smartphone, Store, CreditCard, Bell, ArrowUpRight, Loader, Zap, Shield, Lock, Info } from 'lucide-react'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
 import clsx from 'clsx'
@@ -19,6 +19,8 @@ interface CredentialField {
   label: string
   placeholder: string
   type?: string
+  helpText?: string
+  helpUrl?: string
 }
 
 interface ProviderSection {
@@ -36,8 +38,20 @@ const PROVIDERS: ProviderSection[] = [
     icon: Smartphone,
     description: 'Build React Native & Expo apps via Expo Application Services.',
     fields: [
-      { key_name: 'EAS_TOKEN', label: 'EAS Access Token', placeholder: 'eas_xxxxxxxxxxxx' },
-      { key_name: 'EXPO_APP_ID', label: 'Expo App ID', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
+      {
+        key_name: 'EAS_TOKEN',
+        label: 'EAS Access Token',
+        placeholder: 'eas_xxxxxxxxxxxx',
+        helpText: 'expo.dev > Account Settings > Access Tokens > Create Token. CI/CD icin "Personal Access Token" olusturun.',
+        helpUrl: 'https://expo.dev/accounts/[account]/settings/access-tokens',
+      },
+      {
+        key_name: 'EXPO_APP_ID',
+        label: 'Expo App ID',
+        placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+        helpText: 'expo.dev > Projects > projenizi secin > sayfanin ust kismindaki ID. "app.json" dosyasindaki "extra.eas.projectId" alanidir.',
+        helpUrl: 'https://expo.dev',
+      },
     ],
   },
   {
@@ -46,16 +60,35 @@ const PROVIDERS: ProviderSection[] = [
     icon: Smartphone,
     description: 'Build Flutter apps via Codemagic CI/CD.',
     fields: [
-      { key_name: 'CODEMAGIC_TOKEN', label: 'API Access Token', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
-      { key_name: 'CODEMAGIC_APP_ID', label: 'App ID', placeholder: '64a1b2c3d4e5f6a7b8c9d0e1' },
+      {
+        key_name: 'CODEMAGIC_TOKEN',
+        label: 'API Access Token',
+        placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+        helpText: 'Codemagic > User Settings > Integrations > Codemagic API > Show. Token\'i kopyalayin.',
+        helpUrl: 'https://codemagic.io/settings',
+      },
+      {
+        key_name: 'CODEMAGIC_APP_ID',
+        label: 'App ID',
+        placeholder: '64a1b2c3d4e5f6a7b8c9d0e1',
+        helpText: 'Codemagic > uygulamanizi secin > Settings > App ID. URL\'deki son segment de App ID\'dir.',
+        helpUrl: 'https://codemagic.io/apps',
+      },
     ],
   },
   {
     provider: 'google_play',
     label: 'Google Play',
     icon: Store,
-    description: 'Deploy Android APK/AAB to Google Play Store.',
-    fields: [{ key_name: 'GOOGLE_PLAY_KEY_JSON', label: 'Service Account Key (JSON)', placeholder: '{ "type": "service_account", ... }', type: 'textarea' }],
+    description: 'Deploy Android AAB to Google Play Store.',
+    fields: [{
+      key_name: 'GOOGLE_PLAY_KEY_JSON',
+      label: 'Service Account Key (JSON)',
+      placeholder: '{ "type": "service_account", ... }',
+      type: 'textarea',
+      helpText: '1) Google Cloud Console > IAM & Admin > Service Accounts > Create\n2) Actions > Manage Keys > Add Key > JSON\n3) Google Play Console > Users & Permissions > Invite > service account e-posta adresini ekleyin ve "Release" izni verin.',
+      helpUrl: 'https://console.cloud.google.com/iam-admin/serviceaccounts',
+    }],
   },
   {
     provider: 'app_store',
@@ -63,9 +96,28 @@ const PROVIDERS: ProviderSection[] = [
     icon: Store,
     description: 'Deploy iOS IPA to App Store via App Store Connect API.',
     fields: [
-      { key_name: 'APP_STORE_KEY_ID', label: 'Key ID', placeholder: 'XXXXXXXXXX' },
-      { key_name: 'APP_STORE_ISSUER_ID', label: 'Issuer ID', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
-      { key_name: 'APP_STORE_PRIVATE_KEY', label: 'Private Key (.p8 content)', placeholder: '-----BEGIN PRIVATE KEY-----\n...', type: 'textarea' },
+      {
+        key_name: 'APP_STORE_KEY_ID',
+        label: 'Key ID',
+        placeholder: 'XXXXXXXXXX',
+        helpText: 'App Store Connect > Users and Access > Integrations > Team Keys > Generate API Key. Olusturulan key\'in "Key ID" sutunundaki deger.',
+        helpUrl: 'https://appstoreconnect.apple.com/access/integrations/api',
+      },
+      {
+        key_name: 'APP_STORE_ISSUER_ID',
+        label: 'Issuer ID',
+        placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+        helpText: 'App Store Connect > Users and Access > Integrations > sayfanin ust kismindaki "Issuer ID". Tum keyler icin aynidir.',
+        helpUrl: 'https://appstoreconnect.apple.com/access/integrations/api',
+      },
+      {
+        key_name: 'APP_STORE_PRIVATE_KEY',
+        label: 'Private Key (.p8 content)',
+        placeholder: '-----BEGIN PRIVATE KEY-----\n...',
+        type: 'textarea',
+        helpText: 'Key olusturduktan sonra "Download API Key" ile .p8 dosyasini indirin. Sadece 1 kez indirilebilir! Dosya icerigini buraya yapisttirin.',
+        helpUrl: 'https://developer.apple.com/documentation/appstoreconnectapi/creating-api-keys-for-app-store-connect-api',
+      },
     ],
   },
   {
@@ -74,9 +126,28 @@ const PROVIDERS: ProviderSection[] = [
     icon: Shield,
     description: 'Code signing credentials for building signed IPA files. Required for App Store submission.',
     fields: [
-      { key_name: 'IOS_CERT_P12_BASE64', label: 'Distribution Certificate (.p12, base64)', placeholder: 'Base64 encoded .p12 certificate', type: 'textarea' },
-      { key_name: 'IOS_CERT_PASSWORD', label: 'Certificate Password', placeholder: 'P12 export password' },
-      { key_name: 'IOS_PROVISIONING_PROFILE_BASE64', label: 'Provisioning Profile (base64)', placeholder: 'Base64 encoded .mobileprovision', type: 'textarea' },
+      {
+        key_name: 'IOS_CERT_P12_BASE64',
+        label: 'Distribution Certificate (.p12, base64)',
+        placeholder: 'Base64 encoded .p12 certificate',
+        type: 'textarea',
+        helpText: 'Mac\'te Keychain Access > My Certificates > iOS Distribution sertifikasini secin > sag tik > Export (.p12). Sonra terminalde: base64 -i certificate.p12 | pbcopy',
+        helpUrl: 'https://developer.apple.com/help/account/certificates/certificates-overview',
+      },
+      {
+        key_name: 'IOS_CERT_PASSWORD',
+        label: 'Certificate Password',
+        placeholder: 'P12 export password',
+        helpText: 'Keychain Access\'ten .p12 dosyasini disari aktarirken belirlediginiz sifre. Bos birakmadiysiniz buraya ayni sifreyi girin.',
+      },
+      {
+        key_name: 'IOS_PROVISIONING_PROFILE_BASE64',
+        label: 'Provisioning Profile (base64)',
+        placeholder: 'Base64 encoded .mobileprovision',
+        type: 'textarea',
+        helpText: 'Apple Developer > Certificates, Identifiers & Profiles > Profiles > Distribution profilinizi secin > Download. Sonra terminalde: base64 -i profile.mobileprovision | pbcopy',
+        helpUrl: 'https://developer.apple.com/account/resources/profiles/list',
+      },
     ],
   },
   {
@@ -85,13 +156,65 @@ const PROVIDERS: ProviderSection[] = [
     icon: Lock,
     description: 'Keystore credentials for building signed AAB files. Required for Play Store submission.',
     fields: [
-      { key_name: 'ANDROID_KEYSTORE_BASE64', label: 'Keystore File (base64)', placeholder: 'Base64 encoded .keystore or .jks file', type: 'textarea' },
-      { key_name: 'ANDROID_KEYSTORE_PASSWORD', label: 'Keystore Password', placeholder: 'Keystore password' },
-      { key_name: 'ANDROID_KEY_ALIAS', label: 'Key Alias', placeholder: 'my-key-alias' },
-      { key_name: 'ANDROID_KEY_PASSWORD', label: 'Key Password', placeholder: 'Key password' },
+      {
+        key_name: 'ANDROID_KEYSTORE_BASE64',
+        label: 'Keystore File (base64)',
+        placeholder: 'Base64 encoded .keystore or .jks file',
+        type: 'textarea',
+        helpText: 'Keystore olusturma: keytool -genkey -v -keystore release.keystore -alias my-alias -keyalg RSA -keysize 2048 -validity 10000. Sonra: base64 -i release.keystore | pbcopy (Mac) veya base64 release.keystore (Linux)',
+        helpUrl: 'https://developer.android.com/studio/publish/app-signing',
+      },
+      {
+        key_name: 'ANDROID_KEYSTORE_PASSWORD',
+        label: 'Keystore Password',
+        placeholder: 'Keystore password',
+        helpText: 'keytool komutuyla keystore olustururken -storepass ile belirlediginiz sifre.',
+      },
+      {
+        key_name: 'ANDROID_KEY_ALIAS',
+        label: 'Key Alias',
+        placeholder: 'my-key-alias',
+        helpText: 'keytool komutuyla keystore olustururken -alias ile belirlediginiz isim. Varsayilan olarak "my-alias" veya "upload" kullanilir.',
+      },
+      {
+        key_name: 'ANDROID_KEY_PASSWORD',
+        label: 'Key Password',
+        placeholder: 'Key password',
+        helpText: 'keytool komutuyla keystore olustururken -keypass ile belirlediginiz sifre. Genellikle keystore sifresiyle aynidir.',
+      },
     ],
   },
 ]
+
+function InfoTooltip({ text, url }: { text: string; url?: string }) {
+  const [show, setShow] = useState(false)
+  return (
+    <span
+      className="relative inline-flex"
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      <Info size={13} className="text-gray-500 hover:text-blue-400 cursor-help transition-colors" />
+      {show && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-72 p-3 bg-gray-900 border border-gray-600 rounded-lg shadow-xl text-xs text-gray-300 whitespace-pre-line leading-relaxed">
+          {text}
+          {url && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 mt-2 text-blue-400 hover:text-blue-300 hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ArrowUpRight size={11} /> Ilgili sayfa
+            </a>
+          )}
+          <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-gray-600" />
+        </div>
+      )}
+    </span>
+  )
+}
 
 function ProviderCard({ section, credentials }: { section: ProviderSection; credentials: Credential[] }) {
   const queryClient = useQueryClient()
@@ -142,7 +265,10 @@ function ProviderCard({ section, credentials }: { section: ProviderSection; cred
           return (
             <div key={field.key_name}>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs text-gray-400">{field.label}</label>
+                <label className="flex items-center gap-1.5 text-xs text-gray-400">
+                  {field.label}
+                  {field.helpText && <InfoTooltip text={field.helpText} url={field.helpUrl} />}
+                </label>
                 {isConnected && (
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-green-400">Saved</span>
