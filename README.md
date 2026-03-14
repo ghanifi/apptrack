@@ -298,6 +298,24 @@ AppTrack uses GitHub's hosted `macos-latest` runner for iOS builds — **no Mac 
 - **iOS Signing Management**: P12 certificate + provisioning profile management via UI
 - **Android Signing**: Keystore upload and signing key forwarding to build workflows
 - **Cost Guard**: Build cost estimation and budget enforcement per provider
+- **2026 Store Compliance**: Auto PrivacyInfo.xcprivacy, ENABLE_BITCODE=NO, AAB format, targetSdkVersion 35, Google Checks, pre-publish checklist
+
+## 2026 Store Compliance
+
+AppTrack automatically enforces Apple and Google's 2026 requirements during build:
+
+| Requirement | Platform | How AppTrack Handles It |
+|-------------|----------|------------------------|
+| PrivacyInfo.xcprivacy | iOS | Auto-generated if missing |
+| ENABLE_BITCODE=NO | iOS | Enforced in build settings |
+| Latest Xcode SDK | iOS | Auto-selected on runner |
+| App Store Connect upload | iOS | Auto-upload to TestFlight (if API key provided) |
+| AAB format (not APK) | Android | `bundleRelease` for all release builds |
+| targetSdkVersion >= 35 | Android | Auto-checked and fixed if below 35 |
+| Play App Signing | Android | Keystore forwarded to build workflow |
+| Google Checks scan | Android | Optional CI/CD compliance step |
+
+**Pre-publish checklist**: `GET /api/projects/{id}/compliance-checklist` returns pass/fail/warning for all requirements. Also available in the project detail UI.
 
 ## Architecture
 

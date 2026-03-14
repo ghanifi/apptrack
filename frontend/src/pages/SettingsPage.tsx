@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, Trash2, KeyRound, Github, Smartphone, Store, CreditCard, Bell, ArrowUpRight, Loader, Zap } from 'lucide-react'
+import { Check, Trash2, KeyRound, Github, Smartphone, Store, CreditCard, Bell, ArrowUpRight, Loader, Zap, Shield, Lock } from 'lucide-react'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
 import clsx from 'clsx'
@@ -66,6 +66,29 @@ const PROVIDERS: ProviderSection[] = [
       { key_name: 'APP_STORE_KEY_ID', label: 'Key ID', placeholder: 'XXXXXXXXXX' },
       { key_name: 'APP_STORE_ISSUER_ID', label: 'Issuer ID', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
       { key_name: 'APP_STORE_PRIVATE_KEY', label: 'Private Key (.p8 content)', placeholder: '-----BEGIN PRIVATE KEY-----\n...', type: 'textarea' },
+    ],
+  },
+  {
+    provider: 'ios_signing',
+    label: 'iOS Signing',
+    icon: Shield,
+    description: 'Code signing credentials for building signed IPA files. Required for App Store submission.',
+    fields: [
+      { key_name: 'IOS_CERT_P12_BASE64', label: 'Distribution Certificate (.p12, base64)', placeholder: 'Base64 encoded .p12 certificate', type: 'textarea' },
+      { key_name: 'IOS_CERT_PASSWORD', label: 'Certificate Password', placeholder: 'P12 export password' },
+      { key_name: 'IOS_PROVISIONING_PROFILE_BASE64', label: 'Provisioning Profile (base64)', placeholder: 'Base64 encoded .mobileprovision', type: 'textarea' },
+    ],
+  },
+  {
+    provider: 'android_signing',
+    label: 'Android Signing',
+    icon: Lock,
+    description: 'Keystore credentials for building signed AAB files. Required for Play Store submission.',
+    fields: [
+      { key_name: 'ANDROID_KEYSTORE_BASE64', label: 'Keystore File (base64)', placeholder: 'Base64 encoded .keystore or .jks file', type: 'textarea' },
+      { key_name: 'ANDROID_KEYSTORE_PASSWORD', label: 'Keystore Password', placeholder: 'Keystore password' },
+      { key_name: 'ANDROID_KEY_ALIAS', label: 'Key Alias', placeholder: 'my-key-alias' },
+      { key_name: 'ANDROID_KEY_PASSWORD', label: 'Key Password', placeholder: 'Key password' },
     ],
   },
 ]
