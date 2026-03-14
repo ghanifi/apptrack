@@ -40,6 +40,7 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://postgres:testpassword@localhost:5432/apptrack_test
       SECRET_KEY: test-secret-key-for-ci
       FERNET_SALT: dGVzdC1zYWx0LWZvci1jaQ==
+      REDIS_URL: ""
       ENVIRONMENT: testing
     steps:
       - uses: actions/checkout@v4
