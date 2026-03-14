@@ -31,7 +31,6 @@ interface Credential {
 
 type Step = 'connect' | 'select' | 'detect' | 'preview' | 'credentials' | 'build' | 'deploy'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const STEP_META: Record<Step, { num: number; title: string; icon: React.ComponentType<any> }> = {
   connect: { num: 1, title: 'Connect GitHub', icon: Github },
   select: { num: 2, title: 'Select Repository', icon: Search },
