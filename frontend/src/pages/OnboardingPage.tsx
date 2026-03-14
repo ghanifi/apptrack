@@ -90,26 +90,26 @@ const STORE_FIELDS: Record<CredentialTab, { provider: string; label: string; des
   ios_signing: {
     provider: 'ios_signing',
     label: 'iOS Signing',
-    description: 'Required for building iOS apps. Needed for Capacitor, Ionic, and Cordova iOS builds.',
+    description: 'Optional here — you can auto-generate certificates later in Settings if you have App Store Connect keys.',
     fields: [
       {
         key_name: 'IOS_CERT_P12_BASE64',
         label: 'Distribution Certificate (.p12, base64)',
         placeholder: 'MIIKYgIBAzCCCi...',
-        help: 'Open Keychain Access > My Certificates > Export your iOS Distribution certificate as .p12. Then base64 encode: base64 -i cert.p12',
+        help: 'Tip: Skip this — go to Settings after setup and use "Auto-Generate" (no Mac needed). Manual: Export .p12 from Keychain Access, then base64 encode it.',
         type: 'textarea',
       },
       {
         key_name: 'IOS_CERT_PASSWORD',
         label: 'Certificate Password',
         placeholder: 'Password used when exporting .p12',
-        help: 'The password you set when exporting the .p12 certificate from Keychain Access.',
+        help: 'Auto-set if you use Auto-Generate in Settings. For manual: the password set when exporting .p12.',
       },
       {
         key_name: 'IOS_PROVISIONING_PROFILE_BASE64',
         label: 'Provisioning Profile (base64)',
         placeholder: 'MIIFfDCCBGSgA...',
-        help: 'Download from Apple Developer Portal > Certificates, Identifiers & Profiles > Profiles. Then base64 encode: base64 -i profile.mobileprovision',
+        help: 'Auto-generated in Settings if you provide a Bundle ID. Manual: Download from Apple Developer Portal > Profiles, then base64 encode.',
         type: 'textarea',
       },
     ],

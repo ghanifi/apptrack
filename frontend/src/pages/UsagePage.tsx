@@ -55,7 +55,7 @@ export default function UsagePage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl">
+    <div className="p-8 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-white">Usage & Billing</h1>
         <span className={`px-3 py-1 rounded-full text-sm font-medium text-white ${planColors[data.plan] || 'bg-zinc-600'}`}>

@@ -80,9 +80,9 @@ BUILD_ERROR_PATTERNS: dict[str, list[dict]] = {
             "id": "xcode_signing",
             "pattern": r"Code Sign error|No signing certificate|Signing Identity|provisioning profile",
             "diagnosis": "Xcode code signing failed. The signing certificate or provisioning profile is missing or expired.",
-            "fix": "Ensure a valid distribution certificate is installed in Keychain Access. "
-                   "Update the provisioning profile in Apple Developer Portal and re-download it. "
-                   "Set the correct team and bundle identifier in Xcode signing settings.",
+            "fix": "Go to Settings > iOS Signing and use 'Auto-Generate Certificates' (no Mac needed). "
+                   "Or manually upload a valid distribution certificate and provisioning profile. "
+                   "Ensure the correct team and bundle identifier match your Apple Developer account.",
             "auto_fix": False,
         },
         {

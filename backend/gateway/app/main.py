@@ -23,6 +23,7 @@ from app.routers import billing as billing_router
 from app.routers import credential_validation, deploy_simulator, metrics_kpi, canary, compliance
 from app.routers import build_diagnosis, cost_prediction, provider_recommendation
 from app.routers import store_metadata
+from app.routers import auto_signing as auto_signing_router
 from app.routers import support as support_router
 from app.routers import organizations as organizations_router
 from app.routers import sso as sso_router
@@ -341,6 +342,7 @@ app.include_router(incidents_router.router)
 app.include_router(releases_router.router)
 app.include_router(cache_router.router)
 app.include_router(crash_reporting_router.router)
+app.include_router(auto_signing_router.router, prefix="/api/signing", tags=["auto-signing"])
 app.include_router(ws_router)
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)

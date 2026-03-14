@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, Trash2, KeyRound, Github, Smartphone, Store, CreditCard, Bell, ArrowUpRight, Loader, Zap, Shield, Lock, Info } from 'lucide-react'
+import { Check, Trash2, KeyRound, Github, Smartphone, Store, CreditCard, Bell, ArrowUpRight, Loader, Zap, Shield, Lock, Info, Wand2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
 import clsx from 'clsx'
@@ -124,28 +124,28 @@ const PROVIDERS: ProviderSection[] = [
     provider: 'ios_signing',
     label: 'iOS Signing',
     icon: Shield,
-    description: 'Code signing credentials for building signed IPA files. Required for App Store submission.',
+    description: 'Code signing credentials for building signed IPA files. You can enter manually or use Auto-Generate below.',
     fields: [
       {
         key_name: 'IOS_CERT_P12_BASE64',
         label: 'Distribution Certificate (.p12, base64)',
         placeholder: 'Base64 encoded .p12 certificate',
         type: 'textarea',
-        helpText: 'On Mac: Keychain Access > My Certificates > select your iOS Distribution certificate > right-click > Export (.p12). Then in terminal: base64 -i certificate.p12 | pbcopy',
+        helpText: 'Tip: Use "Auto-Generate" below to create this automatically — no Mac needed. Manual: Keychain Access > My Certificates > Export (.p12). Convert: Mac: base64 -i cert.p12 | pbcopy / Windows: certutil -encode cert.p12 tmp.b64 / Linux: base64 cert.p12',
         helpUrl: 'https://developer.apple.com/help/account/certificates/certificates-overview',
       },
       {
         key_name: 'IOS_CERT_PASSWORD',
         label: 'Certificate Password',
         placeholder: 'P12 export password',
-        helpText: 'The password you set when exporting the .p12 file from Keychain Access. Enter the same password here.',
+        helpText: 'Auto-generated if you use Auto-Generate. For manual: the password set when exporting .p12 from Keychain Access.',
       },
       {
         key_name: 'IOS_PROVISIONING_PROFILE_BASE64',
         label: 'Provisioning Profile (base64)',
         placeholder: 'Base64 encoded .mobileprovision',
         type: 'textarea',
-        helpText: 'Apple Developer > Certificates, Identifiers & Profiles > Profiles > select your Distribution profile > Download. Then in terminal: base64 -i profile.mobileprovision | pbcopy',
+        helpText: 'Auto-generated if you provide a Bundle ID during Auto-Generate. Manual: Apple Developer > Profiles > Download .mobileprovision. Convert: Mac: base64 -i file | pbcopy / Windows: certutil -encode file tmp.b64 / Linux: base64 file',
         helpUrl: 'https://developer.apple.com/account/resources/profiles/list',
       },
     ],
@@ -154,33 +154,33 @@ const PROVIDERS: ProviderSection[] = [
     provider: 'android_signing',
     label: 'Android Signing',
     icon: Lock,
-    description: 'Keystore credentials for building signed AAB files. Required for Play Store submission.',
+    description: 'Keystore credentials for building signed AAB files. You can enter manually or use Auto-Generate below.',
     fields: [
       {
         key_name: 'ANDROID_KEYSTORE_BASE64',
         label: 'Keystore File (base64)',
         placeholder: 'Base64 encoded .keystore or .jks file',
         type: 'textarea',
-        helpText: 'Generate: keytool -genkey -v -keystore release.keystore -alias my-alias -keyalg RSA -keysize 2048 -validity 10000\nThen encode: base64 -i release.keystore | pbcopy (Mac) or base64 release.keystore (Linux)',
+        helpText: 'Tip: Use "Auto-Generate" below to create this automatically — no keytool needed. Manual: keytool -genkey -v -keystore release.keystore -alias my-alias -keyalg RSA -keysize 2048 -validity 10000. Convert: Mac: base64 -i file | pbcopy / Windows: certutil -encode file tmp.b64 / Linux: base64 file',
         helpUrl: 'https://developer.android.com/studio/publish/app-signing',
       },
       {
         key_name: 'ANDROID_KEYSTORE_PASSWORD',
         label: 'Keystore Password',
         placeholder: 'Keystore password',
-        helpText: 'The password you set with -storepass when generating the keystore via keytool.',
+        helpText: 'Auto-generated if you use Auto-Generate. For manual: the password set with -storepass when generating the keystore via keytool.',
       },
       {
         key_name: 'ANDROID_KEY_ALIAS',
         label: 'Key Alias',
         placeholder: 'my-key-alias',
-        helpText: 'The alias you set with -alias when generating the keystore. Common defaults are "my-alias" or "upload".',
+        helpText: 'Auto-generated if you use Auto-Generate (default: "upload"). For manual: the alias set with -alias when generating the keystore.',
       },
       {
         key_name: 'ANDROID_KEY_PASSWORD',
         label: 'Key Password',
         placeholder: 'Key password',
-        helpText: 'The password you set with -keypass when generating the keystore. Often the same as the keystore password.',
+        helpText: 'Auto-generated if you use Auto-Generate (same as keystore password). For manual: the password set with -keypass.',
       },
     ],
   },
@@ -330,6 +330,227 @@ function ProviderCard({ section, credentials }: { section: ProviderSection; cred
           )
         })}
       </div>
+    </div>
+  )
+}
+
+function AutoGenerateIOS({ credentials }: { credentials: Credential[] }) {
+  const queryClient = useQueryClient()
+  const [bundleId, setBundleId] = useState('')
+  const [expanded, setExpanded] = useState(false)
+
+  const hasAppStoreKeys = ['APP_STORE_KEY_ID', 'APP_STORE_ISSUER_ID', 'APP_STORE_PRIVATE_KEY'].every(
+    (k) => credentials.some((c) => c.provider === 'app_store' && c.key_name === k)
+  )
+
+  const hasIosSigning = ['IOS_CERT_P12_BASE64', 'IOS_CERT_PASSWORD'].every(
+    (k) => credentials.some((c) => c.provider === 'ios_signing' && c.key_name === k)
+  )
+
+  const generateMutation = useMutation({
+    mutationFn: (data: { bundle_id?: string }) =>
+      api.post('/signing/auto-generate-ios', data).then((r) => r.data),
+    onSuccess: (data) => {
+      toast.success(data.message)
+      queryClient.invalidateQueries({ queryKey: ['credentials'] })
+      setExpanded(false)
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to generate certificates')
+    },
+  })
+
+  return (
+    <div className="bg-gradient-to-r from-blue-900/20 to-purple-900/20 border border-blue-800/40 rounded-xl p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-blue-600/20 rounded-lg flex items-center justify-center">
+            <Wand2 size={18} className="text-blue-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-blue-100">Auto-Generate iOS Certificates</h3>
+            <p className="text-xs text-blue-300/70">
+              {!hasAppStoreKeys
+                ? 'First save your App Store Connect keys above, then generate certificates here — no Mac needed.'
+                : hasIosSigning
+                  ? 'Certificates already generated. You can regenerate if needed.'
+                  : 'No Mac required — generates certificates automatically via Apple API.'}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => hasAppStoreKeys ? setExpanded(!expanded) : toast.error('Save your App Store Connect Key ID, Issuer ID, and Private Key (.p8) first.')}
+          className={clsx(
+            'px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2',
+            expanded
+              ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              : !hasAppStoreKeys
+                ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700 text-white'
+          )}
+        >
+          <Wand2 size={14} />
+          {expanded ? 'Cancel' : hasIosSigning ? 'Regenerate' : 'Generate'}
+        </button>
+      </div>
+
+      {expanded && hasAppStoreKeys && (
+        <div className="mt-4 pt-4 border-t border-blue-800/30 space-y-3">
+          <div>
+            <label className="text-xs text-blue-300/70 block mb-1">
+              Bundle ID <span className="text-gray-500">(optional — for provisioning profile)</span>
+            </label>
+            <input
+              type="text"
+              value={bundleId}
+              onChange={(e) => setBundleId(e.target.value)}
+              placeholder="com.yourcompany.appname"
+              className="w-full bg-gray-800/80 border border-blue-800/40 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => generateMutation.mutate({ bundle_id: bundleId || undefined })}
+              disabled={generateMutation.isPending}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {generateMutation.isPending ? (
+                <><Loader size={14} className="animate-spin" /> Generating...</>
+              ) : (
+                <><Wand2 size={14} /> Generate Certificates</>
+              )}
+            </button>
+            <p className="text-xs text-blue-300/50">
+              Uses your App Store Connect API key to create certificates server-side.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AutoGenerateAndroid({ credentials }: { credentials: Credential[] }) {
+  const queryClient = useQueryClient()
+  const [expanded, setExpanded] = useState(false)
+  const [keyAlias, setKeyAlias] = useState('upload')
+  const [keystorePassword, setKeystorePassword] = useState('')
+  const [organization, setOrganization] = useState('')
+
+  const hasAndroidSigning = ['ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS'].every(
+    (k) => credentials.some((c) => c.provider === 'android_signing' && c.key_name === k)
+  )
+
+  const generateMutation = useMutation({
+    mutationFn: (data: { key_alias: string; keystore_password: string; organization?: string }) =>
+      api.post('/signing/auto-generate-android', data).then((r) => r.data),
+    onSuccess: (data) => {
+      toast.success(data.message)
+      queryClient.invalidateQueries({ queryKey: ['credentials'] })
+      setExpanded(false)
+      setKeystorePassword('')
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to generate keystore')
+    },
+  })
+
+  return (
+    <div className="bg-gradient-to-r from-green-900/20 to-emerald-900/20 border border-green-800/40 rounded-xl p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-green-600/20 rounded-lg flex items-center justify-center">
+            <Wand2 size={18} className="text-green-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-green-100">Auto-Generate Android Keystore</h3>
+            <p className="text-xs text-green-300/70">
+              {hasAndroidSigning
+                ? 'Keystore already generated. You can regenerate if needed.'
+                : 'No keytool or JDK needed — generates release keystore automatically on the server.'}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className={clsx(
+            'px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2',
+            expanded
+              ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              : 'bg-green-600 hover:bg-green-700 text-white'
+          )}
+        >
+          <Wand2 size={14} />
+          {expanded ? 'Cancel' : hasAndroidSigning ? 'Regenerate' : 'Generate'}
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="mt-4 pt-4 border-t border-green-800/30 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-green-300/70 block mb-1">Key Alias</label>
+              <input
+                type="text"
+                value={keyAlias}
+                onChange={(e) => setKeyAlias(e.target.value)}
+                placeholder="upload"
+                className="w-full bg-gray-800/80 border border-green-800/40 rounded-lg px-3 py-2 text-sm outline-none focus:border-green-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-green-300/70 block mb-1">
+                Keystore Password <span className="text-gray-500">(min 6 chars)</span>
+              </label>
+              <input
+                type="password"
+                value={keystorePassword}
+                onChange={(e) => setKeystorePassword(e.target.value)}
+                placeholder="Enter password"
+                className="w-full bg-gray-800/80 border border-green-800/40 rounded-lg px-3 py-2 text-sm outline-none focus:border-green-500 transition-colors"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-green-300/70 block mb-1">
+              Organization <span className="text-gray-500">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={organization}
+              onChange={(e) => setOrganization(e.target.value)}
+              placeholder="Your Company Name"
+              className="w-full bg-gray-800/80 border border-green-800/40 rounded-lg px-3 py-2 text-sm outline-none focus:border-green-500 transition-colors"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                if (!keystorePassword || keystorePassword.length < 6) {
+                  toast.error('Keystore password must be at least 6 characters.')
+                  return
+                }
+                generateMutation.mutate({
+                  key_alias: keyAlias || 'upload',
+                  keystore_password: keystorePassword,
+                  ...(organization ? { organization } : {}),
+                })
+              }}
+              disabled={generateMutation.isPending}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {generateMutation.isPending ? (
+                <><Loader size={14} className="animate-spin" /> Generating...</>
+              ) : (
+                <><Wand2 size={14} /> Generate Keystore</>
+              )}
+            </button>
+            <p className="text-xs text-green-300/50">
+              Generates RSA 2048 key + self-signed certificate (25 year validity).
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -584,7 +805,7 @@ export default function SettingsPage() {
   })
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="p-8 max-w-3xl mx-auto">
       <div className="mb-8">
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="text-gray-400 text-sm mt-1">Manage your build provider credentials and integrations.</p>
@@ -631,7 +852,15 @@ export default function SettingsPage() {
         ) : (
           <div className="space-y-4">
             {PROVIDERS.map((section) => (
-              <ProviderCard key={section.provider} section={section} credentials={credentials} />
+              <React.Fragment key={section.provider}>
+                <ProviderCard section={section} credentials={credentials} />
+                {section.provider === 'ios_signing' && (
+                  <AutoGenerateIOS credentials={credentials} />
+                )}
+                {section.provider === 'android_signing' && (
+                  <AutoGenerateAndroid credentials={credentials} />
+                )}
+              </React.Fragment>
             ))}
           </div>
         )}

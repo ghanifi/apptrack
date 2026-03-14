@@ -724,8 +724,8 @@ async def get_compliance_checklist(
             "category": "signing",
             "title": "iOS Distribution Certificate & Provisioning Profile",
             "status": "pass" if (ios_cert and ios_profile) else "fail",
-            "message": "Signing credentials configured" if (ios_cert and ios_profile) else "Missing iOS signing credentials — required for App Store submission",
-            "fix_url": "/settings/credentials",
+            "message": "Signing credentials configured" if (ios_cert and ios_profile) else "Missing iOS signing credentials — use Auto-Generate in Settings (no Mac needed)",
+            "fix_url": "/dashboard/settings",
         })
 
         # App Store Connect API
