@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import json
@@ -40,12 +41,15 @@ class ConfigurationError(Exception):
 
 
 WORKFLOW_MAP = {
+    "flutter":   {"ios": "build-flutter-ios.yml",      "android": "build-flutter-android.yml",   "both": "build-flutter-android.yml"},
     "swift":     {"ios": "build-ios.yml",              "android": None,                         "both": "build-ios.yml"},
     "kotlin":    {"ios": None,                         "android": "build-android.yml",           "both": "build-android.yml"},
     "capacitor": {"ios": "build-capacitor-ios.yml",    "android": "build-capacitor-android.yml", "both": "build-capacitor-android.yml"},
     "ionic":     {"ios": "build-capacitor-ios.yml",    "android": "build-capacitor-android.yml", "both": "build-capacitor-android.yml"},
     "cordova":   {"ios": "build-capacitor-ios.yml",    "android": "build-capacitor-android.yml", "both": "build-capacitor-android.yml"},
     "pwa":       {"ios": None,                         "android": "build-pwa-android.yml",       "both": "build-pwa-android.yml", "web": "build-pwa.yml"},
+    "expo":      {"ios": "build-expo-ios.yml",         "android": "build-expo-android.yml",      "both": "build-expo-android.yml"},
+    "react_native": {"ios": "build-rn-ios.yml",        "android": "build-rn-android.yml",        "both": "build-rn-android.yml"},
 }
 
 
@@ -75,8 +79,11 @@ async def _ensure_workflow_exists(
     branch: str,
     github_token: str,
     runner_label: str = "macos-latest",
-) -> bool:
-    """Check if workflow exists in user's repo; if not, auto-create it via GitHub API."""
+) -> tuple[bool, bool]:
+    """Check if workflow exists in user's repo; if not, auto-create it via GitHub API.
+
+    Returns (exists, was_just_created) tuple.
+    """
     headers = {
         "Authorization": f"Bearer {github_token}",
         "Accept": "application/vnd.github.v3+json",
@@ -86,11 +93,11 @@ async def _ensure_workflow_exists(
         headers=headers,
     )
     if check.status_code != 404:
-        return check.status_code == 200
+        return (check.status_code == 200, False)
 
     template_content = WORKFLOW_TEMPLATES.get(workflow_file)
     if not template_content:
-        return False
+        return (False, False)
 
     # Replace self-hosted runner with dynamic runner label
     template_content = template_content.replace(
@@ -110,9 +117,9 @@ async def _ensure_workflow_exists(
     )
     if put_resp.status_code in (200, 201):
         logger.info("Auto-created workflow %s in %s (runner=%s)", workflow_file, owner_repo, runner_label)
-        return True
+        return (True, True)
     logger.warning("Failed to create workflow %s in %s: %s", workflow_file, owner_repo, put_resp.status_code)
-    return False
+    return (False, False)
 
 
 _channel: aio_pika.abc.AbstractChannel | None = None
@@ -271,8 +278,10 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
 
     owner_repo = ""
     if "github.com/" in repo_url:
-        parts = repo_url.rstrip("/").rstrip(".git").split("github.com/")[-1]
-        owner_repo = parts
+        raw = repo_url.rstrip("/").split("github.com/")[-1]
+        if raw.endswith(".git"):
+            raw = raw[:-4]
+        owner_repo = raw
 
     if not github_token:
         raise ConfigurationError(
@@ -332,7 +341,10 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
         logger.warning("Build %s: No Android signing credentials — Play Store requires signed AAB (Play App Signing)", build_id)
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        workflow_ready = await _ensure_workflow_exists(client, owner_repo, workflow_file, branch, github_token, runner_label)
+        workflow_ready, just_created = await _ensure_workflow_exists(client, owner_repo, workflow_file, branch, github_token, runner_label)
+        if just_created:
+            logger.info("Workflow just created, waiting 10s for GitHub to register it...")
+            await asyncio.sleep(10)
         if not workflow_ready:
             logger.error("Workflow file %s not found and could not be auto-created in %s", workflow_file, owner_repo)
             await publish_event(channel, "build.failed", {
@@ -492,10 +504,16 @@ async def start_consumer():
     _channel = await connection.channel()
     await _channel.set_qos(prefetch_count=5)
 
+    queue_args = {
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "dead_letter_queue",
+        "x-message-ttl": 86400000,
+    }
+
     trigger_queue = await _channel.declare_queue("build.triggered", durable=True)
     await trigger_queue.consume(lambda msg: handle_build_triggered(msg, _channel))
 
-    finished_queue = await _channel.declare_queue("build.finished", durable=True)
+    finished_queue = await _channel.declare_queue("build.finished", durable=True, arguments=queue_args)
     await finished_queue.consume(lambda msg: handle_build_finished_hook(msg, _channel))
 
     logger.info("Build consumer started on build.triggered + build.finished")

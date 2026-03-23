@@ -163,7 +163,8 @@ async def deploy(
         )
 
     if build.finished_at:
-        age = datetime.utcnow() - build.finished_at
+        finished = build.finished_at.replace(tzinfo=None) if build.finished_at.tzinfo else build.finished_at
+        age = datetime.utcnow() - finished
         if age > timedelta(hours=ARTIFACT_MAX_AGE_HOURS):
             raise HTTPException(
                 status_code=400,

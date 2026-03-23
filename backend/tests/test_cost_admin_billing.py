@@ -7,8 +7,12 @@ import hashlib
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-GATEWAY = os.path.join(os.path.dirname(__file__), "..", "gateway")
-SERVICES = os.path.join(os.path.dirname(__file__), "..", "services")
+_base = os.path.join(os.path.dirname(__file__), "..")
+# Support both local (backend/gateway/) and container (/app/) layouts
+_gw_candidate = os.path.join(_base, "gateway")
+GATEWAY = _gw_candidate if os.path.isdir(_gw_candidate) else _base
+_svc_candidate = os.path.join(_base, "services")
+SERVICES = _svc_candidate if os.path.isdir(_svc_candidate) else os.path.join(_base, "..", "services")
 
 passed = 0
 failed = 0

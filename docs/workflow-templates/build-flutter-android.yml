@@ -1,0 +1,103 @@
+name: AppTrack Flutter Android Build
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        required: true
+        type: string
+      platform:
+        required: false
+        type: string
+        default: 'android'
+      project_id:
+        required: false
+        type: string
+      callback_url:
+        required: false
+        type: string
+      android_keystore_base64:
+        required: false
+        type: string
+      android_keystore_password:
+        required: false
+        type: string
+      android_key_alias:
+        required: false
+        type: string
+      android_key_password:
+        required: false
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark build_id
+        run: echo "APPTRACK_BUILD_ID=${{ inputs.build_id }}"
+
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Ensure Android platform exists
+        run: |
+          if [ ! -d "android" ]; then
+            echo "android/ not found — adding Android platform..."
+            PKG_NAME=$(grep '^name:' pubspec.yaml | awk '{print $2}' | tr -d '\r')
+            flutter create --platforms=android --org=com.apptrack --project-name="$PKG_NAME" . 2>&1 || true
+            if [ -d "android" ]; then
+              echo "Android platform added for $PKG_NAME"
+            else
+              echo "ERROR: Failed to generate Android platform"
+              exit 1
+            fi
+          fi
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run tests
+        run: flutter test --no-pub
+        continue-on-error: true
+
+      - name: Setup Android signing
+        if: inputs.android_keystore_base64 != ''
+        run: |
+          echo "${{ inputs.android_keystore_base64 }}" | base64 -d > android/app/upload-keystore.jks
+          cat > android/key.properties << EOF
+          storePassword=${{ inputs.android_keystore_password }}
+          keyPassword=${{ inputs.android_key_password }}
+          keyAlias=${{ inputs.android_key_alias }}
+          storeFile=upload-keystore.jks
+          EOF
+
+      - name: Build APK (debug)
+        if: inputs.android_keystore_base64 == ''
+        run: flutter build apk --debug
+
+      - name: Build AAB (release)
+        if: inputs.android_keystore_base64 != ''
+        run: flutter build appbundle --release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-android-build
+          path: |
+            build/app/outputs/flutter-apk/*.apk
+            build/app/outputs/bundle/release/*.aab
+          retention-days: 7
+
+      - name: Notify AppTrack
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          BUILD_STATUS="success"
+          if [ "$STATUS" != "success" ]; then BUILD_STATUS="failed"; fi
+          curl -s -X POST "${{ inputs.callback_url }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"build_id\":\"${{ inputs.build_id }}\",\"status\":\"$BUILD_STATUS\",\"provider\":\"github_actions\"}" || true

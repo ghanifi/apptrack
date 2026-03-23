@@ -27,17 +27,20 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # Detection rules ordered by priority (first match wins)
+# Hybrid frameworks MUST come before native because hybrid projects
+# also contain native indicators (e.g. Capacitor has build.gradle + .xcodeproj)
 FRAMEWORK_RULES = [
-    # Native mobile
+    # Cross-platform
     ("flutter", ["pubspec.yaml"], 0.98),
     ("expo", ["app.json", "app.config.js", "app.config.ts"], 0.97),
     ("react_native", ["package.json"], 0.85),
-    ("kotlin", ["build.gradle", "build.gradle.kts"], 0.97),
-    ("swift", [".xcodeproj", ".xcworkspace"], 0.97),
-    # Hybrid mobile (web → native via Capacitor/Cordova/Ionic)
+    # Hybrid mobile — checked BEFORE native (Capacitor projects contain build.gradle/.xcodeproj)
     ("capacitor", ["capacitor.config.ts", "capacitor.config.json", "capacitor.config.js"], 0.95),
     ("ionic", ["package.json"], 0.90),
     ("cordova", ["config.xml"], 0.90),
+    # Native mobile — only matched if no hybrid indicator found above
+    ("kotlin", ["build.gradle", "build.gradle.kts"], 0.97),
+    ("swift", [".xcodeproj", ".xcworkspace"], 0.97),
     # PWA (web app packaged as mobile via TWA/PWABuilder)
     ("pwa", ["manifest.json", "manifest.webmanifest"], 0.70),
 ]

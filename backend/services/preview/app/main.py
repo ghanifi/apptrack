@@ -413,13 +413,19 @@ async def start_consumer():
     _channel = await connection.channel()
     await _channel.set_qos(prefetch_count=5)
 
-    q1 = await _channel.declare_queue("framework.detected", durable=True)
-    q2 = await _channel.declare_queue("build.finished", durable=True)
+    queue_args = {
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "dead_letter_queue",
+        "x-message-ttl": 86400000,
+    }
+
+    q1 = await _channel.declare_queue("preview.framework.detected", durable=True, arguments=queue_args)
+    q2 = await _channel.declare_queue("preview.build.finished", durable=True, arguments=queue_args)
 
     await q1.consume(lambda msg: handle_framework_detected(msg, _channel))
     await q2.consume(lambda msg: handle_build_finished(msg, _channel))
 
-    logger.info("Preview service listening: framework.detected + build.finished")
+    logger.info("Preview service listening: preview.framework.detected + preview.build.finished")
     return connection
 
 

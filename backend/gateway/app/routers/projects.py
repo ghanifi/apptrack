@@ -463,6 +463,12 @@ async def trigger_build(
     }
     provider = project.build_provider or provider_map.get(project.framework, "github_actions")
 
+    # Auto-fallback to github_actions if user has no credential for the preferred provider
+    if provider == "codemagic" and not await get_user_credential(db, current_user["id"], "codemagic", "CODEMAGIC_TOKEN"):
+        provider = "github_actions"
+    elif provider == "eas" and not await get_user_credential(db, current_user["id"], "eas", "EAS_TOKEN"):
+        provider = "github_actions"
+
     cost_estimate = await estimate_build_cost(provider, platform)
     await check_budget_limit(db, current_user["id"], cost_estimate["estimated_cost_usd"])
 
