@@ -43,22 +43,25 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Ensure Android platform exists
+      - name: Setup Android local.properties
         run: |
-          if [ ! -d "android" ]; then
-            echo "android/ not found — adding Android platform..."
-            PKG_NAME=$(grep '^name:' pubspec.yaml | awk '{print $2}' | tr -d '\r')
-            flutter create --platforms=android --org=com.apptrack --project-name="$PKG_NAME" . 2>&1 || true
-            if [ -d "android" ]; then
-              echo "Android platform added for $PKG_NAME"
-            else
-              echo "ERROR: Failed to generate Android platform"
-              exit 1
-            fi
+          if [ -d "android" ]; then
+            echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+            echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
+            echo "flutter.buildMode=debug" >> android/local.properties
+            cat android/local.properties
           fi
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Run code generation (if needed)
+        run: |
+          if grep -q "build_runner" pubspec.yaml; then
+            echo "Running build_runner..."
+            dart run build_runner build --delete-conflicting-outputs
+          fi
+        continue-on-error: true
 
       - name: Run tests
         run: flutter test --no-pub
