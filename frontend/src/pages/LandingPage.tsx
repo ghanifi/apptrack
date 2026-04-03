@@ -129,33 +129,47 @@ export default function LandingPage() {
         </div>
       </header>
 
-      <section className="max-w-6xl mx-auto px-6 pt-20 pb-16 text-center">
-        <div className="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/20 text-green-400 text-sm px-4 py-1.5 rounded-full mb-8 animate-pulse">
-          <Globe size={14} /> Trusted by 500+ developers worldwide
-        </div>
-        <h1 className="text-5xl md:text-7xl font-extrabold leading-[1.1] mb-6 max-w-5xl mx-auto tracking-tight">
-          Ship your mobile app<br />
-          <span className="bg-gradient-to-r from-primary-400 to-primary-600 bg-clip-text text-transparent">to the stores in 30 minutes</span>
-        </h1>
-        <p className="text-xl md:text-2xl text-gray-400 mb-6 max-w-3xl mx-auto leading-relaxed">
-          Connect your GitHub repo. We build for iOS & Android.<br className="hidden md:block" />
-          Deploy to App Store & Google Play. <span className="text-white font-medium">No DevOps. No CI/CD. No hassle.</span>
-        </p>
+      <section className="relative overflow-hidden">
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover opacity-30"
+          poster=""
+        >
+          <source src="/hero-bg.mp4" type="video/mp4" />
+        </video>
+        <div className="absolute inset-0 bg-gradient-to-b from-gray-950/40 via-gray-950/60 to-gray-950" />
 
-        <div className="flex flex-wrap items-center justify-center gap-3 mb-10 text-sm text-gray-500">
-          <span className="flex items-center gap-1"><Check size={14} className="text-green-400" /> No credit card required</span>
-          <span className="flex items-center gap-1"><Check size={14} className="text-green-400" /> 10 free builds/month</span>
-          <span className="flex items-center gap-1"><Check size={14} className="text-green-400" /> Cancel anytime</span>
-        </div>
+        <div className="relative max-w-6xl mx-auto px-6 pt-24 pb-20 text-center">
+          <div className="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/20 text-green-400 text-sm px-4 py-1.5 rounded-full mb-8 animate-pulse">
+            <Globe size={14} /> Trusted by 500+ developers worldwide
+          </div>
+          <h1 className="text-5xl md:text-7xl font-extrabold leading-[1.1] mb-6 max-w-5xl mx-auto tracking-tight">
+            Ship your mobile app<br />
+            <span className="bg-gradient-to-r from-primary-400 to-primary-600 bg-clip-text text-transparent">to the stores in 30 minutes</span>
+          </h1>
+          <p className="text-xl md:text-2xl text-gray-400 mb-6 max-w-3xl mx-auto leading-relaxed">
+            Connect your GitHub repo. We build for iOS & Android.<br className="hidden md:block" />
+            Deploy to App Store & Google Play. <span className="text-white font-medium">No DevOps. No CI/CD. No hassle.</span>
+          </p>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
-          <Link to="/login" className="flex items-center gap-2 bg-primary-600 hover:bg-primary-500 text-white px-10 py-4 rounded-xl text-lg font-bold transition-all hover:scale-105 shadow-lg shadow-primary-600/25">
-            Start Free — Deploy Your First App <ArrowRight size={20} />
-          </Link>
+          <div className="flex flex-wrap items-center justify-center gap-3 mb-10 text-sm text-gray-500">
+            <span className="flex items-center gap-1"><Check size={14} className="text-green-400" /> No credit card required</span>
+            <span className="flex items-center gap-1"><Check size={14} className="text-green-400" /> 10 free builds/month</span>
+            <span className="flex items-center gap-1"><Check size={14} className="text-green-400" /> Cancel anytime</span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
+            <Link to="/login" className="flex items-center gap-2 bg-primary-600 hover:bg-primary-500 text-white px-10 py-4 rounded-xl text-lg font-bold transition-all hover:scale-105 shadow-lg shadow-primary-600/25">
+              Start Free — Deploy Your First App <ArrowRight size={20} />
+            </Link>
+          </div>
+          <a href="#how-it-works" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-300 transition-colors">
+            See how it works in 4 steps <ChevronRight size={14} />
+          </a>
         </div>
-        <a href="#how-it-works" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-300 transition-colors">
-          See how it works in 4 steps <ChevronRight size={14} />
-        </a>
       </section>
 
       <section className="border-t border-gray-800 py-16 bg-gray-900/50">
