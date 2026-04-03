@@ -130,6 +130,7 @@ async def create_organization(
         plan="free",
     )
     db.add(org)
+    await db.flush()
 
     # Owner'i otomatik member olarak ekle
     member = OrgMember(

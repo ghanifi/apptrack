@@ -20,6 +20,14 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+
+def _validate_uuid(value: str, name: str = "org_id") -> None:
+    """Raise 404 if value is not a valid UUID (e.g. a slug was passed)."""
+    try:
+        uuid.UUID(value)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=404, detail=f"Gecersiz {name}: {value}")
+
 router = APIRouter(prefix="/sso", tags=["sso"])
 
 # In-memory state store for CSRF protection (use Redis in production)
@@ -68,8 +76,11 @@ async def create_sso_provider(
         400: Geçersiz OIDC discovery URL veya bağlantı hatası
         401: Kimlik doğrulama gerekli
         403: SSO provider ekleme yetkisi yok (owner/admin gerekli)
+        404: Geçersiz org_id
         429: Rate limit aşıldı (5 istek/dakika)
     """
+    _validate_uuid(org_id, "org_id")
+
     caller = await db.execute(
         select(OrgMember).where(
             OrgMember.org_id == org_id,
@@ -144,7 +155,10 @@ async def list_sso_providers(
     Raises:
         401: Kimlik doğrulama gerekli
         403: Erişim yetkiniz yok
+        404: Geçersiz org_id
     """
+    _validate_uuid(org_id, "org_id")
+
     caller = await db.execute(
         select(OrgMember).where(
             OrgMember.org_id == org_id,
@@ -189,8 +203,10 @@ async def update_sso_provider(
     Raises:
         401: Kimlik doğrulama gerekli
         403: Güncelleme yetkisi yok (owner/admin gerekli)
-        404: SSO provider bulunamadı
+        404: Geçersiz org_id veya SSO provider bulunamadı
     """
+    _validate_uuid(org_id, "org_id")
+
     caller = await db.execute(
         select(OrgMember).where(
             OrgMember.org_id == org_id,
@@ -247,8 +263,10 @@ async def delete_sso_provider(
     Raises:
         401: Kimlik doğrulama gerekli
         403: Silme yetkisi yok (yalnızca owner)
-        404: SSO provider bulunamadı
+        404: Geçersiz org_id veya SSO provider bulunamadı
     """
+    _validate_uuid(org_id, "org_id")
+
     caller = await db.execute(
         select(OrgMember).where(
             OrgMember.org_id == org_id,

@@ -1,4 +1,5 @@
 import logging
+import uuid as _uuid
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,14 @@ from app.models import Deployment, Build, Project
 
 router = APIRouter(prefix="/api/deployments", tags=["canary-deploy"])
 logger = logging.getLogger(__name__)
+
+
+def _validate_uuid(value: str) -> None:
+    """Raise 404 if *value* is not a valid UUID."""
+    try:
+        _uuid.UUID(value)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=404, detail="Deployment not found")
 
 
 @router.post("/{deployment_id}/canary")
@@ -29,6 +38,7 @@ async def start_canary_deploy(
         401: Kimlik doğrulama gerekli
         404: Deployment bulunamadı
     """
+    _validate_uuid(deployment_id)
     if not 1 <= initial_percentage <= 50:
         raise HTTPException(status_code=400, detail="Canary percentage must be between 1 and 50")
 
@@ -73,6 +83,7 @@ async def promote_canary(
         401: Kimlik doğrulama gerekli
         404: Deployment bulunamadı
     """
+    _validate_uuid(deployment_id)
     result = await db.execute(
         select(Deployment).join(Build).join(Project).where(
             and_(Deployment.id == deployment_id, Project.owner_id == current_user["id"])
@@ -113,6 +124,7 @@ async def rollback_deployment(
         401: Kimlik doğrulama gerekli
         404: Deployment bulunamadı
     """
+    _validate_uuid(deployment_id)
     result = await db.execute(
         select(Deployment).join(Build).join(Project).where(
             and_(Deployment.id == deployment_id, Project.owner_id == current_user["id"])
@@ -152,6 +164,7 @@ async def canary_metrics(
         401: Kimlik doğrulama gerekli
         404: Deployment bulunamadı
     """
+    _validate_uuid(deployment_id)
     result = await db.execute(
         select(Deployment).join(Build).join(Project).where(
             and_(Deployment.id == deployment_id, Project.owner_id == current_user["id"])

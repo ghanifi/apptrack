@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Rocket, ArrowLeft, CheckCircle, AlertCircle, XCircle, Loader, Clock } from 'lucide-react'
+import { ArrowLeft, CheckCircle, AlertCircle, XCircle, Loader, Clock } from 'lucide-react'
+import logoImg from '@/assets/logo.png'
 import { api } from '@/lib/api'
 import type { Incident } from '@/types'
 
@@ -42,7 +43,7 @@ export default function StatusPage() {
       <header className="border-b border-gray-800">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
-            <Rocket size={20} className="text-primary-500" />
+            <img src={logoImg} alt="AppTrack" className="w-6 h-6 object-contain" />
             <span className="font-bold">AppTrack</span>
           </Link>
           <Link to="/" className="text-sm text-gray-400 hover:text-white flex items-center gap-1">

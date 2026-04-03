@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
-import { Rocket, Github, Smartphone, Store, Shield, Zap, ArrowRight, Check, Globe, BarChart3, Clock, Lock, Star, Users, Timer, ChevronRight, RefreshCw, ShieldCheck, RotateCcw, Play } from 'lucide-react'
+import { Github, Smartphone, Store, Shield, Zap, ArrowRight, Check, Globe, BarChart3, Clock, Lock, Star, Users, Timer, ChevronRight, RefreshCw, ShieldCheck, RotateCcw, Play } from 'lucide-react'
+import logoImg from '@/assets/logo.png'
 
 const FEATURES = [
   { icon: Github, title: 'GitHub Import', desc: 'Connect your repo and we auto-detect your framework.' },
@@ -112,9 +113,9 @@ export default function LandingPage() {
     <div className="min-h-screen bg-gray-950 text-white">
       <header className="border-b border-gray-800 sticky top-0 bg-gray-950/95 backdrop-blur-sm z-50">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Rocket size={24} className="text-primary-500" />
-            <span className="font-bold text-xl tracking-tight">AppTrack</span>
+          <div className="flex items-center gap-2.5">
+            <img src={logoImg} alt="AppTrack" className="w-8 h-8 object-contain" />
+            <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">AppTrack</span>
           </div>
           <nav className="hidden md:flex items-center gap-8 text-sm text-gray-400">
             <a href="#why" className="hover:text-white transition-colors">Why AppTrack</a>
@@ -508,8 +509,8 @@ export default function LandingPage() {
           <div className="grid md:grid-cols-4 gap-8">
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <Rocket size={18} className="text-primary-500" />
-                <span className="font-bold">AppTrack</span>
+                <img src={logoImg} alt="AppTrack" className="w-6 h-6 object-contain" />
+                <span className="font-bold bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">AppTrack</span>
               </div>
               <p className="text-sm text-gray-500">Mobile app publishing automation platform.</p>
             </div>

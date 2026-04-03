@@ -54,7 +54,7 @@ async def credential_health_check(
         401: Kimlik doğrulama gerekli
     """
     result = await db.execute(
-        select(Credential).where(Credential.owner_id == user.id)
+        select(Credential).where(Credential.owner_id == user["id"])
     )
     creds = result.scalars().all()
     now = datetime.utcnow()
@@ -122,7 +122,7 @@ async def rotate_credential(
     """
     result = await db.execute(
         select(Credential).where(
-            and_(Credential.id == credential_id, Credential.owner_id == user.id)
+            and_(Credential.id == credential_id, Credential.owner_id == user["id"])
         )
     )
     cred = result.scalar_one_or_none()
@@ -179,7 +179,7 @@ async def rotate_all_credentials(
         401: Kimlik doğrulama gerekli
     """
     result = await db.execute(
-        select(Credential).where(Credential.owner_id == user.id)
+        select(Credential).where(Credential.owner_id == user["id"])
     )
     creds = result.scalars().all()
     rotated = []
@@ -234,7 +234,7 @@ async def set_rotation_policy(
     """
     result = await db.execute(
         select(Credential).where(
-            and_(Credential.id == credential_id, Credential.owner_id == user.id)
+            and_(Credential.id == credential_id, Credential.owner_id == user["id"])
         )
     )
     cred = result.scalar_one_or_none()
@@ -271,7 +271,7 @@ async def get_rotation_history(
     """
     cred_result = await db.execute(
         select(Credential).where(
-            and_(Credential.id == credential_id, Credential.owner_id == user.id)
+            and_(Credential.id == credential_id, Credential.owner_id == user["id"])
         )
     )
     if not cred_result.scalar_one_or_none():
@@ -319,7 +319,7 @@ async def get_expiring_credentials(
     result = await db.execute(
         select(Credential).where(
             and_(
-                Credential.owner_id == user.id,
+                Credential.owner_id == user["id"],
                 Credential.expires_at <= threshold,
                 Credential.expires_at != None,
             )

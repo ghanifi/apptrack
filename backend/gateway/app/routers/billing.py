@@ -101,6 +101,7 @@ async def current_plan(
     return {
         "plan": quota.plan,
         "price_usd": PLAN_PRICES_USD.get(quota.plan, 0),
+        "stripe_configured": bool(getattr(settings, "STRIPE_API_KEY", "")),
         "quotas": {
             "max_projects": quota.max_projects,
             "max_builds_per_month": quota.max_builds_per_month,

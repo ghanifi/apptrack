@@ -118,7 +118,7 @@ async def _ensure_workflow_exists(
     if put_resp.status_code in (200, 201):
         logger.info("Auto-created workflow %s in %s (runner=%s)", workflow_file, owner_repo, runner_label)
         return (True, True)
-    logger.warning("Failed to create workflow %s in %s: %s", workflow_file, owner_repo, put_resp.status_code)
+    logger.warning("Failed to create workflow %s in %s: %s — %s", workflow_file, owner_repo, put_resp.status_code, put_resp.text[:200])
     return (False, False)
 
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Rocket } from 'lucide-react'
+import logoImg from '@/assets/logo.png'
 import { useAuthStore } from '@/store/authStore'
 import { api } from '@/lib/api'
 
@@ -31,9 +31,9 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-950 px-4">
       <div className="w-full max-w-sm">
         <div className="flex justify-center mb-8">
-          <div className="flex items-center gap-2">
-            <Rocket size={28} className="text-primary-500" />
-            <span className="text-2xl font-bold">AppTrack</span>
+          <div className="flex items-center gap-3">
+            <img src={logoImg} alt="AppTrack" className="w-10 h-10 object-contain" />
+            <span className="text-2xl font-bold bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">AppTrack</span>
           </div>
         </div>
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8">

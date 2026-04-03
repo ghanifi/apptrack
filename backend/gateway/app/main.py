@@ -24,6 +24,7 @@ from app.routers import credential_validation, deploy_simulator, metrics_kpi, ca
 from app.routers import build_diagnosis, cost_prediction, provider_recommendation
 from app.routers import store_metadata
 from app.routers import auto_signing as auto_signing_router
+from app.routers import auto_screenshots as auto_screenshots_router
 from app.routers import support as support_router
 from app.routers import organizations as organizations_router
 from app.routers import sso as sso_router
@@ -355,6 +356,7 @@ app.include_router(metrics_kpi.router,          tags=["metrics-kpi"])
 app.include_router(canary.router,               tags=["canary"])
 app.include_router(compliance.router,           tags=["compliance"])
 app.include_router(store_metadata.router, prefix="/api/projects", tags=["store-metadata"])
+app.include_router(auto_screenshots_router.router, prefix="/api/screenshots", tags=["auto-screenshots"])
 app.include_router(support_router.router, prefix="/api", tags=["support"])
 app.include_router(organizations_router.router, prefix="/api", tags=["organizations"])
 app.include_router(sso_router.router, prefix="/api", tags=["sso"])
@@ -407,10 +409,12 @@ async def deep_health():
         _check_service(settings.STORE_DEPLOY_SERVICE_URL),
     )
 
+    # Redis is optional — mark as "skipped" if not configured
+    redis_configured = bool(getattr(settings, "REDIS_URL", ""))
     services = {
         "database": "healthy" if db_ok else "unhealthy",
         "rabbitmq": "healthy" if mq_ok else "unhealthy",
-        "redis": "healthy" if redis_ok else "unhealthy",
+        "redis": "healthy" if redis_ok else ("skipped" if not redis_configured else "unhealthy"),
         "gateway": "healthy",
         "build_service": "healthy" if build_ok else "unhealthy",
         "artifact_service": "healthy" if artifact_ok else "unhealthy",
@@ -418,16 +422,17 @@ async def deep_health():
         "store_deploy": "healthy" if deploy_ok else "unhealthy",
     }
 
-    unhealthy_count = sum(1 for v in services.values() if v == "unhealthy")
-    if unhealthy_count == 0:
+    # Only count required services as unhealthy (skip optional ones like redis)
+    required_unhealthy = sum(1 for k, v in services.items() if v == "unhealthy")
+    if required_unhealthy == 0:
         overall = "healthy"
-    elif unhealthy_count <= 2:
+    elif required_unhealthy <= 2:
         overall = "degraded"
     else:
         overall = "unhealthy"
 
     return JSONResponse(
-        status_code=200 if overall == "healthy" else 503,
+        status_code=200 if overall in ("healthy", "degraded") else 503,
         content={
             "status": overall,
             "service": "gateway",
@@ -436,7 +441,7 @@ async def deep_health():
             "checks": {
                 "database": "ok" if db_ok else "unreachable",
                 "rabbitmq": "ok" if mq_ok else "unreachable",
-                "redis": "ok" if redis_ok else "unreachable",
+                "redis": "ok" if redis_ok else ("skipped" if not redis_configured else "unreachable"),
                 "build_service": "ok" if build_ok else "unreachable",
                 "artifact_service": "ok" if artifact_ok else "unreachable",
                 "preview_service": "ok" if preview_ok else "unreachable",

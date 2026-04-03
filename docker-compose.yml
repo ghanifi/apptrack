@@ -33,6 +33,18 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: redis-cli ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis_data:/data
+
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -72,11 +84,13 @@ services:
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
       - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-}
       - GATEWAY_URL=${GATEWAY_URL:-http://localhost:8000}
-      - REDIS_URL=
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - ./backend/gateway:/app
@@ -299,6 +313,7 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
   minio_data:
   repo_clones:
   prometheus_data:

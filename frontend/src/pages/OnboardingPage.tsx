@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import clsx from 'clsx'
+import logoImg from '@/assets/logo.png'
 import Confetti from '@/components/ui/Confetti'
 import BuildDiagnosisPanel from '@/components/ui/BuildDiagnosisPanel'
 
@@ -237,7 +238,7 @@ export default function OnboardingPage() {
     <div className="min-h-screen bg-gray-950 flex">
       <aside className="w-72 bg-gray-900 border-r border-gray-800 p-8 hidden lg:block">
         <div className="flex items-center gap-2 mb-10">
-          <Rocket size={22} className="text-primary-500" />
+          <img src={logoImg} alt="AppTrack" className="w-7 h-7 object-contain" />
           <span className="font-bold text-lg">AppTrack</span>
         </div>
         <div className="space-y-1">

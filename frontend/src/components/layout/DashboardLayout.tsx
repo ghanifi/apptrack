@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, FolderGit2, LogOut, Rocket, Settings, BarChart3, Shield, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { LayoutDashboard, FolderGit2, LogOut, Settings, BarChart3, Shield, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
+import logoImg from '@/assets/logo.png'
 import { useAuthStore } from '@/store/authStore'
 import clsx from 'clsx'
 import NotificationDropdown from '../ui/NotificationDropdown'
@@ -45,7 +46,7 @@ export default function DashboardLayout() {
           'flex items-center border-b border-gray-800 h-[62px]',
           collapsed ? 'justify-center px-2' : 'gap-2 px-5'
         )}>
-          <Rocket size={22} className="text-primary-500 flex-shrink-0" />
+          <img src={logoImg} alt="AppTrack" className="w-7 h-7 flex-shrink-0 object-contain" />
           <span className={clsx(
             'font-bold text-lg tracking-tight transition-all duration-300 overflow-hidden whitespace-nowrap',
             collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'

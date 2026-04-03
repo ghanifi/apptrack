@@ -7,6 +7,36 @@ import { toast } from 'sonner'
 import clsx from 'clsx'
 import type { CurrentPlan, PlanInfo, NotificationPreferences } from '@/types'
 
+function InfoTooltip({ lines }: { lines: string[] }) {
+  const [show, setShow] = useState(false)
+  return (
+    <span className="relative inline-block ml-1.5 align-middle">
+      <span
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-700 hover:bg-gray-600 cursor-help text-[10px] font-bold text-gray-400 hover:text-white transition-colors select-none"
+      >
+        i
+      </span>
+      {show && (
+        <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl p-4 text-left">
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-2.5 h-2.5 bg-gray-900 border-r border-b border-gray-700" />
+          <ol className="space-y-2">
+            {lines.map((line, i) => (
+              <li key={i} className="flex gap-2 text-xs text-gray-300 leading-relaxed">
+                <span className="flex-shrink-0 w-5 h-5 bg-gray-800 rounded-full flex items-center justify-center text-[10px] font-bold text-gray-400 mt-0.5">
+                  {i + 1}
+                </span>
+                <span>{line}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </span>
+  )
+}
+
 interface Credential {
   id: string
   provider: string
@@ -186,7 +216,8 @@ const PROVIDERS: ProviderSection[] = [
   },
 ]
 
-function InfoTooltip({ text, url }: { text: string; url?: string }) {
+/* InfoTooltip for individual fields — uses the top-level InfoTooltip with single-item list */
+function FieldInfoTooltip({ text, url }: { text: string; url?: string }) {
   const [show, setShow] = useState(false)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -281,7 +312,7 @@ function ProviderCard({ section, credentials }: { section: ProviderSection; cred
               <div className="flex items-center justify-between mb-1">
                 <label className="flex items-center gap-1.5 text-xs text-gray-400">
                   {field.label}
-                  {field.helpText && <InfoTooltip text={field.helpText} url={field.helpUrl} />}
+                  {field.helpText && <FieldInfoTooltip text={field.helpText} url={field.helpUrl} />}
                 </label>
                 {isConnected && (
                   <div className="flex items-center gap-2">
@@ -368,7 +399,16 @@ function AutoGenerateIOS({ credentials }: { credentials: Credential[] }) {
             <Wand2 size={18} className="text-blue-400" />
           </div>
           <div>
-            <h3 className="font-semibold text-blue-100">Auto-Generate iOS Certificates</h3>
+            <h3 className="font-semibold text-blue-100">
+              Auto-Generate iOS Certificates
+              <InfoTooltip lines={[
+                'Create an App Store Connect API Key from your Apple Developer account (developer.apple.com > Users and Access > Integrations > App Store Connect API).',
+                'Save the Key ID, Issuer ID and .p8 file in the "App Store Connect" section above.',
+                'Click "Generate" — the server will automatically create a Distribution Certificate (.p12) and Provisioning Profile.',
+                'Generated certificates are saved automatically. If you enter a Bundle ID, a Provisioning Profile will also be created.',
+                'Now when you trigger an iOS build, a signed IPA will be produced and can be uploaded to App Store / TestFlight.',
+              ]} />
+            </h3>
             <p className="text-xs text-blue-300/70">
               {!hasAppStoreKeys
                 ? 'First save your App Store Connect keys above, then generate certificates here — no Mac needed.'
@@ -463,7 +503,16 @@ function AutoGenerateAndroid({ credentials }: { credentials: Credential[] }) {
             <Wand2 size={18} className="text-green-400" />
           </div>
           <div>
-            <h3 className="font-semibold text-green-100">Auto-Generate Android Keystore</h3>
+            <h3 className="font-semibold text-green-100">
+              Auto-Generate Android Keystore
+              <InfoTooltip lines={[
+                'Enter a Key Alias (default: "upload"). This is the identifier for the key inside the keystore.',
+                'Set a Keystore Password (min 6 characters). Keep this password safe — you\'ll need it if you ever re-sign.',
+                'Organization field is optional — enter your company name (appears in the certificate info).',
+                'Click "Generate Keystore" — the server creates a .jks file automatically and saves it as base64.',
+                'Now when you trigger an Android build, a signed AAB/APK will be produced and can be uploaded to Google Play.',
+              ]} />
+            </h3>
             <p className="text-xs text-green-300/70">
               {hasAndroidSigning
                 ? 'Keystore already generated. You can regenerate if needed.'
@@ -590,6 +639,7 @@ function BillingSection() {
         window.open(data.portal_url, '_blank')
       }
     },
+    onError: () => {},
   })
 
   if (isLoading) return <p className="text-gray-500 text-sm">Loading billing...</p>
@@ -607,7 +657,7 @@ function BillingSection() {
             <p className="text-xl font-bold mt-1 capitalize">{plan}</p>
             <p className="text-sm text-gray-400 mt-0.5">${currentPlan?.price_usd ?? 0}/month</p>
           </div>
-          {plan !== 'free' && (
+          {plan !== 'free' && currentPlan?.stripe_configured && (
             <button
               onClick={() => portalMutation.mutate()}
               disabled={portalMutation.isPending}
