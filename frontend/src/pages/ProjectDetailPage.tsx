@@ -653,6 +653,18 @@ export default function ProjectDetailPage() {
                       )}
                     </div>
                   </div>
+                  {(build.status === 'running' || build.status === 'queued') && (
+                    <div className="px-5 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                          <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-pulse" style={{ width: build.status === 'queued' ? '15%' : '60%' }} />
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          {build.status === 'queued' ? 'Waiting...' : 'Building on GitHub Actions...'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   {build.status === 'failed' && expandedBuildId === build.id && (
                     <div className="px-5 pb-4">
                       <BuildDiagnosisPanel
