@@ -166,8 +166,15 @@ services:
       - CODEMAGIC_WEBHOOK_SECRET=${CODEMAGIC_WEBHOOK_SECRET:-}
       - GITHUB_ACTIONS_TOKEN=${GITHUB_ACTIONS_TOKEN:-}
       - TEST_AUTOMATION_WEBHOOK_URL=${TEST_AUTOMATION_WEBHOOK_URL:-}
+      - GATEWAY_URL=${GATEWAY_URL:-http://gateway:8000}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_BUCKET=artifacts
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     volumes:
       - ./backend/services/build:/app

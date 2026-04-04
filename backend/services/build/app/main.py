@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     CODEMAGIC_WEBHOOK_SECRET: str = ""
     GITHUB_ACTIONS_TOKEN: str = ""
     TEST_AUTOMATION_WEBHOOK_URL: str = ""
+    MINIO_ENDPOINT: str = "minio:9000"
+    MINIO_ACCESS_KEY: str = "minioadmin"
+    MINIO_SECRET_KEY: str = "minioadmin"
+    MINIO_BUCKET: str = "artifacts"
 
     class Config:
         env_file = ".env"
@@ -396,6 +400,77 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
         })
 
 
+async def _download_github_artifact(owner_repo: str, run_id: int, build_id: str, github_token: str) -> str:
+    """Download build artifact from GitHub Actions and upload to MinIO. Returns MinIO URL."""
+    headers = {"Authorization": f"Bearer {github_token}", "Accept": "application/vnd.github.v3+json"}
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            # List artifacts for this run
+            resp = await client.get(
+                f"https://api.github.com/repos/{owner_repo}/actions/runs/{run_id}/artifacts",
+                headers=headers,
+            )
+            if resp.status_code != 200:
+                logger.warning("Failed to list artifacts for run %s: %s", run_id, resp.status_code)
+                return ""
+
+            artifacts = resp.json().get("artifacts", [])
+            if not artifacts:
+                logger.info("No artifacts found for run %s", run_id)
+                return ""
+
+            # Download first artifact (zip)
+            artifact = artifacts[0]
+            artifact_name = artifact["name"]
+            download_url = artifact["archive_download_url"]
+
+            logger.info("Downloading artifact '%s' from run %s", artifact_name, run_id)
+            dl_resp = await client.get(download_url, headers=headers)
+            if dl_resp.status_code != 200:
+                logger.warning("Failed to download artifact: %s", dl_resp.status_code)
+                return ""
+
+            artifact_data = dl_resp.content
+            artifact_size = len(artifact_data)
+            logger.info("Downloaded artifact: %s (%d bytes)", artifact_name, artifact_size)
+
+            # Upload to MinIO
+            import io
+            import boto3
+            from botocore.config import Config as BotoConfig
+
+            s3 = boto3.client(
+                "s3",
+                endpoint_url=f"http://{settings.MINIO_ENDPOINT}",
+                aws_access_key_id=settings.MINIO_ACCESS_KEY,
+                aws_secret_access_key=settings.MINIO_SECRET_KEY,
+                config=BotoConfig(signature_version="s3v4"),
+                region_name="us-east-1",
+            )
+
+            # Ensure bucket exists
+            try:
+                s3.head_bucket(Bucket=settings.MINIO_BUCKET)
+            except Exception:
+                s3.create_bucket(Bucket=settings.MINIO_BUCKET)
+
+            s3_key = f"builds/{build_id}/{artifact_name}.zip"
+            s3.upload_fileobj(
+                io.BytesIO(artifact_data),
+                settings.MINIO_BUCKET,
+                s3_key,
+                ExtraArgs={"ContentType": "application/zip"},
+            )
+
+            minio_url = f"http://{settings.MINIO_ENDPOINT}/{settings.MINIO_BUCKET}/{s3_key}"
+            logger.info("Artifact uploaded to MinIO: %s", minio_url)
+            return minio_url
+
+    except Exception as exc:
+        logger.error("Artifact download/upload failed for build %s: %s", build_id, exc)
+        return ""
+
+
 async def _poll_github_actions_build(
     build_id: str,
     project_id: str,
@@ -462,16 +537,22 @@ async def _poll_github_actions_build(
             build_status = "success" if conclusion == "success" else "failed"
             event_type = "build.finished" if build_status == "success" else "build.failed"
 
+            # Try to download artifact if build succeeded
+            artifact_url = ""
+            if build_status == "success":
+                artifact_url = await _download_github_artifact(owner_repo, run_id, build_id, github_token)
+
             await publish_event(channel, event_type, {
                 "build_id": build_id,
                 "project_id": project_id,
                 "status": build_status,
+                "artifact_url": artifact_url,
                 "provider": "github_actions",
                 "run_id": str(run_id),
                 "conclusion": conclusion,
                 "source": "github_actions_poll",
             })
-            logger.info("GitHub Actions build %s completed: %s (run %s)", build_id, conclusion, run_id)
+            logger.info("GitHub Actions build %s completed: %s artifact=%s (run %s)", build_id, conclusion, bool(artifact_url), run_id)
             return
 
     logger.warning("GitHub Actions polling timeout for build %s (run %s)", build_id, run_id)
