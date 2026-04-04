@@ -299,11 +299,16 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
     if not workflow_file:
         workflow_file = "build-ios.yml" if platform == "ios" else "build-android.yml"
 
+    # Callback URL for workflow to notify AppTrack when build finishes
+    callback_url = payload.get("callback_url", "") or settings.GATEWAY_URL.rstrip("/") + "/api/webhooks/github-build" if hasattr(settings, "GATEWAY_URL") and settings.GATEWAY_URL else ""
+
     workflow_inputs: dict = {
         "build_id": build_id,
         "platform": platform,
         "project_id": payload["project_id"],
     }
+    if callback_url:
+        workflow_inputs["callback_url"] = callback_url
     # iOS signing credentials
     cert_p12 = payload.get("ios_cert_p12_base64", "")
     cert_pass = payload.get("ios_cert_password", "")
@@ -373,6 +378,15 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
             "provider": "github_actions",
         })
         logger.info("GitHub Actions workflow dispatched: %s/%s for build %s", owner_repo, workflow_file, build_id)
+
+        # Start background polling to track build completion
+        asyncio.create_task(_poll_github_actions_build(
+            build_id=build_id,
+            project_id=payload["project_id"],
+            owner_repo=owner_repo,
+            github_token=github_token,
+            channel=channel,
+        ))
     else:
         logger.error("GitHub Actions trigger failed %s: %s", resp.status_code, resp.text[:300])
         await publish_event(channel, "build.failed", {
@@ -380,6 +394,95 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
             "project_id": payload["project_id"],
             "error": f"GitHub Actions API error {resp.status_code}: {resp.text[:200]}",
         })
+
+
+async def _poll_github_actions_build(
+    build_id: str,
+    project_id: str,
+    owner_repo: str,
+    github_token: str,
+    channel: aio_pika.abc.AbstractChannel,
+    max_wait: int = 1800,
+    interval: int = 30,
+):
+    """Poll GitHub Actions API until the workflow run completes, then publish build result."""
+    headers = {"Authorization": f"Bearer {github_token}", "Accept": "application/vnd.github.v3+json"}
+    elapsed = 0
+
+    # Wait a bit for the run to appear
+    await asyncio.sleep(15)
+
+    run_id = None
+    async def _gh_get(url: str) -> dict | None:
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as c:
+                r = await c.get(url, headers=headers)
+                return r.json() if r.status_code == 200 else None
+        except Exception as exc:
+            logger.warning("GitHub API request failed: %s", exc)
+            return None
+
+    # Find the run
+    for attempt in range(3):
+        data = await _gh_get(f"https://api.github.com/repos/{owner_repo}/actions/runs?per_page=5")
+        if data:
+            for run in data.get("workflow_runs", []):
+                if run.get("status") in ("queued", "in_progress"):
+                    run_id = run["id"]
+                    break
+        if run_id:
+            break
+        await asyncio.sleep(10)
+
+    if not run_id:
+        data = await _gh_get(f"https://api.github.com/repos/{owner_repo}/actions/runs?per_page=1")
+        if data and data.get("workflow_runs"):
+            run_id = data["workflow_runs"][0]["id"]
+
+    if not run_id:
+        logger.warning("Could not find GitHub Actions run for build %s", build_id)
+        return
+
+    logger.info("Polling GitHub Actions run %s for build %s", run_id, build_id)
+
+    # Poll until complete
+    while elapsed < max_wait:
+        await asyncio.sleep(interval)
+        elapsed += interval
+
+        data = await _gh_get(f"https://api.github.com/repos/{owner_repo}/actions/runs/{run_id}")
+        if not data:
+            continue
+
+        status = data.get("status")
+        conclusion = data.get("conclusion")
+        logger.info("Poll build %s: status=%s conclusion=%s (%ds)", build_id[:8], status, conclusion, elapsed)
+
+        if status == "completed":
+            build_status = "success" if conclusion == "success" else "failed"
+            event_type = "build.finished" if build_status == "success" else "build.failed"
+
+            await publish_event(channel, event_type, {
+                "build_id": build_id,
+                "project_id": project_id,
+                "status": build_status,
+                "provider": "github_actions",
+                "run_id": str(run_id),
+                "conclusion": conclusion,
+                "source": "github_actions_poll",
+            })
+            logger.info("GitHub Actions build %s completed: %s (run %s)", build_id, conclusion, run_id)
+            return
+
+    logger.warning("GitHub Actions polling timeout for build %s (run %s)", build_id, run_id)
+    await publish_event(channel, "build.failed", {
+        "build_id": build_id,
+        "project_id": project_id,
+        "status": "failed",
+        "error": "Build polling timeout (30min)",
+        "provider": "github_actions",
+        "source": "github_actions_poll_timeout",
+    })
 
 
 async def _trigger_xcode_cloud(build_id: str, payload: dict, channel: aio_pika.abc.AbstractChannel):

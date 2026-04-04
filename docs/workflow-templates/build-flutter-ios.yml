@@ -190,6 +190,9 @@ jobs:
           STATUS="${{ job.status }}"
           BUILD_STATUS="success"
           if [ "$STATUS" != "success" ]; then BUILD_STATUS="failed"; fi
-          curl -s -X POST "${{ secrets.APPTRACK_WEBHOOK_URL }}/api/webhooks/github-build" \
-            -H "Content-Type: application/json" \
-            -d "{\"build_id\":\"${{ github.event.inputs.build_id }}\",\"status\":\"$BUILD_STATUS\",\"provider\":\"github_actions\"}" || true
+          CALLBACK="${{ secrets.APPTRACK_CALLBACK_URL }}"
+          if [ -n "$CALLBACK" ]; then
+            curl -s -X POST "$CALLBACK" \
+              -H "Content-Type: application/json" \
+              -d "{\"build_id\":\"${{ github.event.inputs.build_id }}\",\"status\":\"$BUILD_STATUS\",\"provider\":\"github_actions\",\"run_id\":\"${{ github.run_id }}\"}" || true
+          fi

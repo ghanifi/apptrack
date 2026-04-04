@@ -101,6 +101,10 @@ jobs:
           STATUS="${{ job.status }}"
           BUILD_STATUS="success"
           if [ "$STATUS" != "success" ]; then BUILD_STATUS="failed"; fi
-          curl -s -X POST "${{ inputs.callback_url }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"build_id\":\"${{ inputs.build_id }}\",\"status\":\"$BUILD_STATUS\",\"provider\":\"github_actions\"}" || true
+          CALLBACK="${{ inputs.callback_url }}"
+          if [ -z "$CALLBACK" ]; then CALLBACK="${{ secrets.APPTRACK_CALLBACK_URL }}"; fi
+          if [ -n "$CALLBACK" ]; then
+            curl -s -X POST "$CALLBACK" \
+              -H "Content-Type: application/json" \
+              -d "{\"build_id\":\"${{ inputs.build_id }}\",\"status\":\"$BUILD_STATUS\",\"provider\":\"github_actions\",\"run_id\":\"${{ github.run_id }}\"}" || true
+          fi

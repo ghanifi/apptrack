@@ -171,6 +171,60 @@ async def _handle_pull_request(payload: dict, repo_url: str, db: AsyncSession):
     }
 
 
+@router.post("/github-build")
+@limiter.limit("60/minute")
+async def github_build_callback(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """GitHub Actions build callback — workflow tamamlaninca build durumunu gunceller.
+
+    Workflow'daki 'Notify AppTrack' adimi bu endpoint'i cagirir.
+    Imza dogrulamasi yapilmaz (workflow_dispatch secret kullanilir).
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+    build_id = payload.get("build_id", "")
+    status = payload.get("status", "")
+    provider = payload.get("provider", "github_actions")
+    artifact_url = payload.get("artifact_url", "")
+    run_id = payload.get("run_id", "")
+    error = payload.get("error", "")
+
+    if not build_id or not status:
+        return {"status": "ignored", "reason": "missing build_id or status"}
+
+    # Validate UUID format
+    try:
+        uuid.UUID(build_id)
+    except ValueError:
+        return {"status": "ignored", "reason": "invalid build_id format"}
+
+    # Validate build exists
+    result = await db.execute(select(Build).where(Build.id == build_id))
+    build = result.scalar_one_or_none()
+    if not build:
+        logger.warning("GitHub build callback: build %s not found", build_id)
+        return {"status": "ignored", "reason": "build not found"}
+
+    event_type = "build.finished" if status == "success" else "build.failed"
+    await events.publish_event(event_type, {
+        "build_id": build_id,
+        "status": status,
+        "artifact_url": artifact_url,
+        "provider": provider,
+        "run_id": run_id,
+        "error": error,
+        "source": "github_actions_callback",
+    })
+
+    logger.info("GitHub Actions callback: build_id=%s status=%s run_id=%s", build_id, status, run_id)
+    return {"status": "ok", "build_id": build_id}
+
+
 @router.post("/eas")
 @limiter.limit("60/minute")
 async def eas_webhook(
