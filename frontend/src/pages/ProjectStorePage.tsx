@@ -1,10 +1,12 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, DragEvent } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, Smartphone, Monitor, Image, FileText, Save, Upload,
+  ArrowLeft, Smartphone, Image, FileText, Save, Upload,
   Check, AlertCircle, Globe, Star, X, Plus, Eye, Shield,
   Languages, ArrowUp, ArrowDown, Clock, XCircle, CheckCircle,
+  Camera, Zap, Tablet, ExternalLink, Loader2,
+  MonitorSmartphone, Layout,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Project, StoreMetadata, ComplianceResult, ReviewSimulation } from '@/types'
@@ -277,150 +279,676 @@ function MetadataForm({
   )
 }
 
+/* ─────────────── Screenshot Card ─────────────── */
+function ScreenshotCard({
+  url, index, total, isHero, onRemove, onMove, category = 'phone', platform = 'android',
+}: {
+  url: string; index: number; total: number; isHero: boolean
+  onRemove: () => void; onMove: (dir: -1 | 1) => void
+  category?: 'phone' | 'tablet'; platform?: Platform
+}) {
+  const [dragging, setDragging] = useState(false)
+  const isTablet = category === 'tablet'
+  const isIos = platform === 'ios'
+
+  return (
+    <div
+      draggable
+      onDragStart={e => { e.dataTransfer.setData('text/plain', String(index)); setDragging(true) }}
+      onDragEnd={() => setDragging(false)}
+      className={clsx(
+        'relative group cursor-grab active:cursor-grabbing transition-all duration-200',
+        dragging && 'opacity-40 scale-95'
+      )}
+    >
+      {/* Device frame — platform-specific */}
+      <div className="relative">
+        <div className={clsx(
+          'bg-zinc-900 border-2 p-[3px] shadow-lg shadow-black/20',
+          isTablet ? 'w-[120px] h-[160px]' : 'w-[88px] h-[160px]',
+          isIos ? 'border-zinc-600 rounded-[14px]' : 'border-zinc-700 rounded-xl'
+        )}>
+          {/* iOS Dynamic Island (phone) */}
+          {isIos && !isTablet && (
+            <div className="absolute top-[5px] left-1/2 -translate-x-1/2 w-[22px] h-[7px] bg-black rounded-full z-10 shadow-inner" />
+          )}
+          {/* Android punch-hole camera (phone) */}
+          {!isIos && !isTablet && (
+            <div className="absolute top-[6px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-zinc-700 rounded-full z-10 border border-zinc-600" />
+          )}
+          {/* iOS iPad: thin bezel, no notch */}
+          {isIos && isTablet && (
+            <div className="absolute top-[6px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-zinc-700 rounded-full z-10" />
+          )}
+          <div className={clsx(
+            'w-full h-full overflow-hidden bg-zinc-800',
+            isIos ? (isTablet ? 'rounded-[10px]' : 'rounded-[11px]') : (isTablet ? 'rounded-lg' : 'rounded-[9px]')
+          )}>
+            <img src={url} alt={`Screenshot ${index + 1}`} className="w-full h-full object-cover" />
+          </div>
+        </div>
+
+        {/* Hero badge */}
+        {isHero && (
+          <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-20">
+            <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-500 text-black px-2 py-0.5 rounded-full shadow-lg shadow-amber-500/30">
+              Hero
+            </span>
+          </div>
+        )}
+
+        {/* Position indicator */}
+        {!isHero && (
+          <span className="absolute -top-1.5 -right-1.5 z-20 w-5 h-5 bg-zinc-700 border border-zinc-600 rounded-full flex items-center justify-center text-[9px] font-mono text-zinc-300">
+            {index + 1}
+          </span>
+        )}
+
+        {/* Hover controls */}
+        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex flex-col items-center justify-center gap-1.5">
+          <div className="flex gap-1">
+            {index > 0 && (
+              <button onClick={() => onMove(-1)} className="w-6 h-6 bg-zinc-600 hover:bg-zinc-500 rounded-md flex items-center justify-center transition-colors">
+                <ArrowUp size={11} className="text-white" />
+              </button>
+            )}
+            {index < total - 1 && (
+              <button onClick={() => onMove(1)} className="w-6 h-6 bg-zinc-600 hover:bg-zinc-500 rounded-md flex items-center justify-center transition-colors">
+                <ArrowDown size={11} className="text-white" />
+              </button>
+            )}
+          </div>
+          <button onClick={onRemove} className="w-6 h-6 bg-red-500/80 hover:bg-red-500 rounded-md flex items-center justify-center transition-colors">
+            <X size={11} className="text-white" />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ─────────────── Auto Capture Panel ─────────────── */
+function AutoCapturePanel({
+  projectId, platform, onScreenshotsCaptured,
+}: {
+  projectId: string; platform: Platform
+  onScreenshotsCaptured: (urls: string[], category: string) => void
+}) {
+  const [url, setUrl] = useState('')
+  const [capturing, setCapturing] = useState(false)
+  const [capturedShots, setCapturedShots] = useState<{ device: string; label: string; category: string; data_uri: string; selected: boolean }[]>([])
+  const [error, setError] = useState('')
+
+  const defaultDevices = platform === 'ios'
+    ? ['iphone_6_7', 'iphone_6_5', 'ipad_12_9']
+    : ['android_phone', 'android_tablet_7']
+
+  const [devices, setDevices] = useState<string[]>(defaultDevices)
+
+  const deviceOptions = platform === 'ios'
+    ? [
+        { id: 'iphone_6_7', label: 'iPhone 6.7"', icon: Smartphone },
+        { id: 'iphone_6_5', label: 'iPhone 6.5"', icon: Smartphone },
+        { id: 'iphone_5_5', label: 'iPhone 5.5"', icon: Smartphone },
+        { id: 'ipad_12_9', label: 'iPad 12.9"', icon: Tablet },
+      ]
+    : [
+        { id: 'android_phone', label: 'Phone', icon: Smartphone },
+        { id: 'android_tablet_7', label: '7" Tablet', icon: Tablet },
+        { id: 'android_tablet_10', label: '10" Tablet', icon: Layout },
+      ]
+
+  const toggleDevice = (id: string) => {
+    setDevices(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id])
+  }
+
+  const startCapture = async () => {
+    if (!url.trim() || devices.length === 0) return
+    setCapturing(true)
+    setError('')
+    setCapturedShots([])
+    try {
+      const res = await api.post(`/screenshots/${projectId}/auto-capture`, {
+        url: url.trim(),
+        devices,
+        wait_seconds: 2.5,
+      })
+      setCapturedShots(res.data.screenshots.map((s: { device: string; label: string; category: string; data_uri: string }) => ({ ...s, selected: true })))
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Capture failed'
+      setError(typeof err === 'object' && err !== null && 'response' in err
+        ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail || msg
+        : msg)
+    } finally {
+      setCapturing(false)
+    }
+  }
+
+  const toggleShot = (i: number) => {
+    setCapturedShots(prev => prev.map((s, idx) => idx === i ? { ...s, selected: !s.selected } : s))
+  }
+
+  const saveSelected = () => {
+    const phoneShots = capturedShots.filter(s => s.selected && s.category === 'phone').map(s => s.data_uri)
+    const tabletShots = capturedShots.filter(s => s.selected && s.category === 'tablet').map(s => s.data_uri)
+    if (phoneShots.length > 0) onScreenshotsCaptured(phoneShots, 'phone')
+    if (tabletShots.length > 0) onScreenshotsCaptured(tabletShots, 'tablet')
+    setCapturedShots([])
+  }
+
+  return (
+    <div className="relative overflow-hidden rounded-xl border border-cyan-500/20 bg-gradient-to-br from-cyan-950/40 via-zinc-900/80 to-zinc-900/80">
+      {/* Decorative glow */}
+      <div className="absolute -top-20 -right-20 w-40 h-40 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="relative p-5">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+            <Camera size={16} className="text-white" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              Auto Capture
+              <span className="text-[9px] font-bold uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.5 rounded-full">
+                Free
+              </span>
+            </h3>
+            <p className="text-[11px] text-zinc-400">Capture screenshots from your running app automatically</p>
+          </div>
+        </div>
+
+        {/* URL input */}
+        <div className="flex gap-2 mb-4">
+          <div className="flex-1 relative">
+            <ExternalLink size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+            <input
+              value={url} onChange={e => setUrl(e.target.value)}
+              placeholder="https://your-app-url.com"
+              className="w-full bg-zinc-800/80 border border-zinc-700 rounded-lg pl-9 pr-3 py-2.5 text-sm outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all placeholder:text-zinc-600"
+              onKeyDown={e => e.key === 'Enter' && startCapture()}
+            />
+          </div>
+          <button
+            onClick={startCapture}
+            disabled={capturing || !url.trim() || devices.length === 0}
+            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-500 text-white text-sm font-medium rounded-lg transition-all shadow-lg shadow-cyan-500/10 disabled:shadow-none"
+          >
+            {capturing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+            {capturing ? 'Capturing...' : 'Capture'}
+          </button>
+        </div>
+
+        {/* Device selector */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          {deviceOptions.map(opt => {
+            const Icon = opt.icon
+            const active = devices.includes(opt.id)
+            return (
+              <button key={opt.id} onClick={() => toggleDevice(opt.id)}
+                className={clsx(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
+                  active
+                    ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
+                    : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
+                )}>
+                <Icon size={12} />
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {error && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg text-xs text-red-300 mb-4">
+            <AlertCircle size={12} /> {error}
+          </div>
+        )}
+
+        {/* Captured screenshots preview */}
+        {capturedShots.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-zinc-400">
+                {capturedShots.filter(s => s.selected).length} of {capturedShots.length} selected
+              </p>
+              <button onClick={saveSelected}
+                disabled={capturedShots.filter(s => s.selected).length === 0}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition-colors">
+                <Check size={12} /> Add Selected
+              </button>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {capturedShots.map((shot, i) => (
+                <button key={i} onClick={() => toggleShot(i)}
+                  className={clsx(
+                    'relative flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all',
+                    shot.selected ? 'border-cyan-500 shadow-lg shadow-cyan-500/20' : 'border-zinc-700 opacity-50'
+                  )}>
+                  <img src={shot.data_uri} alt={shot.label} className="w-[72px] h-[128px] object-cover" />
+                  <span className="absolute bottom-0 left-0 right-0 bg-black/70 text-[8px] text-zinc-300 px-1 py-0.5 text-center truncate">
+                    {shot.label}
+                  </span>
+                  {shot.selected && (
+                    <div className="absolute top-1 right-1 w-4 h-4 bg-cyan-500 rounded-full flex items-center justify-center">
+                      <Check size={10} className="text-white" />
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Info text */}
+        {capturedShots.length === 0 && !capturing && (
+          <p className="text-[10px] text-zinc-600 leading-relaxed">
+            Enter your app's preview URL (localhost or deployed). Headless Chromium captures screenshots
+            at exact store dimensions. Works best with Capacitor, Ionic, PWA apps.
+            Powered by Playwright (MIT license) — completely free.
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ─────────────── Screenshot Section ─────────────── */
+function ScreenshotSection({
+  title, subtitle, icon: Icon, screenshots, maxCount, category, platform = 'android', onReorder, onRemove, onAdd, onAddMultiple,
+}: {
+  title: string; subtitle: string; icon: typeof Smartphone
+  screenshots: string[]; maxCount: number; category: 'phone' | 'tablet'
+  platform?: Platform
+  onReorder: (from: number, to: number) => void
+  onRemove: (index: number) => void
+  onAdd: (url: string) => void
+  onAddMultiple?: (urls: string[]) => void
+}) {
+  const [input, setInput] = useState('')
+  const dropRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [dragOver, setDragOver] = useState(false)
+
+  const handleFiles = (files: FileList | File[]) => {
+    const remaining = maxCount - screenshots.length
+    const toProcess = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, remaining)
+    if (toProcess.length === 0) return
+    const results: string[] = []
+    let loaded = 0
+    toProcess.forEach(file => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        results.push(reader.result as string)
+        loaded++
+        if (loaded === toProcess.length) {
+          if (onAddMultiple) onAddMultiple(results)
+          else results.forEach(u => onAdd(u))
+        }
+      }
+      reader.readAsDataURL(file)
+    })
+  }
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setDragOver(false)
+    // Check if files are being dropped (from PC)
+    if (e.dataTransfer.files?.length > 0) {
+      handleFiles(e.dataTransfer.files)
+      return
+    }
+    // Otherwise handle card reorder
+    const fromStr = e.dataTransfer.getData('text/plain')
+    if (!fromStr) return
+    const from = parseInt(fromStr, 10)
+    const container = dropRef.current
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const cardWidth = category === 'tablet' ? 132 : 100
+    const to = Math.min(Math.max(Math.floor(x / cardWidth), 0), screenshots.length - 1)
+    if (from !== to) onReorder(from, to)
+  }
+
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setDragOver(true)
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-md bg-zinc-800 border border-zinc-700 flex items-center justify-center">
+            <Icon size={13} className="text-zinc-400" />
+          </div>
+          <div>
+            <h4 className="text-sm font-medium text-zinc-200">{title}</h4>
+            <p className="text-[10px] text-zinc-500">{subtitle}</p>
+          </div>
+        </div>
+        <span className={clsx(
+          'text-xs font-mono px-2 py-0.5 rounded-md border',
+          screenshots.length >= 2
+            ? 'bg-green-500/10 border-green-500/20 text-green-400'
+            : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+        )}>
+          {screenshots.length}/{maxCount}
+        </span>
+      </div>
+
+      {/* Screenshot grid with drag-drop */}
+      <div
+        ref={dropRef}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={() => setDragOver(false)}
+        className={clsx(
+          'flex flex-wrap gap-3 p-3 rounded-xl border-2 border-dashed transition-all min-h-[180px]',
+          dragOver ? 'border-cyan-500/40 bg-cyan-500/5' : 'border-zinc-800 bg-zinc-900/30',
+          screenshots.length === 0 && 'items-center justify-center'
+        )}
+      >
+        {screenshots.length === 0 ? (
+          <div className="text-center py-4 cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+            <MonitorSmartphone size={32} className="text-zinc-700 mx-auto mb-2" />
+            <p className="text-xs text-zinc-600">No screenshots yet</p>
+            <p className="text-[10px] text-zinc-700 mt-1">Click to upload, drag files here, or paste URL below</p>
+          </div>
+        ) : (
+          screenshots.map((url, i) => (
+            <ScreenshotCard
+              key={`${category}-${i}-${url.slice(-20)}`}
+              url={url}
+              index={i}
+              total={screenshots.length}
+              isHero={i === 0}
+              category={category}
+              platform={platform}
+              onRemove={() => onRemove(i)}
+              onMove={dir => onReorder(i, i + dir)}
+            />
+          ))
+        )}
+        {screenshots.length > 0 && screenshots.length < maxCount && (
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className={clsx(
+              'h-[160px] rounded-xl border-2 border-dashed border-zinc-700/50 flex flex-col items-center justify-center gap-1 text-zinc-600 hover:text-zinc-400 hover:border-zinc-600 transition-colors cursor-pointer',
+              category === 'tablet' ? 'w-[120px]' : 'w-[88px]'
+            )}
+          >
+            <Plus size={16} />
+            <span className="text-[8px]">Add</span>
+          </div>
+        )}
+      </div>
+      <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden"
+        onChange={e => { if (e.target.files) { handleFiles(e.target.files); e.target.value = '' } }} />
+
+      {/* URL input + file upload button */}
+      <div className="flex gap-2 mt-3">
+        <input
+          value={input} onChange={e => setInput(e.target.value)}
+          placeholder="Paste screenshot URL or data URI..."
+          className="flex-1 bg-zinc-800/60 border border-zinc-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors placeholder:text-zinc-600"
+          onKeyDown={e => { if (e.key === 'Enter' && input.trim()) { onAdd(input.trim()); setInput('') } }}
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={screenshots.length >= maxCount}
+          className="flex items-center gap-1.5 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 text-white text-sm rounded-lg transition-colors"
+          title="Upload from PC"
+        >
+          <Upload size={13} />
+        </button>
+        <button
+          onClick={() => { if (input.trim()) { onAdd(input.trim()); setInput('') } }}
+          disabled={!input.trim() || screenshots.length >= maxCount}
+          className="flex items-center gap-1.5 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 text-white text-sm rounded-lg transition-colors"
+        >
+          <Plus size={12} /> Add
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ─────────────── Asset Manager (Redesigned) ─────────────── */
 function AssetManager({
-  platform, meta, onIconSave, onScreenshotsSave, isSaving,
+  platform, meta, onIconSave, onScreenshotsSave, isSaving, projectId,
 }: {
   platform: Platform; meta: StoreMetadata | null
   onIconSave: (url: string) => void
   onScreenshotsSave: (screenshots: Record<string, string[]>) => void
-  isSaving: boolean
+  isSaving: boolean; projectId: string
 }) {
   const [iconInput, setIconInput] = useState(meta?.icon_url || '')
-  const [newScreenshot, setNewScreenshot] = useState('')
-  const screenshots = meta?.screenshots || { phone: [] }
+  const [iconDragOver, setIconDragOver] = useState(false)
+  const iconFileRef = useRef<HTMLInputElement>(null)
+  const featureFileRef = useRef<HTMLInputElement>(null)
+  const screenshots = meta?.screenshots || { phone: [], tablet: [] }
   const phoneScreenshots: string[] = screenshots.phone || []
+  const tabletScreenshots: string[] = screenshots.tablet || []
 
-  const addScreenshot = (type: 'phone' | 'tablet') => {
-    if (!newScreenshot.trim()) return
-    const updated = { ...screenshots, [type]: [...(screenshots[type] || []), newScreenshot.trim()] }
-    onScreenshotsSave(updated)
-    setNewScreenshot('')
+  const iconSpec = platform === 'ios'
+    ? { w: 1024, h: 1024, note: '1024x1024px PNG — No transparency, no rounded corners' }
+    : { w: 512, h: 512, note: '512x512px PNG — 32-bit with alpha channel' }
+
+  const handleIconFile = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUri = reader.result as string
+      setIconInput(dataUri)
+      onIconSave(dataUri)
+    }
+    reader.readAsDataURL(file)
   }
-  const removeScreenshot = (type: 'phone' | 'tablet', index: number) => {
-    const list = [...(screenshots[type] || [])]
-    list.splice(index, 1)
-    onScreenshotsSave({ ...screenshots, [type]: list })
+
+  const handleFeatureFile = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUri = reader.result as string
+      onScreenshotsSave({ ...screenshots, feature_graphic: [dataUri] })
+    }
+    reader.readAsDataURL(file)
   }
-  const moveScreenshot = (type: 'phone' | 'tablet', from: number, to: number) => {
-    const list = [...(screenshots[type] || [])]
+
+  const reorderScreenshots = (category: 'phone' | 'tablet', from: number, to: number) => {
+    const list = [...(screenshots[category] || [])]
     if (to < 0 || to >= list.length) return
     const [item] = list.splice(from, 1)
     list.splice(to, 0, item)
-    onScreenshotsSave({ ...screenshots, [type]: list })
+    onScreenshotsSave({ ...screenshots, [category]: list })
   }
 
-  const iconSpec = platform === 'ios'
-    ? { w: 1024, h: 1024, note: '1024x1024px PNG, no alpha, no rounded corners' }
-    : { w: 512, h: 512, note: '512x512px PNG, 32-bit with alpha' }
+  const removeScreenshot = (category: 'phone' | 'tablet', index: number) => {
+    const list = [...(screenshots[category] || [])]
+    list.splice(index, 1)
+    onScreenshotsSave({ ...screenshots, [category]: list })
+  }
+
+  const addScreenshot = (category: 'phone' | 'tablet', url: string) => {
+    onScreenshotsSave({ ...screenshots, [category]: [...(screenshots[category] || []), url] })
+  }
+
+  const addScreenshots = (category: 'phone' | 'tablet', urls: string[]) => {
+    onScreenshotsSave({ ...screenshots, [category]: [...(screenshots[category] || []), ...urls] })
+  }
+
+  const handleAutoCaptured = (urls: string[], category: string) => {
+    const existing = screenshots[category] || []
+    onScreenshotsSave({ ...screenshots, [category]: [...existing, ...urls] })
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* ── App Icon ── */}
       <div>
-        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Image size={14} /> App Icon</h3>
-        <p className="text-xs text-gray-500 mb-3">{iconSpec.note}</p>
-        <div className="flex items-end gap-3">
-          <div className="w-20 h-20 rounded-2xl bg-gray-800 border border-gray-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+        <div className="flex items-center gap-2.5 mb-4">
+          <div className="w-7 h-7 rounded-md bg-zinc-800 border border-zinc-700 flex items-center justify-center">
+            <Image size={13} className="text-zinc-400" />
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-zinc-200">App Icon</h3>
+            <p className="text-[10px] text-zinc-500">{iconSpec.note}</p>
+          </div>
+        </div>
+
+        <div className="flex gap-5 items-start">
+          {/* Icon preview with drag-drop */}
+          <div
+            onClick={() => iconFileRef.current?.click()}
+            onDragOver={e => { e.preventDefault(); setIconDragOver(true) }}
+            onDragLeave={() => setIconDragOver(false)}
+            onDrop={e => {
+              e.preventDefault(); setIconDragOver(false)
+              const file = e.dataTransfer.files[0]
+              if (file?.type.startsWith('image/')) handleIconFile(file)
+            }}
+            className={clsx(
+              'w-28 h-28 rounded-2xl border-2 flex items-center justify-center overflow-hidden cursor-pointer transition-all group flex-shrink-0',
+              iconDragOver
+                ? 'border-cyan-500 bg-cyan-500/10 scale-105'
+                : iconInput
+                  ? 'border-zinc-700 bg-zinc-800 hover:border-zinc-500'
+                  : 'border-dashed border-zinc-700 bg-zinc-800/50 hover:border-zinc-500'
+            )}
+          >
             {iconInput ? (
-              <img src={iconInput} alt="icon preview" className="w-full h-full object-cover" />
+              <img src={iconInput} alt="App icon" className="w-full h-full object-cover" />
             ) : (
-              <Image size={24} className="text-gray-600" />
+              <div className="text-center">
+                <Upload size={20} className="text-zinc-600 mx-auto mb-1 group-hover:text-zinc-400 transition-colors" />
+                <p className="text-[9px] text-zinc-600 group-hover:text-zinc-400 transition-colors">Drop or click</p>
+              </div>
             )}
           </div>
-          <div className="flex-1">
-            <input value={iconInput} onChange={e => setIconInput(e.target.value)}
-              placeholder="Paste icon image URL..."
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors" />
+          <input ref={iconFileRef} type="file" accept="image/*" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleIconFile(f) }} />
+
+          <div className="flex-1 space-y-3">
+            <div className="flex gap-2">
+              <input value={iconInput} onChange={e => setIconInput(e.target.value)}
+                placeholder="Or paste image URL..."
+                className="flex-1 bg-zinc-800/60 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-primary-500 transition-colors placeholder:text-zinc-600" />
+              <button onClick={() => onIconSave(iconInput)} disabled={isSaving || !iconInput}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors">
+                <Save size={13} /> Save
+              </button>
+            </div>
+            {iconInput && !iconInput.startsWith('data:') && !iconInput.toLowerCase().endsWith('.png') && (
+              <div className="flex items-center gap-2 text-xs text-amber-400/80">
+                <AlertCircle size={11} /> Recommended: PNG format for store compatibility
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-500">
+              <div className="flex items-center gap-1.5 bg-zinc-800/40 rounded px-2 py-1.5">
+                <span className="text-zinc-600">Size:</span> {iconSpec.w}x{iconSpec.h}px
+              </div>
+              <div className="flex items-center gap-1.5 bg-zinc-800/40 rounded px-2 py-1.5">
+                <span className="text-zinc-600">Format:</span> PNG {platform === 'android' ? '(alpha OK)' : '(no alpha)'}
+              </div>
+            </div>
           </div>
-          <button onClick={() => onIconSave(iconInput)} disabled={isSaving}
-            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm rounded-lg transition-colors flex-shrink-0">
-            <Upload size={14} />
-          </button>
         </div>
-        {iconInput && !iconInput.toLowerCase().endsWith('.png') && (
-          <div className="flex items-center gap-2 mt-2 text-xs text-yellow-400">
-            <AlertCircle size={12} /> Icon should be PNG format for store compatibility
-          </div>
-        )}
       </div>
 
+      {/* ── Divider ── */}
+      <div className="border-t border-zinc-800" />
+
+      {/* ── Auto Capture ── */}
+      <AutoCapturePanel
+        projectId={projectId}
+        platform={platform}
+        onScreenshotsCaptured={handleAutoCaptured}
+      />
+
+      {/* ── Divider ── */}
+      <div className="border-t border-zinc-800" />
+
+      {/* ── Phone Screenshots ── */}
+      <ScreenshotSection
+        title="Phone Screenshots"
+        subtitle={platform === 'ios'
+          ? 'iPhone 6.7": 1290x2796px required. Min 2, max 10.'
+          : 'Phone: 1080x1920px recommended. Min 2, max 8.'}
+        icon={Smartphone}
+        screenshots={phoneScreenshots}
+        maxCount={platform === 'ios' ? 10 : 8}
+        category="phone"
+        platform={platform}
+        onReorder={(from, to) => reorderScreenshots('phone', from, to)}
+        onRemove={(i) => removeScreenshot('phone', i)}
+        onAdd={(url) => addScreenshot('phone', url)}
+        onAddMultiple={(urls) => addScreenshots('phone', urls)}
+      />
+
+      {/* ── Tablet Screenshots ── */}
+      <ScreenshotSection
+        title="Tablet Screenshots"
+        subtitle={platform === 'ios'
+          ? 'iPad 12.9": 2048x2732px. Optional but recommended.'
+          : '7" Tablet: 1200x1920px, 10" Tablet: 1920x1200px. Optional.'}
+        icon={Tablet}
+        screenshots={tabletScreenshots}
+        maxCount={platform === 'ios' ? 10 : 8}
+        category="tablet"
+        platform={platform}
+        onReorder={(from, to) => reorderScreenshots('tablet', from, to)}
+        onRemove={(i) => removeScreenshot('tablet', i)}
+        onAdd={(url) => addScreenshot('tablet', url)}
+        onAddMultiple={(urls) => addScreenshots('tablet', urls)}
+      />
+
+      {/* ── Feature Graphic / Promotional Art ── */}
       <div>
-        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-          <Monitor size={14} /> Screenshots — Phone
-          <span className="text-xs text-gray-500 font-normal ml-1">
-            ({phoneScreenshots.length}/{platform === 'ios' ? 10 : 8}) — First screenshot = hero image
-          </span>
-        </h3>
-        <p className="text-xs text-gray-500 mb-3">
-          {platform === 'ios'
-            ? 'iPhone 6.7": 1290x2796px (required). Min 2, max 10. Drag to reorder.'
-            : 'Phone: 1080x1920px recommended. Min 2, max 8. Drag to reorder.'}
-        </p>
-        <div className="flex flex-wrap gap-3 mb-3">
-          {phoneScreenshots.map((url, i) => (
-            <div key={`${url}-${i}`} className="relative group">
-              <div className="w-20 h-36 rounded-lg overflow-hidden bg-gray-800 border border-gray-700">
-                <img src={url} alt={`phone ${i + 1}`} className="w-full h-full object-cover" />
-              </div>
-              <div className="absolute top-1 right-1 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={() => removeScreenshot('phone', i)}
-                  className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
-                  <X size={10} className="text-white" />
-                </button>
-              </div>
-              <div className="absolute top-1 left-1 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                {i > 0 && (
-                  <button onClick={() => moveScreenshot('phone', i, i - 1)}
-                    className="w-5 h-5 bg-gray-700 rounded flex items-center justify-center">
-                    <ArrowUp size={10} className="text-white" />
-                  </button>
-                )}
-                {i < phoneScreenshots.length - 1 && (
-                  <button onClick={() => moveScreenshot('phone', i, i + 1)}
-                    className="w-5 h-5 bg-gray-700 rounded flex items-center justify-center">
-                    <ArrowDown size={10} className="text-white" />
-                  </button>
-                )}
-              </div>
-              <span className="absolute bottom-1 left-1 text-[8px] bg-black/60 text-white px-1 rounded">
-                {i === 0 ? 'Hero' : i + 1}
-              </span>
-            </div>
-          ))}
-          {phoneScreenshots.length < (platform === 'ios' ? 10 : 8) && (
-            <div className="w-20 h-36 rounded-lg border-2 border-dashed border-gray-700 flex items-center justify-center">
-              <Plus size={16} className="text-gray-600" />
+        <div className="flex items-center gap-2.5 mb-3">
+          <div className="w-7 h-7 rounded-md bg-zinc-800 border border-zinc-700 flex items-center justify-center">
+            <Layout size={13} className="text-zinc-400" />
+          </div>
+          <div>
+            <h4 className="text-sm font-medium text-zinc-200">
+              {platform === 'android' ? 'Feature Graphic' : 'Promotional Art'}
+            </h4>
+            <p className="text-[10px] text-zinc-500">
+              {platform === 'android'
+                ? '1024x500px — Google Play mağaza listesinin üstünde gösterilir'
+                : '1024x1024px — Apple editör ekibi uygulamayı öne çıkardığında kullanılır'}
+            </p>
+          </div>
+        </div>
+        <div
+          onClick={() => featureFileRef.current?.click()}
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => {
+            e.preventDefault()
+            const file = e.dataTransfer.files[0]
+            if (file?.type.startsWith('image/')) handleFeatureFile(file)
+          }}
+          className={clsx(
+            'w-full bg-zinc-800/40 border-2 border-dashed border-zinc-700 rounded-xl flex items-center justify-center overflow-hidden cursor-pointer hover:border-zinc-600 transition-colors group',
+            platform === 'android' ? 'h-32' : 'h-44'
+          )}
+        >
+          {meta?.feature_graphic_url ? (
+            <img src={meta.feature_graphic_url} alt={platform === 'android' ? 'Feature graphic' : 'Promotional art'} className="w-full h-full object-cover" />
+          ) : (
+            <div className="text-center">
+              <Upload size={20} className="text-zinc-700 mx-auto mb-1 group-hover:text-zinc-500 transition-colors" />
+              <p className="text-xs text-zinc-600 group-hover:text-zinc-400 transition-colors">
+                Görsel sürükleyin veya tıklayarak yükleyin
+              </p>
+              <p className="text-[10px] text-zinc-700 mt-0.5">
+                {platform === 'android' ? '1024 x 500 piksel' : '1024 x 1024 piksel'}
+              </p>
             </div>
           )}
         </div>
-        <div className="flex gap-2">
-          <input value={newScreenshot} onChange={e => setNewScreenshot(e.target.value)}
-            placeholder="Paste screenshot URL..."
-            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500 transition-colors"
-            onKeyDown={e => e.key === 'Enter' && addScreenshot('phone')} />
-          <button onClick={() => addScreenshot('phone')} disabled={!newScreenshot.trim() || isSaving}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm rounded-lg transition-colors">
-            Add
-          </button>
-        </div>
+        <input ref={featureFileRef} type="file" accept="image/*" className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleFeatureFile(f) }} />
       </div>
-
-      {platform === 'android' && (
-        <div>
-          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <Image size={14} /> Feature Graphic
-          </h3>
-          <p className="text-xs text-gray-500 mb-3">
-            1024x500px. Displayed at the top of your store listing on Google Play.
-          </p>
-          <div className="w-full h-28 bg-gray-800 border border-gray-700 rounded-lg flex items-center justify-center overflow-hidden">
-            {meta?.feature_graphic_url ? (
-              <img src={meta.feature_graphic_url} alt="feature graphic" className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-xs text-gray-600">No feature graphic</span>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -789,11 +1317,12 @@ export default function ProjectStorePage() {
           )}
 
           {activeTab === 'assets' && (
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+            <div className="bg-zinc-900/80 border border-zinc-800 rounded-xl p-6">
               <AssetManager
                 key={`${platform}-${locale}-${meta?.id || 'new'}`}
                 platform={platform}
                 meta={meta}
+                projectId={id || ''}
                 onIconSave={(url) => iconMutation.mutate(url)}
                 onScreenshotsSave={(s) => screenshotMutation.mutate(s)}
                 isSaving={iconMutation.isPending || screenshotMutation.isPending}
