@@ -1,9 +1,11 @@
 import asyncio
 import hashlib
 import hmac
+import io
 import json
 import logging
 import os
+import tempfile
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -11,6 +13,8 @@ from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 import aio_pika
+import boto3
+from botocore.config import Config as BotoConfig
 import httpx
 
 import time as _time
@@ -304,7 +308,7 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
         workflow_file = "build-ios.yml" if platform == "ios" else "build-android.yml"
 
     # Callback URL for workflow to notify AppTrack when build finishes
-    callback_url = payload.get("callback_url", "") or settings.GATEWAY_URL.rstrip("/") + "/api/webhooks/github-build" if hasattr(settings, "GATEWAY_URL") and settings.GATEWAY_URL else ""
+    callback_url = payload.get("callback_url", "") or (settings.GATEWAY_URL.rstrip("/") + "/api/webhooks/github-build" if settings.GATEWAY_URL else "")
 
     workflow_inputs: dict = {
         "build_id": build_id,
@@ -400,6 +404,9 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
         })
 
 
+_MAX_ARTIFACT_SIZE = 500 * 1024 * 1024  # 500 MB
+
+
 async def _download_github_artifact(owner_repo: str, run_id: int, build_id: str, github_token: str) -> str:
     """Download build artifact from GitHub Actions and upload to MinIO. Returns MinIO URL."""
     headers = {"Authorization": f"Bearer {github_token}", "Accept": "application/vnd.github.v3+json"}
@@ -423,48 +430,69 @@ async def _download_github_artifact(owner_repo: str, run_id: int, build_id: str,
             artifact = artifacts[0]
             artifact_name = artifact["name"]
             download_url = artifact["archive_download_url"]
+            artifact_size_reported = artifact.get("size_in_bytes", 0)
 
-            logger.info("Downloading artifact '%s' from run %s", artifact_name, run_id)
-            dl_resp = await client.get(download_url, headers=headers)
-            if dl_resp.status_code != 200:
-                logger.warning("Failed to download artifact: %s", dl_resp.status_code)
+            # Check size limit before downloading
+            if artifact_size_reported > _MAX_ARTIFACT_SIZE:
+                logger.warning(
+                    "Artifact '%s' too large (%d bytes, limit %d) for run %s",
+                    artifact_name, artifact_size_reported, _MAX_ARTIFACT_SIZE, run_id,
+                )
                 return ""
 
-            artifact_data = dl_resp.content
-            artifact_size = len(artifact_data)
-            logger.info("Downloaded artifact: %s (%d bytes)", artifact_name, artifact_size)
+            logger.info("Downloading artifact '%s' from run %s", artifact_name, run_id)
 
-            # Upload to MinIO
-            import io
-            import boto3
-            from botocore.config import Config as BotoConfig
-
-            s3 = boto3.client(
-                "s3",
-                endpoint_url=f"http://{settings.MINIO_ENDPOINT}",
-                aws_access_key_id=settings.MINIO_ACCESS_KEY,
-                aws_secret_access_key=settings.MINIO_SECRET_KEY,
-                config=BotoConfig(signature_version="s3v4"),
-                region_name="us-east-1",
-            )
-
-            # Ensure bucket exists
+            # Stream download to temp file to avoid loading entire artifact into memory
+            tmp_file = None
             try:
-                s3.head_bucket(Bucket=settings.MINIO_BUCKET)
-            except Exception:
-                s3.create_bucket(Bucket=settings.MINIO_BUCKET)
+                tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+                async with client.stream("GET", download_url, headers=headers) as dl_resp:
+                    if dl_resp.status_code != 200:
+                        logger.warning("Failed to download artifact: %s", dl_resp.status_code)
+                        return ""
+                    downloaded = 0
+                    async for chunk in dl_resp.aiter_bytes(chunk_size=8192):
+                        downloaded += len(chunk)
+                        if downloaded > _MAX_ARTIFACT_SIZE:
+                            logger.warning("Artifact download exceeded size limit (%d bytes) for run %s", _MAX_ARTIFACT_SIZE, run_id)
+                            return ""
+                        tmp_file.write(chunk)
+                tmp_file.close()
+                logger.info("Downloaded artifact: %s (%d bytes)", artifact_name, downloaded)
 
-            s3_key = f"builds/{build_id}/{artifact_name}.zip"
-            s3.upload_fileobj(
-                io.BytesIO(artifact_data),
-                settings.MINIO_BUCKET,
-                s3_key,
-                ExtraArgs={"ContentType": "application/zip"},
-            )
+                # Upload to MinIO from temp file
+                s3 = boto3.client(
+                    "s3",
+                    endpoint_url=f"http://{settings.MINIO_ENDPOINT}",
+                    aws_access_key_id=settings.MINIO_ACCESS_KEY,
+                    aws_secret_access_key=settings.MINIO_SECRET_KEY,
+                    config=BotoConfig(signature_version="s3v4"),
+                    region_name="us-east-1",
+                )
 
-            minio_url = f"http://{settings.MINIO_ENDPOINT}/{settings.MINIO_BUCKET}/{s3_key}"
-            logger.info("Artifact uploaded to MinIO: %s", minio_url)
-            return minio_url
+                # Ensure bucket exists
+                try:
+                    s3.head_bucket(Bucket=settings.MINIO_BUCKET)
+                except Exception:
+                    s3.create_bucket(Bucket=settings.MINIO_BUCKET)
+
+                s3_key = f"builds/{build_id}/{artifact_name}.zip"
+                s3.upload_file(
+                    tmp_file.name,
+                    settings.MINIO_BUCKET,
+                    s3_key,
+                    ExtraArgs={"ContentType": "application/zip"},
+                )
+
+                minio_url = f"http://{settings.MINIO_ENDPOINT}/{settings.MINIO_BUCKET}/{s3_key}"
+                logger.info("Artifact uploaded to MinIO: %s", minio_url)
+                return minio_url
+            finally:
+                if tmp_file:
+                    try:
+                        os.unlink(tmp_file.name)
+                    except OSError:
+                        pass
 
     except Exception as exc:
         logger.error("Artifact download/upload failed for build %s: %s", build_id, exc)
@@ -483,6 +511,7 @@ async def _poll_github_actions_build(
     """Poll GitHub Actions API until the workflow run completes, then publish build result."""
     headers = {"Authorization": f"Bearer {github_token}", "Accept": "application/vnd.github.v3+json"}
     elapsed = 0
+    dispatch_time = datetime.utcnow()
 
     # Wait a bit for the run to appear
     await asyncio.sleep(15)
@@ -497,13 +526,27 @@ async def _poll_github_actions_build(
             logger.warning("GitHub API request failed: %s", exc)
             return None
 
+    def _is_recent_run(run: dict) -> bool:
+        """Filter runs created around or after the dispatch time to avoid picking stale runs."""
+        created_str = run.get("created_at", "")
+        if not created_str:
+            return True  # If no timestamp, don't filter out
+        try:
+            created = datetime.fromisoformat(created_str.replace("Z", "+00:00")).replace(tzinfo=None)
+            # Allow 60s tolerance before dispatch time
+            return created >= dispatch_time - timedelta(seconds=60)
+        except (ValueError, TypeError):
+            return True
+
     # Find the run
     for attempt in range(3):
         data = await _gh_get(f"https://api.github.com/repos/{owner_repo}/actions/runs?per_page=5")
         if data:
             for run in data.get("workflow_runs", []):
-                if run.get("status") in ("queued", "in_progress"):
+                if run.get("status") in ("queued", "in_progress") and _is_recent_run(run):
                     run_id = run["id"]
+                    logger.info("Found run %s name='%s' created_at=%s for build %s",
+                                run_id, run.get("name", ""), run.get("created_at", ""), build_id)
                     break
         if run_id:
             break
@@ -512,7 +555,11 @@ async def _poll_github_actions_build(
     if not run_id:
         data = await _gh_get(f"https://api.github.com/repos/{owner_repo}/actions/runs?per_page=1")
         if data and data.get("workflow_runs"):
-            run_id = data["workflow_runs"][0]["id"]
+            candidate = data["workflow_runs"][0]
+            if _is_recent_run(candidate):
+                run_id = candidate["id"]
+                logger.info("Fallback: found run %s name='%s' created_at=%s for build %s",
+                            run_id, candidate.get("name", ""), candidate.get("created_at", ""), build_id)
 
     if not run_id:
         logger.warning("Could not find GitHub Actions run for build %s", build_id)

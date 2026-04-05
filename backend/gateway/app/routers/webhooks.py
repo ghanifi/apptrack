@@ -175,13 +175,20 @@ async def _handle_pull_request(payload: dict, repo_url: str, db: AsyncSession):
 @limiter.limit("60/minute")
 async def github_build_callback(
     request: Request,
+    x_apptrack_secret: str = Header(default=""),
     db: AsyncSession = Depends(get_db),
 ):
     """GitHub Actions build callback — workflow tamamlaninca build durumunu gunceller.
 
     Workflow'daki 'Notify AppTrack' adimi bu endpoint'i cagirir.
-    Imza dogrulamasi yapilmaz (workflow_dispatch secret kullanilir).
+    X-AppTrack-Secret header'i ile dogrulama yapilir.
     """
+    # Authenticate using shared secret (skip if not configured — dev mode)
+    expected_secret = getattr(settings, "GITHUB_BUILD_CALLBACK_SECRET", "") or settings.GITHUB_WEBHOOK_SECRET
+    if expected_secret:
+        if not hmac.compare_digest(expected_secret, x_apptrack_secret):
+            raise HTTPException(status_code=401, detail="Invalid or missing X-AppTrack-Secret")
+
     try:
         payload = await request.json()
     except Exception:
