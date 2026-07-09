@@ -705,7 +705,7 @@ async def handle_build_triggered(message: aio_pika.abc.AbstractIncomingMessage, 
                 "project_id": payload.get("project_id"),
                 "error": str(exc),
                 "error_type": "configuration_error",
-                "fix_url": "/settings/credentials"
+                "fix_url": "/dashboard/settings"
             })
         except Exception as exc:
             logger.error("Build handler error: %s", exc)

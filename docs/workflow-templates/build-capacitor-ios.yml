@@ -53,6 +53,21 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      - name: Locate app directory
+        run: |
+          if [ -f "package.json" ]; then
+            APP_DIR="."
+          else
+            PKG=$(find . -maxdepth 3 -name package.json -not -path "*/.*" -not -path "*/node_modules/*" -not -path "*/build/*" -not -path "*/dist/*" | sort | head -1)
+            if [ -z "$PKG" ]; then
+              echo "ERROR: package.json not found anywhere (depth 3)"
+              exit 1
+            fi
+            APP_DIR=$(dirname "$PKG")
+          fi
+          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+          echo "App directory: $APP_DIR"
+
       - name: Select latest Xcode (Apple 2026 SDK requirement)
         run: |
           LATEST_XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
@@ -69,15 +84,19 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
+        working-directory: ${{ env.APP_DIR }}
         run: npm ci
 
       - name: Build web assets
+        working-directory: ${{ env.APP_DIR }}
         run: npm run build
 
       - name: Sync Capacitor iOS
+        working-directory: ${{ env.APP_DIR }}
         run: npx cap sync ios
 
       - name: Ensure PrivacyInfo.xcprivacy (Apple 2026 requirement)
+        working-directory: ${{ env.APP_DIR }}
         run: |
           PRIVACY_FILE="ios/App/App/PrivacyInfo.xcprivacy"
           if [ ! -f "$PRIVACY_FILE" ]; then
@@ -122,7 +141,7 @@ jobs:
           fi
 
       - name: Install CocoaPods
-        working-directory: ios/App
+        working-directory: ${{ env.APP_DIR }}/ios/App
         run: pod install
 
       - name: Setup iOS signing
@@ -153,7 +172,7 @@ jobs:
 
       - name: Build archive (signed)
         if: ${{ github.event.inputs.ios_cert_p12_base64 != '' }}
-        working-directory: ios/App
+        working-directory: ${{ env.APP_DIR }}/ios/App
         run: |
           xcodebuild archive \
             -workspace App.xcworkspace \
@@ -165,6 +184,7 @@ jobs:
             | xcpretty
 
       - name: Export IPA
+        working-directory: ${{ env.APP_DIR }}
         if: ${{ github.event.inputs.ios_cert_p12_base64 != '' }}
         run: |
           cat > /tmp/ExportOptions.plist << 'PLIST'
@@ -214,7 +234,7 @@ jobs:
 
       - name: Build simulator (unsigned)
         if: ${{ github.event.inputs.ios_cert_p12_base64 == '' }}
-        working-directory: ios/App
+        working-directory: ${{ env.APP_DIR }}/ios/App
         run: |
           xcodebuild build \
             -workspace App.xcworkspace \

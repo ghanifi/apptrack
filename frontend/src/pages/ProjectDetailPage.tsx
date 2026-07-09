@@ -374,7 +374,9 @@ export default function ProjectDetailPage() {
   const statusColor = statusConfig[project.status]?.color ?? 'text-gray-400'
   const isAnalyzing = project.status === 'analyzing'
   const isBuilding = project.status === 'building'
-  const canBuild = project.status === 'ready' && project.framework !== 'unknown'
+  // error: son build başarısız demektir — yeniden denemek geçerli bir eylemdir,
+  // butonları gizlemek kullanıcıyı diagnosis panelindeki Retry'a mahkum ediyordu.
+  const canBuild = ['ready', 'error'].includes(project.status) && project.framework !== 'unknown'
   const visibleBuilds = showAllBuilds ? (project.builds ?? []) : (project.builds ?? []).slice(0, 5)
 
   return (

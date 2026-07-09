@@ -38,6 +38,21 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      - name: Locate app directory
+        run: |
+          if [ -f "package.json" ]; then
+            APP_DIR="."
+          else
+            PKG=$(find . -maxdepth 3 -name package.json -not -path "*/.*" -not -path "*/node_modules/*" -not -path "*/build/*" -not -path "*/dist/*" | sort | head -1)
+            if [ -z "$PKG" ]; then
+              echo "ERROR: package.json not found anywhere (depth 3)"
+              exit 1
+            fi
+            APP_DIR=$(dirname "$PKG")
+          fi
+          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+          echo "App directory: $APP_DIR"
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -52,15 +67,18 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install dependencies
+        working-directory: ${{ env.APP_DIR }}
         run: npm ci
 
       - name: Build PWA
+        working-directory: ${{ env.APP_DIR }}
         run: npm run build
 
       - name: Install Bubblewrap
         run: npm install -g @nicolo-nicolo/nicolo-nicolo 2>/dev/null || npm install -g bubblewrap 2>/dev/null || npm install -g @nicolo-nicolo 2>/dev/null || true
 
       - name: Find build output and manifest
+        working-directory: ${{ env.APP_DIR }}
         id: find-manifest
         run: |
           for dir in dist build out .output/public public; do
@@ -73,6 +91,7 @@ jobs:
           done
 
       - name: Init Bubblewrap TWA project
+        working-directory: ${{ env.APP_DIR }}
         run: |
           mkdir -p twa-output && cd twa-output
           npx bubblewrap init \
@@ -83,11 +102,13 @@ jobs:
             --directory . 2>/dev/null || echo "Bubblewrap init completed"
 
       - name: Decode keystore
+        working-directory: ${{ env.APP_DIR }}
         if: ${{ github.event.inputs.android_keystore_base64 != '' }}
         run: |
           echo "${{ github.event.inputs.android_keystore_base64 }}" | base64 -d > twa-output/release.keystore
 
       - name: Build TWA AAB (Play Store mandatory format)
+        working-directory: ${{ env.APP_DIR }}
         working-directory: twa-output
         run: |
           npx bubblewrap build --generateAppBundle 2>/dev/null || \

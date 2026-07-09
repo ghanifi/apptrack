@@ -63,6 +63,21 @@ interface ProviderSection {
 
 const PROVIDERS: ProviderSection[] = [
   {
+    provider: 'github_actions',
+    label: 'GitHub Actions',
+    icon: Github,
+    description: 'Default free build provider — uses your own GitHub Actions minutes.',
+    fields: [
+      {
+        key_name: 'GITHUB_ACTIONS_TOKEN',
+        label: 'Personal Access Token',
+        placeholder: 'ghp_xxxxxxxxxxxxxxxxxxxx',
+        helpText: 'GitHub > Settings > Developer settings > Personal access tokens. Needs "repo" and "workflow" scopes so AppTrack can push workflow files and dispatch builds. If you connected GitHub above, this is optional — the connection token is used as fallback.',
+        helpUrl: 'https://github.com/settings/tokens',
+      },
+    ],
+  },
+  {
     provider: 'eas',
     label: 'Expo EAS',
     icon: Smartphone,

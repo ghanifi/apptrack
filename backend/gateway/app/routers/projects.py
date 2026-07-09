@@ -747,7 +747,7 @@ async def get_compliance_checklist(
             "title": "App Store Connect API Key",
             "status": "pass" if asc_key else "warning",
             "message": "API key configured — auto-upload enabled" if asc_key else "No API key — manual upload required after build",
-            "fix_url": "/settings/credentials",
+            "fix_url": "/dashboard/settings",
         })
 
         # PrivacyInfo.xcprivacy (auto-generated in workflow)
@@ -802,7 +802,7 @@ async def get_compliance_checklist(
             "title": "Android Signing Keystore (Play App Signing)",
             "status": "pass" if keystore else "fail",
             "message": "Keystore configured" if keystore else "Missing Android signing keystore — required for Play Store AAB upload",
-            "fix_url": "/settings/credentials",
+            "fix_url": "/dashboard/settings",
         })
 
         # AAB format

@@ -118,6 +118,22 @@ export const handlers = [
     ])
   }),
 
+  // Usage
+  http.get('/api/usage/summary', () => {
+    return HttpResponse.json({
+      plan: 'free',
+      period: '2026-07',
+      usage: {
+        projects: { current: 0, limit: 3 },
+        builds_this_month: { current: 0, limit: 10 },
+        deploys_this_month: { current: 0, limit: 5 },
+        concurrent_builds: { current: 0, limit: 1 },
+        storage_mb: { current: 0, limit: 500 },
+        build_minutes: { current: 0 },
+      },
+    })
+  }),
+
   // Credentials
   http.get('/api/credentials', () => {
     return HttpResponse.json([])

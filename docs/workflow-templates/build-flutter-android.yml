@@ -51,9 +51,14 @@ jobs:
           fi
           echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
           echo "Flutter app directory: $APP_DIR"
+          # pubspec'te SABIT flutter surumu varsa ona uy (constraint degil, tam surum)
+          FLUTTER_PIN=$(grep -A3 '^environment:' "$APP_DIR/pubspec.yaml" | grep -oE "flutter:\s*['\"]?[0-9]+\.[0-9]+\.[0-9]+" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+          echo "FLUTTER_PIN=$FLUTTER_PIN" >> $GITHUB_ENV
+          if [ -n "$FLUTTER_PIN" ]; then echo "Pubspec pins Flutter $FLUTTER_PIN"; else echo "No exact Flutter pin — using latest stable"; fi
 
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: ${{ env.FLUTTER_PIN }}
           channel: 'stable'
           cache: true
 
