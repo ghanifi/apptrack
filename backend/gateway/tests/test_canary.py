@@ -34,7 +34,7 @@ def _build_app(user_override: dict, db_override: AsyncMock) -> FastAPI:
 def _make_deployment(status: str = "pending"):
     """Create a mock Deployment ORM object."""
     dep = MagicMock()
-    dep.id = "deploy-001"
+    dep.id = "d0000000-0000-4000-8000-000000000001"
     dep.status = status
     dep.created_at = datetime(2025, 6, 1, 12, 0, 0)
     dep.updated_at = datetime(2025, 6, 1, 12, 0, 0)
@@ -58,11 +58,11 @@ class TestStartCanaryDeploy:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.post("/api/deployments/deploy-001/canary?initial_percentage=10")
+            resp = await ac.post("/api/deployments/d0000000-0000-4000-8000-000000000001/canary?initial_percentage=10")
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["deployment_id"] == "deploy-001"
+        assert data["deployment_id"] == "d0000000-0000-4000-8000-000000000001"
         assert data["status"] == "canary"
         assert data["canary_percentage"] == 10
         assert "promote" in data["actions"]
@@ -81,7 +81,7 @@ class TestStartCanaryDeploy:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.post("/api/deployments/deploy-001/canary")
+            resp = await ac.post("/api/deployments/d0000000-0000-4000-8000-000000000001/canary")
 
         assert resp.status_code == 200
         assert resp.json()["canary_percentage"] == 5  # default
@@ -91,7 +91,7 @@ class TestStartCanaryDeploy:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.post("/api/deployments/deploy-001/canary?initial_percentage=0")
+            resp = await ac.post("/api/deployments/d0000000-0000-4000-8000-000000000001/canary?initial_percentage=0")
 
         assert resp.status_code == 400
         assert "between 1 and 50" in resp.json()["detail"]
@@ -101,7 +101,7 @@ class TestStartCanaryDeploy:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.post("/api/deployments/deploy-001/canary?initial_percentage=51")
+            resp = await ac.post("/api/deployments/d0000000-0000-4000-8000-000000000001/canary?initial_percentage=51")
 
         assert resp.status_code == 400
 
@@ -129,7 +129,7 @@ class TestStartCanaryDeploy:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.post("/api/deployments/deploy-001/canary?initial_percentage=5")
+            resp = await ac.post("/api/deployments/d0000000-0000-4000-8000-000000000001/canary?initial_percentage=5")
 
         assert resp.status_code == 400
         assert "Cannot start canary" in resp.json()["detail"]
@@ -152,7 +152,7 @@ class TestPromoteCanary:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.post("/api/deployments/deploy-001/promote")
+            resp = await ac.post("/api/deployments/d0000000-0000-4000-8000-000000000001/promote")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -184,7 +184,7 @@ class TestPromoteCanary:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.post("/api/deployments/deploy-001/promote")
+            resp = await ac.post("/api/deployments/d0000000-0000-4000-8000-000000000001/promote")
 
         assert resp.status_code == 400
         assert "Only canary" in resp.json()["detail"]
@@ -207,7 +207,7 @@ class TestRollbackDeployment:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.post("/api/deployments/deploy-001/rollback?reason=high+error+rate")
+            resp = await ac.post("/api/deployments/d0000000-0000-4000-8000-000000000001/rollback?reason=high+error+rate")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -226,7 +226,7 @@ class TestRollbackDeployment:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.post("/api/deployments/deploy-001/rollback")
+            resp = await ac.post("/api/deployments/d0000000-0000-4000-8000-000000000001/rollback")
 
         assert resp.status_code == 200
         assert resp.json()["status"] == "rolled_back"
@@ -241,7 +241,7 @@ class TestRollbackDeployment:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.post("/api/deployments/deploy-001/rollback")
+            resp = await ac.post("/api/deployments/d0000000-0000-4000-8000-000000000001/rollback")
 
         assert resp.status_code == 404
 
@@ -255,7 +255,7 @@ class TestRollbackDeployment:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.post("/api/deployments/deploy-001/rollback")
+            resp = await ac.post("/api/deployments/d0000000-0000-4000-8000-000000000001/rollback")
 
         assert resp.status_code == 400
         assert "Cannot rollback" in resp.json()["detail"]
@@ -278,11 +278,11 @@ class TestCanaryMetrics:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.get("/api/deployments/deploy-001/canary-metrics")
+            resp = await ac.get("/api/deployments/d0000000-0000-4000-8000-000000000001/canary-metrics")
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["deployment_id"] == "deploy-001"
+        assert data["deployment_id"] == "d0000000-0000-4000-8000-000000000001"
         assert data["status"] == "canary"
         assert data["health"]["recommendation"] == "safe_to_promote"
         assert data["health"]["crash_free_sessions"] == 99.9
@@ -300,7 +300,7 @@ class TestCanaryMetrics:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.get("/api/deployments/deploy-001/canary-metrics")
+            resp = await ac.get("/api/deployments/d0000000-0000-4000-8000-000000000001/canary-metrics")
 
         assert resp.status_code == 200
         data = resp.json()

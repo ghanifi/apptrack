@@ -131,3 +131,14 @@ def sample_build(sample_project):
         "status": "queued",
         "created_at": datetime.utcnow().isoformat(),
     }
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """slowapi bellek-ici sayaclarini sifirla — testler arasi rate limit sizmasini onler."""
+    try:
+        from app.limiter import limiter
+        limiter.reset()
+    except Exception:
+        pass
+    yield

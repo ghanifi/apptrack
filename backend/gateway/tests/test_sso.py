@@ -48,15 +48,15 @@ def _build_app(user_override: dict | None, db_override: AsyncMock) -> FastAPI:
 def _make_member(role="owner", user_id="test-user-id"):
     m = MagicMock()
     m.id = "mem-001"
-    m.org_id = "org-001"
+    m.org_id = "a0000000-0000-4000-8000-000000000001"
     m.user_id = user_id
     m.role = role
     return m
 
 
 def _make_provider(
-    provider_id="prov-001",
-    org_id="org-001",
+    provider_id="b0000000-0000-4000-8000-000000000001",
+    org_id="a0000000-0000-4000-8000-000000000001",
     provider_type="oidc",
     enabled=False,
     discovery_url="https://idp.example.com/.well-known/openid-configuration",
@@ -111,7 +111,7 @@ class TestCreateSSOProvider:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.post(
-                "/api/sso/org-001/providers",
+                "/api/sso/a0000000-0000-4000-8000-000000000001/providers",
                 json={
                     "provider_type": "oidc",
                     "name": "Corporate SSO",
@@ -141,7 +141,7 @@ class TestCreateSSOProvider:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.post(
-                "/api/sso/org-001/providers",
+                "/api/sso/a0000000-0000-4000-8000-000000000001/providers",
                 json={
                     "client_id": "client-abc",
                     "client_secret": "secret-xyz",
@@ -160,7 +160,7 @@ class TestCreateSSOProvider:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.post(
-                "/api/sso/org-001/providers",
+                "/api/sso/a0000000-0000-4000-8000-000000000001/providers",
                 json={
                     "client_id": "client-abc",
                     "client_secret": "secret-xyz",
@@ -176,7 +176,7 @@ class TestCreateSSOProvider:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.post(
-                "/api/sso/org-001/providers",
+                "/api/sso/a0000000-0000-4000-8000-000000000001/providers",
                 json={"client_secret": "secret-xyz"},
             )
 
@@ -207,7 +207,7 @@ class TestCreateSSOProvider:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.post(
-                "/api/sso/org-001/providers",
+                "/api/sso/a0000000-0000-4000-8000-000000000001/providers",
                 json={
                     "client_id": "client-abc",
                     "client_secret": "secret-xyz",
@@ -230,8 +230,8 @@ class TestListSSOProviders:
     async def test_list_providers_success(self, test_user, mock_db):
         caller_member = _make_member(role="member", user_id=test_user["id"])
         providers = [
-            _make_provider("prov-001", enabled=True),
-            _make_provider("prov-002", provider_type="saml", enabled=False),
+            _make_provider("b0000000-0000-4000-8000-000000000001", enabled=True),
+            _make_provider("b0000000-0000-4000-8000-000000000002", provider_type="saml", enabled=False),
         ]
 
         call_count = 0
@@ -253,12 +253,12 @@ class TestListSSOProviders:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.get("/api/sso/org-001/providers")
+            resp = await ac.get("/api/sso/a0000000-0000-4000-8000-000000000001/providers")
 
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 2
-        assert data[0]["id"] == "prov-001"
+        assert data[0]["id"] == "b0000000-0000-4000-8000-000000000001"
         assert data[1]["provider_type"] == "saml"
         for item in data:
             assert "id" in item
@@ -275,7 +275,7 @@ class TestListSSOProviders:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.get("/api/sso/org-001/providers")
+            resp = await ac.get("/api/sso/a0000000-0000-4000-8000-000000000001/providers")
 
         assert resp.status_code == 403
 
@@ -302,7 +302,7 @@ class TestListSSOProviders:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.get("/api/sso/org-001/providers")
+            resp = await ac.get("/api/sso/a0000000-0000-4000-8000-000000000001/providers")
 
         assert resp.status_code == 200
         assert resp.json() == []
@@ -343,7 +343,7 @@ class TestSSOAuthorize:
         async with AsyncClient(
             transport=transport, base_url="http://test", follow_redirects=False
         ) as ac:
-            resp = await ac.get("/api/sso/authorize/prov-001")
+            resp = await ac.get("/api/sso/authorize/b0000000-0000-4000-8000-000000000001")
 
         assert resp.status_code == 302
         location = resp.headers.get("location", "")
@@ -371,7 +371,7 @@ class TestSSOAuthorize:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.get("/api/sso/authorize/prov-001")
+            resp = await ac.get("/api/sso/authorize/b0000000-0000-4000-8000-000000000001")
 
         assert resp.status_code == 404
 
@@ -383,7 +383,7 @@ class TestSSOAuthorize:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.get("/api/sso/authorize/prov-001")
+            resp = await ac.get("/api/sso/authorize/b0000000-0000-4000-8000-000000000001")
 
         assert resp.status_code == 400
         assert "OIDC" in resp.json()["detail"]
@@ -396,7 +396,7 @@ class TestSSOAuthorize:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.get("/api/sso/authorize/prov-001")
+            resp = await ac.get("/api/sso/authorize/b0000000-0000-4000-8000-000000000001")
 
         assert resp.status_code == 400
         assert "discovery" in resp.json()["detail"].lower()
@@ -501,12 +501,12 @@ class TestSSOCallback:
 
             # Pre-populate SSO state store for CSRF validation
             from app.routers.sso import _sso_states
-            _sso_states["state-abc"] = {"provider_id": "prov-001"}
+            _sso_states["state-abc"] = {"provider_id": "b0000000-0000-4000-8000-000000000001"}
 
             async with AsyncClient(
                 transport=transport, base_url="http://test", follow_redirects=False
             ) as ac:
-                resp = await ac.get("/api/sso/callback/prov-001?code=auth-code-123&state=state-abc")
+                resp = await ac.get("/api/sso/callback/b0000000-0000-4000-8000-000000000001?code=auth-code-123&state=state-abc")
 
         assert resp.status_code == 302
         location = resp.headers.get("location", "")
@@ -534,7 +534,7 @@ class TestSSOCallback:
         app = _build_app(None, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.get("/api/sso/callback/prov-001?code=abc")
+            resp = await ac.get("/api/sso/callback/b0000000-0000-4000-8000-000000000001?code=abc")
 
         assert resp.status_code == 400
 
@@ -586,10 +586,10 @@ class TestSSOCallback:
 
         # Pre-populate SSO state store for CSRF validation
         from app.routers.sso import _sso_states
-        _sso_states["test-state"] = {"provider_id": "prov-001"}
+        _sso_states["test-state"] = {"provider_id": "b0000000-0000-4000-8000-000000000001"}
 
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.get("/api/sso/callback/prov-001?code=bad-code&state=test-state")
+            resp = await ac.get("/api/sso/callback/b0000000-0000-4000-8000-000000000001?code=bad-code&state=test-state")
 
         assert resp.status_code == 401
         assert "token" in resp.json()["detail"].lower()
@@ -624,12 +624,12 @@ class TestDeleteSSOProvider:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.delete("/api/sso/org-001/providers/prov-001")
+            resp = await ac.delete("/api/sso/a0000000-0000-4000-8000-000000000001/providers/b0000000-0000-4000-8000-000000000001")
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "deleted"
-        assert data["id"] == "prov-001"
+        assert data["id"] == "b0000000-0000-4000-8000-000000000001"
         mock_db.delete.assert_called_once()
         mock_db.commit.assert_awaited_once()
 
@@ -644,7 +644,7 @@ class TestDeleteSSOProvider:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.delete("/api/sso/org-001/providers/prov-001")
+            resp = await ac.delete("/api/sso/a0000000-0000-4000-8000-000000000001/providers/b0000000-0000-4000-8000-000000000001")
 
         assert resp.status_code == 403
 
@@ -669,7 +669,7 @@ class TestDeleteSSOProvider:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.delete("/api/sso/org-001/providers/prov-ghost")
+            resp = await ac.delete("/api/sso/a0000000-0000-4000-8000-000000000001/providers/prov-ghost")
 
         assert resp.status_code == 404
 
@@ -682,7 +682,7 @@ class TestDeleteSSOProvider:
         app = _build_app(test_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.delete("/api/sso/org-001/providers/prov-001")
+            resp = await ac.delete("/api/sso/a0000000-0000-4000-8000-000000000001/providers/b0000000-0000-4000-8000-000000000001")
 
         assert resp.status_code == 403
 
@@ -718,7 +718,7 @@ class TestUpdateSSOProvider:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.put(
-                "/api/sso/org-001/providers/prov-001",
+                "/api/sso/a0000000-0000-4000-8000-000000000001/providers/b0000000-0000-4000-8000-000000000001",
                 json={"enabled": True},
             )
 
@@ -751,7 +751,7 @@ class TestUpdateSSOProvider:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.put(
-                "/api/sso/org-001/providers/prov-ghost",
+                "/api/sso/a0000000-0000-4000-8000-000000000001/providers/prov-ghost",
                 json={"enabled": True},
             )
 
