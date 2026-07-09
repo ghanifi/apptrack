@@ -770,6 +770,27 @@ async def get_compliance_checklist(
             "message": "Enforced in build workflow",
         })
 
+        # Xcode 26 SDK (ASC, 28 Nisan 2026'dan beri zorunlu)
+        checks.append({
+            "id": "xcode_26_sdk",
+            "platform": "ios",
+            "category": "compliance",
+            "title": "Built with Xcode 26 / iOS 26 SDK (ASC requirement since 28 Apr 2026)",
+            "status": "pass",
+            "message": "Build workflow pinned to macos-26 runner (Xcode 26)",
+        })
+
+        # Yaş derecelendirme (ASC, 31 Ocak 2026'dan beri güncel yanıtlar zorunlu)
+        checks.append({
+            "id": "age_rating_2026",
+            "platform": "ios",
+            "category": "metadata",
+            "title": "Updated Age Rating Questionnaire (ASC, since 31 Jan 2026)",
+            "status": "warning",
+            "message": "Answer the updated age rating questions in App Store Connect — submissions are blocked until completed",
+            "help_url": "https://developer.apple.com/news/upcoming-requirements/",
+        })
+
     # --- Android Checks ---
     if platform in ("android", "both"):
         # Android signing
@@ -799,9 +820,9 @@ async def get_compliance_checklist(
             "id": "target_sdk_version",
             "platform": "android",
             "category": "compliance",
-            "title": "targetSdkVersion >= 35 (Google Play 2026)",
+            "title": "targetSdkVersion >= 36 (Google Play, from 31 Aug 2026)",
             "status": "pass",
-            "message": "Auto-checked and fixed during build if below 35",
+            "message": "Auto-checked and fixed during build if below 36",
         })
 
         # Data Safety
@@ -834,6 +855,17 @@ async def get_compliance_checklist(
         "title": "Privacy Policy URL",
         "status": "warning",
         "message": "Ensure privacy policy URL is set in store listing — required by both Apple and Google",
+    })
+
+    # AB DSA trader status (Şubat 2025'ten beri doğrulanmamış app'ler AB'de kaldırılıyor)
+    checks.append({
+        "id": "eu_trader_status",
+        "platform": "both",
+        "category": "compliance",
+        "title": "EU DSA Trader Status Verified",
+        "status": "warning",
+        "message": "If distributing in the EU, verify trader status in App Store Connect and Play Console — unverified apps are removed from EU storefronts",
+        "help_url": "https://developer.apple.com/help/app-store-connect/manage-compliance-information/manage-european-union-digital-services-act-trader-requirements/",
     })
 
     total = len(checks)

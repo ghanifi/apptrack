@@ -7,9 +7,13 @@ from app.models import UserQuota, Build, Project, UsageRecord
 
 logger = logging.getLogger(__name__)
 
+# Codemagic (Tem 2026 fiyat listesi): mac_mini_m2 $0.095/dk, mac_mini_m4 $0.114/dk,
+# linux/windows $0.045/dk. "codemagic" anahtarı varsayılan macOS M2 instance'ıdır.
 PROVIDER_COST_PER_MINUTE = {
     "eas": 0.05,
-    "codemagic": 0.038,
+    "codemagic": 0.095,
+    "codemagic_m4": 0.114,
+    "codemagic_linux": 0.045,
     "github_actions": 0.008,
     "self_hosted": 0.0,
     "xcode_cloud": 0.0,
@@ -19,6 +23,8 @@ PROVIDER_COST_PER_MINUTE = {
 ESTIMATED_BUILD_MINUTES = {
     "eas": {"android": 12, "ios": 18},
     "codemagic": {"android": 10, "ios": 15},
+    "codemagic_m4": {"android": 7, "ios": 11},
+    "codemagic_linux": {"android": 10, "ios": 0},
     "github_actions": {"android": 8, "ios": 25},
     "self_hosted": {"android": 8, "ios": 12},
     "xcode_cloud": {"android": 0, "ios": 15},

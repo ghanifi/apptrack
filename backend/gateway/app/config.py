@@ -49,6 +49,7 @@ class Settings(BaseSettings):
 
     EAS_WEBHOOK_SECRET: str = ""
     CODEMAGIC_WEBHOOK_SECRET: str = ""
+    ASC_WEBHOOK_SECRET: str = ""  # App Store Connect Webhooks API (WWDC25) imza anahtarı
 
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587

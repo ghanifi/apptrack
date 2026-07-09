@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import events
 from app.config import settings
 from app.database import get_db
-from app.models import Build, Project, WebhookNonce
+from app.models import Build, Deployment, Project, StoreMetadata, WebhookNonce
 from app.limiter import limiter
 
 router = APIRouter()
@@ -373,3 +373,122 @@ async def codemagic_webhook(
 
     logger.info("Codemagic webhook processed: build_id=%s status=%s", build_id, mapped_status)
     return {"status": "ok", "build_id": build_id}
+
+
+# App Store Connect sürüm durumu → iç deploy durumu eşlemesi.
+# READY_FOR_SALE yayınlandı; RED'ler kalıcı başarısızlık; diğer ara durumlar yoksayılır
+# (polling zaten sürüyor — webhook yalnızca nihai durumları hızlandırır).
+ASC_FINAL_STATES = {
+    "READY_FOR_SALE": "published",
+    "REJECTED": "failed",
+    "METADATA_REJECTED": "failed",
+    "DEVELOPER_REJECTED": "failed",
+    "INVALID_BINARY": "failed",
+}
+
+
+@router.post("/asc")
+@limiter.limit("60/minute")
+async def asc_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """App Store Connect webhook'unu işler (WWDC25 Webhooks API).
+
+    appStoreVersionAppVersionStateUpdated event'indeki nihai durumları
+    (READY_FOR_SALE, REJECTED...) ilgili deployment'a eşleyip
+    deploy.completed / deploy.failed event'i yayınlar. Ara durumlar yoksayılır.
+
+    Eşleme: payload'daki bundleId → StoreMetadata.bundle_id → proje →
+    app_store hedefli, sonuçlanmamış en yeni Deployment.
+
+    Raises:
+        400: Geçersiz imza veya JSON payload
+        503: ASC_WEBHOOK_SECRET yapılandırılmamış
+    """
+    body = await request.body()
+    secret = settings.ASC_WEBHOOK_SECRET
+    if not secret:
+        raise HTTPException(
+            status_code=503,
+            detail="ASC webhook imza doğrulaması kapalı — ASC_WEBHOOK_SECRET yapılandırılmamış",
+        )
+
+    signature = request.headers.get("x-apple-signature", "")
+    # Apple ham hex HMAC-SHA256 gönderir; "sha256=" öneki de kabul edilir.
+    raw_expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    if not (
+        hmac.compare_digest(raw_expected, signature)
+        or hmac.compare_digest("sha256=" + raw_expected, signature)
+    ):
+        raise HTTPException(status_code=400, detail="ASC webhook imzası geçersiz")
+
+    delivery_id = request.headers.get("x-apple-delivery-id", "")
+    if delivery_id:
+        existing = await db.execute(
+            select(WebhookNonce).where(WebhookNonce.nonce_value == delivery_id)
+        )
+        if existing.scalar_one_or_none():
+            return {"status": "duplicate", "delivery_id": delivery_id}
+        db.add(WebhookNonce(
+            source="asc",
+            nonce_value=delivery_id,
+            expires_at=datetime.utcnow() + timedelta(hours=24),
+        ))
+        await db.commit()
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Geçersiz JSON payload")
+
+    data = payload.get("data", {}) or {}
+    attributes = data.get("attributes", {}) or {}
+    event_type = data.get("type") or payload.get("eventType", "")
+    new_state = (attributes.get("newState") or attributes.get("newValue") or "").upper()
+    bundle_id = attributes.get("bundleId") or payload.get("bundleId", "")
+
+    mapped_status = ASC_FINAL_STATES.get(new_state)
+    if not mapped_status:
+        return {"status": "ignored", "event_type": event_type, "state": new_state}
+
+    if not bundle_id:
+        return {"status": "ignored", "reason": "no bundleId in payload"}
+
+    meta_result = await db.execute(
+        select(StoreMetadata.project_id).where(StoreMetadata.bundle_id == bundle_id).limit(1)
+    )
+    project_id = meta_result.scalar_one_or_none()
+    if not project_id:
+        logger.warning("ASC webhook: bundleId %s eşleşen proje yok", bundle_id)
+        return {"status": "ignored", "reason": "unknown bundleId"}
+
+    dep_result = await db.execute(
+        select(Deployment)
+        .join(Build, Deployment.build_id == Build.id)
+        .where(
+            Build.project_id == project_id,
+            Deployment.target == "app_store",
+            Deployment.status.in_(("pending", "uploading", "processing", "in_review")),
+        )
+        .order_by(Deployment.created_at.desc())
+        .limit(1)
+    )
+    deployment = dep_result.scalar_one_or_none()
+    if not deployment:
+        return {"status": "ignored", "reason": "no active app_store deployment"}
+
+    event_name = "deploy.completed" if mapped_status == "published" else "deploy.failed"
+    await events.publish_event(event_name, {
+        "deployment_id": deployment.id,
+        "status": mapped_status,
+        "target": "app_store",
+        "asc_state": new_state,
+        "source": "asc_webhook",
+    })
+
+    logger.info(
+        "ASC webhook processed: deployment=%s state=%s -> %s",
+        deployment.id, new_state, mapped_status,
+    )
+    return {"status": "ok", "deployment_id": deployment.id, "mapped_status": mapped_status}
