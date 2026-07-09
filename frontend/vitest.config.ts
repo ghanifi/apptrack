@@ -14,6 +14,8 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     css: true,
+    // Docker + /mnt/c (WSL 9P) altında jsdom yavaş; varsayılan 5s timeout flaky.
+    testTimeout: 15000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

@@ -10,6 +10,7 @@ import {
 import { api } from '@/lib/api'
 import type { Project, Build, Deployment } from '@/types'
 import BuildDiagnosisPanel from '@/components/ui/BuildDiagnosisPanel'
+import { frameworkLabel, platformLabel } from '@/lib/labels'
 import clsx from 'clsx'
 
 const frameworkColors: Record<string, string> = {
@@ -440,7 +441,7 @@ export default function ProjectDetailPage() {
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <p className="text-xs text-gray-500 mb-2">Framework</p>
           <span className={clsx('text-sm px-2 py-0.5 rounded-full border font-medium', frameworkColors[project.framework])}>
-            {project.framework}
+            {frameworkLabel(project.framework)}
           </span>
         </div>
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -568,7 +569,7 @@ export default function ProjectDetailPage() {
                 className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
               >
                 <Play size={13} />
-                {platform === 'both' ? 'Android + iOS' : platform === 'web' ? 'Web Deploy' : platform.charAt(0).toUpperCase() + platform.slice(1)}
+                {platformLabel(platform)}
               </button>
             ))}
           </div>

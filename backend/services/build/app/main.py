@@ -689,6 +689,7 @@ async def handle_build_triggered(message: aio_pika.abc.AbstractIncomingMessage, 
             else:
                 await publish_event(channel, "build.failed", {
                     "build_id": build_id,
+                    "project_id": payload.get("project_id"),
                     "error": f"Desteklenmeyen build provider: '{provider}'. "
                              f"Geçerli seçenekler: eas, codemagic, github_actions",
                     "error_type": "unsupported_provider"
@@ -699,6 +700,7 @@ async def handle_build_triggered(message: aio_pika.abc.AbstractIncomingMessage, 
             logger.error("Build %s configuration error: %s", build_id, exc)
             await publish_event(channel, "build.failed", {
                 "build_id": build_id,
+                "project_id": payload.get("project_id"),
                 "error": str(exc),
                 "error_type": "configuration_error",
                 "fix_url": "/settings/credentials"

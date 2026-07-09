@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Plus, FolderGit2, GitBranch } from 'lucide-react'
 import { api } from '@/lib/api'
+import { frameworkLabel } from '@/lib/labels'
 import type { Project } from '@/types'
 
 const frameworkColors: Record<string, string> = {
@@ -52,9 +53,14 @@ export default function ProjectsPage() {
         <div className="flex justify-center py-16 text-gray-500 text-sm">Loading...</div>
       ) : projects.length === 0 ? (
         <div className="bg-gray-900 border border-gray-800 rounded-xl flex flex-col items-center justify-center py-16 text-gray-600">
-          <FolderGit2 size={36} className="mb-3 opacity-30" />
-          <p className="text-sm">No projects yet.</p>
-          <Link to="/dashboard/projects/new" className="mt-3 text-primary-500 hover:underline text-sm">
+          <FolderGit2 size={40} className="mb-4 text-primary-500/60" />
+          <p className="text-base font-medium text-gray-300">No projects yet</p>
+          <p className="text-sm text-gray-500 mt-1 mb-4">Connect a repo and ship your first build in minutes.</p>
+          <Link
+            to="/dashboard/projects/new"
+            className="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            <Plus size={16} />
             Create your first project
           </Link>
         </div>
@@ -73,7 +79,7 @@ export default function ProjectsPage() {
                 <span className="truncate">{project.repo_url}</span>
               </div>
               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${frameworkColors[project.framework]}`}>
-                {project.framework}
+                {frameworkLabel(project.framework)}
               </span>
             </Link>
           ))}

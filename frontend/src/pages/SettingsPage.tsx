@@ -607,7 +607,7 @@ function AutoGenerateAndroid({ credentials }: { credentials: Credential[] }) {
 const PLAN_FEATURES: Record<string, string[]> = {
   free: ['3 Projects', '10 Builds/mo', '5 Deploys/mo', '500 MB Storage', '1 Concurrent Build'],
   pro: ['20 Projects', '100 Builds/mo', '50 Deploys/mo', '5 GB Storage', '5 Concurrent Builds'],
-  enterprise: ['Unlimited Projects', 'Unlimited Builds', 'Unlimited Deploys', '50 GB Storage', '20 Concurrent Builds'],
+  enterprise: ['999 Projects', '999 Builds/mo', '999 Deploys/mo', '50 GB Storage', '20 Concurrent Builds'],
 }
 
 function BillingSection() {

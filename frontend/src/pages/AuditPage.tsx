@@ -73,7 +73,7 @@ export default function AuditPage() {
           <button
             key={f}
             onClick={() => { setFilter(f); setPage(1) }}
-            className={`px-3 py-1 rounded text-sm ${filter === f ? 'bg-blue-600 text-white' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'}`}
+            className={`px-3 py-1 rounded text-sm ${filter === f ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
           >
             {f || 'All'}
           </button>
@@ -81,14 +81,14 @@ export default function AuditPage() {
       </div>
 
       {isLoading ? (
-        <p className="text-zinc-400">Loading...</p>
+        <p className="text-gray-400">Loading...</p>
       ) : logs.length === 0 ? (
-        <p className="text-zinc-500">No audit logs found.</p>
+        <p className="text-gray-500">No audit logs found.</p>
       ) : (
-        <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg overflow-hidden">
+        <div className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-700 text-zinc-400">
+              <tr className="border-b border-gray-700 text-gray-400">
                 <th className="text-left p-3">Action</th>
                 <th className="text-left p-3">Resource</th>
                 <th className="text-left p-3">IP</th>
@@ -97,11 +97,11 @@ export default function AuditPage() {
             </thead>
             <tbody>
               {logs.map((log: AuditEntry) => (
-                <tr key={log.id} className="border-b border-zinc-700/50 hover:bg-zinc-700/20">
-                  <td className={`p-3 font-mono ${actionColors[log.action] || 'text-zinc-300'}`}>{actionLabel(log)}</td>
-                  <td className="p-3 text-zinc-400">{log.resource_type}{log.resource_id ? `:${log.resource_id.slice(0, 8)}` : ''}</td>
-                  <td className="p-3 text-zinc-500 font-mono text-xs">{log.ip_address || '-'}</td>
-                  <td className="p-3 text-zinc-500 text-xs">{new Date(log.created_at).toLocaleString()}</td>
+                <tr key={log.id} className="border-b border-gray-700/50 hover:bg-gray-700/20">
+                  <td className={`p-3 font-mono ${actionColors[log.action] || 'text-gray-300'}`}>{actionLabel(log)}</td>
+                  <td className="p-3 text-gray-400">{log.resource_type}{log.resource_id ? `:${log.resource_id.slice(0, 8)}` : ''}</td>
+                  <td className="p-3 text-gray-500 font-mono text-xs">{log.ip_address || '-'}</td>
+                  <td className="p-3 text-gray-500 text-xs">{new Date(log.created_at).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
@@ -110,9 +110,9 @@ export default function AuditPage() {
       )}
 
       <div className="flex justify-between items-center mt-4">
-        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 bg-zinc-700 text-zinc-300 rounded disabled:opacity-50">Previous</button>
-        <span className="text-zinc-400 text-sm">Page {page} / {totalPages}</span>
-        <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 bg-zinc-700 text-zinc-300 rounded disabled:opacity-50">Next</button>
+        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 bg-gray-700 text-gray-300 rounded disabled:opacity-50">Previous</button>
+        <span className="text-gray-400 text-sm">Page {page} / {totalPages}</span>
+        <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 bg-gray-700 text-gray-300 rounded disabled:opacity-50">Next</button>
       </div>
     </div>
   )

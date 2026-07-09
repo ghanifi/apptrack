@@ -59,9 +59,13 @@ export default function DashboardPage() {
         </div>
         {recentProjects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-gray-600">
-            <Rocket size={32} className="mb-3 opacity-30" />
-            <p className="text-sm">No projects yet.</p>
-            <Link to="/dashboard/projects/new" className="mt-2 text-primary-500 hover:underline text-sm">
+            <Rocket size={36} className="mb-4 text-primary-500/60" />
+            <p className="text-base font-medium text-gray-300">No projects yet</p>
+            <p className="text-sm text-gray-500 mt-1 mb-4">Ship your first app to the stores in under 30 minutes.</p>
+            <Link
+              to="/dashboard/projects/new"
+              className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
               Create your first project
             </Link>
           </div>

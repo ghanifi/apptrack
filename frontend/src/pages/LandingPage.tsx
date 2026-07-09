@@ -32,7 +32,7 @@ const PLANS = [
     name: 'Enterprise',
     price: '$199',
     period: '/month',
-    features: ['Unlimited projects', '999 builds/month', '50 GB storage', '20 concurrent builds', 'RBAC & SSO', 'SLA guarantee', 'Dedicated support'],
+    features: ['999 projects', '999 builds/month', '50 GB storage', '20 concurrent builds', 'RBAC & SSO', 'SLA guarantee', 'Dedicated support'],
     cta: 'Contact Sales',
     highlight: false,
   },
@@ -301,7 +301,7 @@ export default function LandingPage() {
             {[
               { label: 'Avg Time to First Deploy', value: '< 30 min' },
               { label: 'Build Success Rate', value: '99.2%' },
-              { label: 'Frameworks Supported', value: '4+' },
+              { label: 'Frameworks Supported', value: '9' },
               { label: 'Avg Cost Per Build', value: '$0.50' },
             ].map(({ label, value }) => (
               <div key={label}>

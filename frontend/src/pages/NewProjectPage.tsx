@@ -100,7 +100,7 @@ export default function NewProjectPage() {
             <div className="p-6 text-center text-sm text-gray-500">
               <Github size={24} className="mx-auto mb-2 opacity-30" />
               GitHub not connected.{' '}
-              <a href="/settings" className="text-primary-400 hover:underline">Connect in Settings</a>
+              <a href="/dashboard/settings" className="text-primary-400 hover:underline">Connect in Settings</a>
             </div>
           ) : (
             <>

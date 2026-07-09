@@ -94,10 +94,10 @@ function PhoneMockup({ platform, meta }: { platform: Platform; meta: StoreMetada
                 <div className="flex items-center gap-1 mt-1">
                   <div className="flex">
                     {[1, 2, 3, 4, 5].map(s => (
-                      <Star key={s} size={8} className="text-yellow-400 fill-yellow-400" />
+                      <Star key={s} size={8} className="text-gray-300 fill-gray-300" />
                     ))}
                   </div>
-                  <span className="text-[9px] text-gray-400">4.8 (127)</span>
+                  <span className="text-[9px] text-gray-400">No ratings yet</span>
                 </div>
               </div>
               <button className="bg-blue-500 text-white text-[10px] font-semibold px-3 py-1 rounded-full flex-shrink-0">

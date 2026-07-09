@@ -186,11 +186,16 @@ async def _process_build_finished(payload: dict):
 async def _process_build_failed(payload: dict):
     build_id = payload.get("build_id")
     project_id = payload.get("project_id")
+    error_text = payload.get("error")
     async with AsyncSessionLocal() as db:
         if build_id:
+            values = {"status": "failed", "finished_at": datetime.utcnow()}
+            if error_text:
+                # Hata nedeni diagnosis'in okuduğu log_output alanına yazılır;
+                # aksi halde UI "No build log output available" gösterir.
+                values["log_output"] = error_text
             await db.execute(
-                update(Build).where(Build.id == build_id)
-                .values(status="failed", finished_at=datetime.utcnow())
+                update(Build).where(Build.id == build_id).values(**values)
             )
         if project_id:
             await db.execute(

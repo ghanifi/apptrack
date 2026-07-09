@@ -84,7 +84,7 @@ describe('DashboardPage', () => {
     renderWithProviders(<DashboardPage />)
 
     await waitFor(() => {
-      expect(screen.getByText('No projects yet.')).toBeInTheDocument()
+      expect(screen.getByText('No projects yet')).toBeInTheDocument()
     })
     expect(screen.getByText('Create your first project')).toBeInTheDocument()
   })

@@ -93,6 +93,7 @@ class BuildResponse(BaseModel):
     provider: str
     status: str
     artifact_url: str | None = None
+    log_output: str | None = None
     created_at: str
 
     class Config:
@@ -177,6 +178,7 @@ def _serialize_project(p: Project) -> dict:
                 "provider": b.provider,
                 "status": b.status,
                 "artifact_url": b.artifact_url,
+                "log_output": b.log_output,
                 "created_at": b.created_at.isoformat(),
             }
             for b in builds

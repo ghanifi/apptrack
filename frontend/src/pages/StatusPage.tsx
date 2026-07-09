@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { ArrowLeft, CheckCircle, AlertCircle, XCircle, Loader, Clock } from 'lucide-react'
 import logoImg from '@/assets/logo.png'
 import { api } from '@/lib/api'
@@ -29,6 +29,11 @@ const SERVICE_LABELS: Record<string, string> = {
 }
 
 export default function StatusPage() {
+  // /dashboard/status altında app shell zaten header+<main> sağlar;
+  // public /status rotasında standalone chrome gösterilir.
+  const embedded = useLocation().pathname.startsWith('/dashboard')
+  const Wrapper = embedded ? 'div' : 'main'
+
   const { data: health, isLoading, isError } = useQuery<HealthStatus>({
     queryKey: ['health'],
     queryFn: () => api.get('/health/deep').then((r) => r.data).catch(() => ({ status: 'unhealthy', services: {}, version: 'unknown' })),
@@ -39,20 +44,22 @@ export default function StatusPage() {
   const overallConfig = STATUS_CONFIG[overallStatus] ?? STATUS_CONFIG.unhealthy
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <header className="border-b border-gray-800">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
-            <img src={logoImg} alt="AppTrack" className="w-6 h-6 object-contain" />
-            <span className="font-bold">AppTrack</span>
-          </Link>
-          <Link to="/" className="text-sm text-gray-400 hover:text-white flex items-center gap-1">
-            <ArrowLeft size={14} /> Back
-          </Link>
-        </div>
-      </header>
+    <div className={embedded ? 'text-white' : 'min-h-screen bg-gray-950 text-white'}>
+      {!embedded && (
+        <header className="border-b border-gray-800">
+          <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+            <Link to="/" className="flex items-center gap-2">
+              <img src={logoImg} alt="AppTrack" className="w-6 h-6 object-contain" />
+              <span className="font-bold">AppTrack</span>
+            </Link>
+            <Link to="/" className="text-sm text-gray-400 hover:text-white flex items-center gap-1">
+              <ArrowLeft size={14} /> Back
+            </Link>
+          </div>
+        </header>
+      )}
 
-      <main className="max-w-4xl mx-auto px-6 py-16">
+      <Wrapper className={embedded ? 'max-w-4xl mx-auto px-6 py-8' : 'max-w-4xl mx-auto px-6 py-16'}>
         <h1 className="text-3xl font-bold mb-2">System Status</h1>
         <p className="text-gray-400 text-sm mb-8">Real-time status of AppTrack services. Updated every 30 seconds.</p>
 
@@ -109,7 +116,7 @@ export default function StatusPage() {
         )}
 
         <IncidentHistory />
-      </main>
+      </Wrapper>
     </div>
   )
 }

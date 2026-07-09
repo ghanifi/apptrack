@@ -176,6 +176,7 @@ export interface PlanInfo {
 export interface CurrentPlan {
   plan: string
   price_usd: number
+  stripe_configured?: boolean
   quotas: {
     max_projects: number
     max_builds_per_month: number
