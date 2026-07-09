@@ -12,6 +12,10 @@ on:
       project_id:
         required: false
         type: string
+      callback_url:
+        description: 'AppTrack callback URL (build result notification)'
+        required: false
+        type: string
       ios_cert_p12_base64:
         description: 'iOS Distribution Certificate P12 (base64)'
         required: false
@@ -45,6 +49,21 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      - name: Locate Flutter app directory
+        run: |
+          if [ -f "pubspec.yaml" ]; then
+            APP_DIR="."
+          else
+            PUBSPEC=$(find . -maxdepth 3 -name pubspec.yaml -not -path "*/.*" -not -path "*/node_modules/*" -not -path "*/build/*" | sort | head -1)
+            if [ -z "$PUBSPEC" ]; then
+              echo "ERROR: pubspec.yaml not found anywhere (depth 3) — not a Flutter project?"
+              exit 1
+            fi
+            APP_DIR=$(dirname "$PUBSPEC")
+          fi
+          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+          echo "Flutter app directory: $APP_DIR"
+
       - name: Select latest Xcode
         run: |
           LATEST_XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
@@ -56,11 +75,11 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.x'
           channel: 'stable'
           cache: true
 
       - name: Ensure iOS platform exists
+        working-directory: ${{ env.APP_DIR }}
         run: |
           if [ ! -d "ios" ]; then
             echo "ios/ not found — adding iOS platform..."
@@ -75,9 +94,11 @@ jobs:
           fi
 
       - name: Install dependencies
+        working-directory: ${{ env.APP_DIR }}
         run: flutter pub get
 
       - name: Run code generation (if needed)
+        working-directory: ${{ env.APP_DIR }}
         run: |
           if grep -q "build_runner" pubspec.yaml; then
             echo "Running build_runner..."
@@ -86,10 +107,12 @@ jobs:
         continue-on-error: true
 
       - name: Run tests
+        working-directory: ${{ env.APP_DIR }}
         run: flutter test --no-pub
         continue-on-error: true
 
       - name: Set iOS deployment target to 14.0
+        working-directory: ${{ env.APP_DIR }}
         run: |
           if [ -f "ios/Podfile" ]; then
             sed -i '' "s/platform :ios, '.*'/platform :ios, '14.0'/" ios/Podfile
@@ -101,10 +124,11 @@ jobs:
           find ios -name "project.pbxproj" -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' {} \;
 
       - name: Install CocoaPods
-        working-directory: ios
+        working-directory: ${{ env.APP_DIR }}/ios
         run: pod install --repo-update || pod install || echo "Pod install failed"
 
       - name: Force iOS 14.0 on all Pods targets
+        working-directory: ${{ env.APP_DIR }}
         run: |
           find ios/Pods -name "project.pbxproj" -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' {} \; 2>/dev/null || true
           find ios -name "*.xcconfig" -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' {} \; 2>/dev/null || true
@@ -134,6 +158,7 @@ jobs:
           rm /tmp/profile.mobileprovision
 
       - name: Build IPA (release signed)
+        working-directory: ${{ env.APP_DIR }}
         if: ${{ github.event.inputs.ios_cert_p12_base64 != '' }}
         run: |
           flutter build ipa --release \
@@ -141,6 +166,7 @@ jobs:
           flutter build ipa --release
 
       - name: Upload to App Store Connect / TestFlight
+        working-directory: ${{ env.APP_DIR }}
         if: ${{ github.event.inputs.ios_cert_p12_base64 != '' && github.event.inputs.appstore_api_key_id != '' }}
         run: |
           mkdir -p ~/private_keys
@@ -176,8 +202,8 @@ jobs:
         with:
           name: flutter-ios-${{ github.event.inputs.build_id }}
           path: |
-            build/ios/ipa/*.ipa
-            build/ios/iphonesimulator/*.app
+            ${{ env.APP_DIR }}/build/ios/ipa/*.ipa
+            ${{ env.APP_DIR }}/build/ios/iphonesimulator/*.app
           retention-days: 7
 
       - name: Cleanup keychain
@@ -190,7 +216,7 @@ jobs:
           STATUS="${{ job.status }}"
           BUILD_STATUS="success"
           if [ "$STATUS" != "success" ]; then BUILD_STATUS="failed"; fi
-          CALLBACK="${{ secrets.APPTRACK_CALLBACK_URL }}"
+          CALLBACK="${{ github.event.inputs.callback_url || secrets.APPTRACK_CALLBACK_URL }}"
           if [ -n "$CALLBACK" ]; then
             curl -s -X POST "$CALLBACK" \
               -H "Content-Type: application/json" \

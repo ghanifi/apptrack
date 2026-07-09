@@ -5,6 +5,10 @@ on:
       build_id:
         description: 'AppTrack Build ID'
         required: true
+      callback_url:
+        description: 'AppTrack callback URL (build result notification)'
+        required: false
+        type: string
       platform:
         description: 'Target platform'
         required: true

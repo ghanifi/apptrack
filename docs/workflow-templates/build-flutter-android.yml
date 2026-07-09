@@ -37,13 +37,28 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      - name: Locate Flutter app directory
+        run: |
+          if [ -f "pubspec.yaml" ]; then
+            APP_DIR="."
+          else
+            PUBSPEC=$(find . -maxdepth 3 -name pubspec.yaml -not -path "*/.*" -not -path "*/node_modules/*" -not -path "*/build/*" | sort | head -1)
+            if [ -z "$PUBSPEC" ]; then
+              echo "ERROR: pubspec.yaml not found anywhere (depth 3) — not a Flutter project?"
+              exit 1
+            fi
+            APP_DIR=$(dirname "$PUBSPEC")
+          fi
+          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+          echo "Flutter app directory: $APP_DIR"
+
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.x'
           channel: 'stable'
           cache: true
 
       - name: Setup Android local.properties
+        working-directory: ${{ env.APP_DIR }}
         run: |
           if [ -d "android" ]; then
             echo "sdk.dir=$ANDROID_HOME" > android/local.properties
@@ -53,9 +68,11 @@ jobs:
           fi
 
       - name: Install dependencies
+        working-directory: ${{ env.APP_DIR }}
         run: flutter pub get
 
       - name: Run code generation (if needed)
+        working-directory: ${{ env.APP_DIR }}
         run: |
           if grep -q "build_runner" pubspec.yaml; then
             echo "Running build_runner..."
@@ -64,10 +81,12 @@ jobs:
         continue-on-error: true
 
       - name: Run tests
+        working-directory: ${{ env.APP_DIR }}
         run: flutter test --no-pub
         continue-on-error: true
 
       - name: Setup Android signing
+        working-directory: ${{ env.APP_DIR }}
         if: inputs.android_keystore_base64 != ''
         run: |
           echo "${{ inputs.android_keystore_base64 }}" | base64 -d > android/app/upload-keystore.jks
@@ -79,10 +98,12 @@ jobs:
           EOF
 
       - name: Build APK (debug)
+        working-directory: ${{ env.APP_DIR }}
         if: inputs.android_keystore_base64 == ''
         run: flutter build apk --debug
 
       - name: Build AAB (release)
+        working-directory: ${{ env.APP_DIR }}
         if: inputs.android_keystore_base64 != ''
         run: flutter build appbundle --release
 
@@ -91,8 +112,8 @@ jobs:
         with:
           name: flutter-android-build
           path: |
-            build/app/outputs/flutter-apk/*.apk
-            build/app/outputs/bundle/release/*.aab
+            ${{ env.APP_DIR }}/build/app/outputs/flutter-apk/*.apk
+            ${{ env.APP_DIR }}/build/app/outputs/bundle/release/*.aab
           retention-days: 7
 
       - name: Notify AppTrack
@@ -102,7 +123,7 @@ jobs:
           BUILD_STATUS="success"
           if [ "$STATUS" != "success" ]; then BUILD_STATUS="failed"; fi
           CALLBACK="${{ inputs.callback_url }}"
-          if [ -z "$CALLBACK" ]; then CALLBACK="${{ secrets.APPTRACK_CALLBACK_URL }}"; fi
+          if [ -z "$CALLBACK" ]; then CALLBACK="${{ github.event.inputs.callback_url || secrets.APPTRACK_CALLBACK_URL }}"; fi
           if [ -n "$CALLBACK" ]; then
             curl -s -X POST "$CALLBACK" \
               -H "Content-Type: application/json" \

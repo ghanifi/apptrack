@@ -10,7 +10,7 @@ import {
 import { api } from '@/lib/api'
 import type { Project, Build, Deployment } from '@/types'
 import BuildDiagnosisPanel from '@/components/ui/BuildDiagnosisPanel'
-import { frameworkLabel, platformLabel } from '@/lib/labels'
+import { frameworkLabel, platformLabel, providerLabel } from '@/lib/labels'
 import clsx from 'clsx'
 
 const frameworkColors: Record<string, string> = {
@@ -604,8 +604,8 @@ export default function ProjectDetailPage() {
                         {build.status}
                       </span>
                       <div>
-                        <p className="text-sm font-medium capitalize">
-                          {build.platform} · {build.provider}
+                        <p className="text-sm font-medium">
+                          {platformLabel(build.platform)} · {providerLabel(build.provider)}
                           {build.trigger_type === 'pull_request' && build.pr_number && (
                             <span className="ml-2 text-xs text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded">
                               PR #{build.pr_number}

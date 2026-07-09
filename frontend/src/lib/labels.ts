@@ -19,6 +19,19 @@ export function frameworkLabel(framework: string | null | undefined): string {
   return FRAMEWORK_LABELS[framework] ?? framework
 }
 
+export const PROVIDER_LABELS: Record<string, string> = {
+  github_actions: 'GitHub Actions',
+  eas: 'EAS',
+  codemagic: 'Codemagic',
+  xcode_cloud: 'Xcode Cloud',
+  self_hosted: 'Self-hosted',
+  simulation: 'Simulation',
+}
+
+export function providerLabel(provider: string): string {
+  return PROVIDER_LABELS[provider] ?? provider
+}
+
 export function platformLabel(platform: string): string {
   switch (platform) {
     case 'ios': return 'iOS'
