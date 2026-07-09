@@ -10,6 +10,7 @@ import {
 import { api } from '@/lib/api'
 import type { Project, Build, Deployment } from '@/types'
 import BuildDiagnosisPanel from '@/components/ui/BuildDiagnosisPanel'
+import LiveBuildProgress from '@/components/LiveBuildProgress'
 import { frameworkLabel, platformLabel, providerLabel } from '@/lib/labels'
 import clsx from 'clsx'
 
@@ -378,6 +379,8 @@ export default function ProjectDetailPage() {
   // butonları gizlemek kullanıcıyı diagnosis panelindeki Retry'a mahkum ediyordu.
   const canBuild = ['ready', 'error'].includes(project.status) && project.framework !== 'unknown'
   const visibleBuilds = showAllBuilds ? (project.builds ?? []) : (project.builds ?? []).slice(0, 5)
+  // En yeni devam eden build — canlı ilerleme paneli bunu izler
+  const activeBuild = (project.builds ?? []).find((b) => b.status === 'queued' || b.status === 'running')
 
   return (
     <div className="p-8 max-w-4xl">
@@ -582,6 +585,8 @@ export default function ProjectDetailPage() {
           )}
         </div>
       )}
+
+      {activeBuild && <LiveBuildProgress buildId={activeBuild.id} projectId={project.id} />}
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl mb-6">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">

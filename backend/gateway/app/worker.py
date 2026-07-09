@@ -182,6 +182,9 @@ async def _process_build_finished(payload: dict):
         except Exception as exc:
             logger.warning("Metrics recording failed for build %s: %s", build_id, exc)
 
+    from app.notification_worker import dispatch_for_event
+    await dispatch_for_event(payload, "build.finished")
+
 
 async def _process_build_failed(payload: dict):
     build_id = payload.get("build_id")
@@ -203,6 +206,9 @@ async def _process_build_failed(payload: dict):
                 .values(status="error", updated_at=datetime.utcnow())
             )
         await db.commit()
+
+    from app.notification_worker import dispatch_for_event
+    await dispatch_for_event(payload, "build.failed")
 
 
 async def _process_deploy_completed(payload: dict):
@@ -235,6 +241,9 @@ async def _process_deploy_completed(payload: dict):
         except Exception as exc:
             logger.warning("Metrics recording failed for deployment %s: %s", deployment_id, exc)
 
+    from app.notification_worker import dispatch_for_event
+    await dispatch_for_event(payload, "deploy.completed")
+
 
 async def _process_deploy_failed(payload: dict):
     deployment_id = payload.get("deployment_id")
@@ -256,6 +265,9 @@ async def _process_deploy_failed(payload: dict):
     except Exception as exc:
         logger.warning("Metrics recording failed for deployment %s: %s", deployment_id, exc)
 
+    from app.notification_worker import dispatch_for_event
+    await dispatch_for_event(payload, "deploy.failed")
+
 
 async def handle_framework_detected(message: aio_pika.abc.AbstractIncomingMessage):
     await _with_retry(message, "framework.detected", _process_framework_detected)
@@ -268,6 +280,33 @@ async def handle_repo_sync_failed(message: aio_pika.abc.AbstractIncomingMessage)
             await _process_repo_sync_failed(payload)
         except Exception as exc:
             logger.error("Failed to handle repo.sync_failed: %s", exc)
+
+
+async def _process_build_progress(payload: dict):
+    """Canlı ilerlemeyi yalnızca WS'e yayınlar — DB'ye dokunmaz (yüksek frekanslı, geçici)."""
+    build_id = payload.get("build_id")
+    if not build_id:
+        return
+    try:
+        from app.ws import broadcast_build_progress
+        await broadcast_build_progress(build_id, {
+            "build_id": build_id,
+            "run_status": payload.get("run_status", ""),
+            "html_url": payload.get("html_url", ""),
+            "elapsed_seconds": payload.get("elapsed_seconds", 0),
+            "steps": payload.get("steps", []),
+        })
+    except Exception as ws_exc:
+        logger.debug("WebSocket progress broadcast failed for build %s: %s", build_id, ws_exc)
+
+
+async def handle_build_progress(message: aio_pika.abc.AbstractIncomingMessage):
+    async with message.process(requeue=False):
+        try:
+            payload = json.loads(message.body)
+            await _process_build_progress(payload)
+        except Exception as exc:
+            logger.error("Failed to handle build.progress: %s", exc)
 
 
 async def handle_build_started(message: aio_pika.abc.AbstractIncomingMessage):
@@ -319,6 +358,7 @@ async def start_event_worker():
         "framework.detected": handle_framework_detected,
         "repo.sync_failed": handle_repo_sync_failed,
         "build.started": handle_build_started,
+        "build.progress": handle_build_progress,
         "build.finished": handle_build_finished,
         "build.failed": handle_build_failed,
         "deploy.completed": handle_deploy_completed,

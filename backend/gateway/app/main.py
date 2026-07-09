@@ -33,6 +33,7 @@ from app.routers import incidents as incidents_router
 from app.routers import releases as releases_router
 from app.routers import cache as cache_router
 from app.routers import crash_reporting as crash_reporting_router
+from app.routers import onboarding as onboarding_router
 from app.ws import router as ws_router
 import time as _time
 from app.config import settings
@@ -44,7 +45,6 @@ from app.worker import start_event_worker
 from app.cleanup import cleanup_stale_builds
 from app.webhook_guard import cleanup_expired_nonces
 from app.waf import WAFMiddleware
-from app.notification_worker import start_notification_worker
 
 setup_logging(level="INFO", json_output=True)
 logger = logging.getLogger(__name__)
@@ -210,15 +210,6 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Event worker unavailable: %s", exc)
 
-    try:
-        import aio_pika
-        notif_conn = await aio_pika.connect_robust(settings.RABBITMQ_URL)
-        notif_channel = await notif_conn.channel()
-        await start_notification_worker(notif_channel)
-        logger.info("Notification worker started")
-    except Exception as exc:
-        logger.warning("Notification worker unavailable: %s", exc)
-
     _background_tasks["stale_build_cleanup"] = asyncio.create_task(cleanup_stale_builds())
     logger.info("Stale build cleanup task started")
 
@@ -368,6 +359,7 @@ app.include_router(incidents_router.router)
 app.include_router(releases_router.router)
 app.include_router(cache_router.router)
 app.include_router(crash_reporting_router.router)
+app.include_router(onboarding_router.router)
 app.include_router(auto_signing_router.router, prefix="/api/signing", tags=["auto-signing"])
 app.include_router(ws_router)
 

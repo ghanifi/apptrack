@@ -1,11 +1,10 @@
 import json
 import logging
-import aio_pika
 import httpx
 from sqlalchemy import select
 from app.config import settings
 from app.database import AsyncSessionLocal
-from app.models import Notification, NotificationPreference, Build, Project, User
+from app.models import Notification, NotificationPreference, Build, Project, User, Deployment
 
 logger = logging.getLogger(__name__)
 
@@ -111,17 +110,36 @@ async def _dispatch_notification(user_id: str, notif_type: str, title: str, body
                 await _send_email(user.email, title, body)
 
 
-async def _process_notification_event(payload: dict, routing_key: str):
+async def _resolve_owner_id(payload: dict) -> str | None:
+    """Payload'dan proje sahibini çöz. build.* eventlerinde project_id,
+    deploy.* eventlerinde yalnızca deployment_id gelir — o zaman
+    Deployment → Build → Project zinciriyle sahibe ulaşılır."""
     owner_id = payload.get("owner_id")
-    if not owner_id:
-        project_id = payload.get("project_id")
-        if project_id:
-            async with AsyncSessionLocal() as db:
-                result = await db.execute(select(Project.owner_id).where(Project.id == project_id))
-                row = result.first()
-                if row:
-                    owner_id = row[0]
+    if owner_id:
+        return owner_id
 
+    project_id = payload.get("project_id")
+    deployment_id = payload.get("deployment_id")
+    async with AsyncSessionLocal() as db:
+        if not project_id and deployment_id:
+            row = (await db.execute(
+                select(Build.project_id)
+                .join(Deployment, Deployment.build_id == Build.id)
+                .where(Deployment.id == deployment_id)
+            )).first()
+            if row:
+                project_id = row[0]
+        if project_id:
+            row = (await db.execute(
+                select(Project.owner_id).where(Project.id == project_id)
+            )).first()
+            if row:
+                owner_id = row[0]
+    return owner_id
+
+
+async def _process_notification_event(payload: dict, routing_key: str):
+    owner_id = await _resolve_owner_id(payload)
     if not owner_id:
         logger.debug("Cannot determine owner_id for notification event %s", routing_key)
         return
@@ -129,6 +147,12 @@ async def _process_notification_event(payload: dict, routing_key: str):
     status = payload.get("status", "")
     build_id = payload.get("build_id", "")
     deployment_id = payload.get("deployment_id", "")
+
+    # build-service başarısızlıkları ayrı bir routing key (build.failed) ile yayımlar;
+    # aynı bildirim yolunu kullanmak için build.finished/status=failed'e normalize et.
+    if routing_key == "build.failed":
+        routing_key = "build.finished"
+        status = "failed"
 
     if routing_key == "build.finished":
         config = EVENT_NOTIFICATION_MAP["build.finished"].get(status)
@@ -162,33 +186,12 @@ async def _process_notification_event(payload: dict, routing_key: str):
         )
 
 
-async def handle_notification_event(message: aio_pika.abc.AbstractIncomingMessage):
-    async with message.process(requeue=False):
-        try:
-            payload = json.loads(message.body)
-            routing_key = message.routing_key or ""
-            await _process_notification_event(payload, routing_key)
-        except Exception as exc:
-            logger.error("Notification processing failed for %s: %s", message.routing_key, exc)
-
-
-async def start_notification_worker(channel: aio_pika.abc.AbstractChannel):
-    queue_args = {
-        "x-dead-letter-exchange": "dlx",
-        "x-dead-letter-routing-key": "dead_letter_queue",
-        "x-message-ttl": 86400000,
-    }
-
-    notification_exchange = await channel.declare_exchange(
-        "notifications", aio_pika.ExchangeType.TOPIC, durable=True
-    )
-
-    notification_queue = await channel.declare_queue(
-        "notification.events", durable=True, arguments=queue_args
-    )
-
-    for key in ["build.finished", "deploy.completed", "deploy.failed"]:
-        await notification_queue.bind(notification_exchange, routing_key=key)
-
-    await notification_queue.consume(handle_notification_event)
-    logger.info("Notification worker started — listening for build/deploy events")
+async def dispatch_for_event(payload: dict, routing_key: str):
+    """Gateway event worker'ından in-process çağrılır. Bildirim event'leri
+    default exchange üzerinden yalnızca gateway worker kuyruklarına ulaştığı için
+    (ayrı bir 'notifications' exchange'ine kimse publish etmiyordu), bildirim
+    gönderimi build/deploy işlendikten sonra doğrudan burada tetiklenir."""
+    try:
+        await _process_notification_event(payload, routing_key)
+    except Exception as exc:
+        logger.error("Notification dispatch failed for %s: %s", routing_key, exc)

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
 import { FolderGit2, Rocket, CheckCircle, Clock, ArrowRight, BarChart3 } from 'lucide-react'
 import { api } from '@/lib/api'
+import OnboardingChecklist from '@/components/OnboardingChecklist'
 import type { Project, UsageSummary } from '@/types'
 
 export default function DashboardPage() {
@@ -39,6 +40,7 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold">Welcome back, {user?.name ?? 'there'}</h1>
         <p className="text-gray-400 text-sm mt-1">Here's what's happening with your apps.</p>
       </div>
+      <OnboardingChecklist />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {stats.map(({ label, value, icon: Icon, color }) => (
           <div key={label} className="bg-gray-900 border border-gray-800 rounded-xl p-5">

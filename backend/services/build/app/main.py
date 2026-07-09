@@ -569,6 +569,33 @@ async def _poll_github_actions_build(
 
     logger.info("Polling GitHub Actions run %s for build %s", run_id, build_id)
 
+    async def _publish_progress(run_data: dict):
+        """Canlı build ilerlemesini WS'e taşınmak üzere yayımla — GitHub Actions'ın
+        adım-seviyesi durumu (byte-log ancak bitişte alınabilir). Best-effort."""
+        try:
+            jobs = await _gh_get(f"https://api.github.com/repos/{owner_repo}/actions/runs/{run_id}/jobs")
+            steps = []
+            if jobs:
+                for job in jobs.get("jobs", []):
+                    for st in job.get("steps", []):
+                        steps.append({
+                            "name": st.get("name", ""),
+                            "status": st.get("status", ""),       # queued|in_progress|completed
+                            "conclusion": st.get("conclusion"),   # success|failure|skipped|null
+                            "number": st.get("number", 0),
+                        })
+            await publish_event(channel, "build.progress", {
+                "build_id": build_id,
+                "project_id": project_id,
+                "run_status": run_data.get("status", ""),
+                "html_url": run_data.get("html_url", ""),
+                "elapsed_seconds": elapsed,
+                "steps": steps,
+                "provider": "github_actions",
+            })
+        except Exception as exc:
+            logger.debug("Progress publish failed for build %s: %s", build_id, exc)
+
     # Poll until complete
     while elapsed < max_wait:
         await asyncio.sleep(interval)
@@ -581,6 +608,9 @@ async def _poll_github_actions_build(
         status = data.get("status")
         conclusion = data.get("conclusion")
         logger.info("Poll build %s: status=%s conclusion=%s (%ds)", build_id[:8], status, conclusion, elapsed)
+
+        if status != "completed":
+            await _publish_progress(data)
 
         if status == "completed":
             build_status = "success" if conclusion == "success" else "failed"
