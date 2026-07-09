@@ -6,7 +6,8 @@ import {
   Check, AlertCircle, Globe, Star, X, Plus, Eye, Shield,
   Languages, ArrowUp, ArrowDown, Clock, XCircle, CheckCircle,
   Camera, Zap, Tablet, ExternalLink, Loader2,
-  MonitorSmartphone, Layout,
+  MonitorSmartphone, Layout, Wifi, Search, MoreVertical,
+  ChevronLeft, Share, Download,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Project, StoreMetadata, ComplianceResult, ReviewSimulation } from '@/types'
@@ -60,6 +61,36 @@ function PhoneMockup({ platform, meta }: { platform: Platform; meta: StoreMetada
   const category = meta?.category || 'Category'
   const screenshots = meta?.screenshots?.phone || []
 
+  const ekranlar = (
+    screenshots.length > 0 ? (
+      <div className="px-4 py-3 flex gap-2 overflow-x-auto">
+        {screenshots.slice(0, 3).map((url, i) => (
+          <div key={i} className={clsx('w-20 h-36 bg-gray-100 flex-shrink-0 overflow-hidden', isIos ? 'rounded-xl' : 'rounded-lg')}>
+            <img src={url} alt={`screenshot ${i + 1}`} className="w-full h-full object-cover" />
+          </div>
+        ))}
+      </div>
+    ) : (
+      <div className="px-4 py-3 flex gap-2">
+        {[1, 2, 3].map(i => (
+          <div key={i} className={clsx('w-20 h-36 bg-gray-100 flex-shrink-0 flex items-center justify-center', isIos ? 'rounded-xl' : 'rounded-lg')}>
+            <Image size={16} className="text-gray-300" />
+          </div>
+        ))}
+      </div>
+    )
+  )
+
+  const appIcon = (boyut: string, kose: string) => (
+    <div className={clsx(boyut, kose, 'bg-primary-600 flex items-center justify-center overflow-hidden flex-shrink-0')}>
+      {iconUrl ? (
+        <img src={iconUrl} alt="icon" className="w-full h-full object-cover" />
+      ) : (
+        <Smartphone size={22} className="text-white" />
+      )}
+    </div>
+  )
+
   return (
     <div className={clsx('relative mx-auto', isIos ? 'w-[280px]' : 'w-[270px]')}>
       <div className={clsx(
@@ -69,67 +100,119 @@ function PhoneMockup({ platform, meta }: { platform: Platform; meta: StoreMetada
         {isIos && (
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-6 bg-gray-950 rounded-b-2xl z-10 border-b-2 border-x-2 border-gray-600" />
         )}
-        <div className={clsx('bg-white rounded-[2rem] overflow-hidden', isIos ? 'pt-8' : 'pt-6')}>
-          {!isIos && (
-            <div className="flex items-center justify-between px-4 py-1 bg-gray-100">
-              <span className="text-[9px] text-gray-500">9:41</span>
-              <div className="flex gap-1">
-                <div className="w-3 h-2 bg-gray-400 rounded-sm" />
-                <div className="w-2 h-2 bg-gray-400 rounded-sm" />
-              </div>
-            </div>
-          )}
-          <div className="px-4 py-3 border-b border-gray-100">
-            <div className="flex items-start gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center overflow-hidden flex-shrink-0">
-                {iconUrl ? (
-                  <img src={iconUrl} alt="icon" className="w-full h-full object-cover" />
-                ) : (
-                  <Smartphone size={24} className="text-white" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">{appName}</p>
-                <p className="text-[10px] text-gray-500">{category}</p>
-                <div className="flex items-center gap-1 mt-1">
-                  <div className="flex">
-                    {[1, 2, 3, 4, 5].map(s => (
-                      <Star key={s} size={8} className="text-gray-300 fill-gray-300" />
-                    ))}
+        <div className="bg-white rounded-[2rem] overflow-hidden">
+          {isIos ? (
+            /* ─── App Store listing ─── */
+            <>
+              <div className="flex items-end justify-between px-6 pt-8 pb-1">
+                <span className="text-[10px] font-semibold text-gray-900">9:41</span>
+                <div className="flex items-center gap-1 text-gray-900">
+                  <Wifi size={9} strokeWidth={2.5} />
+                  <div className="w-4 h-2 border border-gray-900 rounded-[2px] relative">
+                    <div className="absolute inset-[1px] right-1 bg-gray-900 rounded-[1px]" />
                   </div>
-                  <span className="text-[9px] text-gray-400">No ratings yet</span>
                 </div>
               </div>
-              <button className="bg-blue-500 text-white text-[10px] font-semibold px-3 py-1 rounded-full flex-shrink-0">
-                {isIos ? 'GET' : 'Install'}
-              </button>
-            </div>
-          </div>
-          {screenshots.length > 0 ? (
-            <div className="px-4 py-3 flex gap-2 overflow-x-auto">
-              {screenshots.slice(0, 3).map((url, i) => (
-                <div key={i} className="w-20 h-36 bg-gray-100 rounded-lg flex-shrink-0 overflow-hidden">
-                  <img src={url} alt={`screenshot ${i + 1}`} className="w-full h-full object-cover" />
+              <div className="flex items-center justify-between px-4 py-2">
+                <span className="flex items-center gap-0.5 text-[11px] text-blue-500"><ChevronLeft size={12} /> Search</span>
+                <Share size={12} className="text-blue-500" />
+              </div>
+              <div className="px-4 pb-3 flex items-start gap-3">
+                {appIcon('w-16 h-16', 'rounded-[14px] border border-gray-200')}
+                <div className="flex-1 min-w-0 pt-0.5">
+                  <p className="text-[15px] font-semibold text-gray-900 leading-tight truncate">{appName}</p>
+                  <p className="text-[11px] text-gray-400 truncate">{category}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <button className="bg-gray-200 text-blue-500 text-[11px] font-bold px-5 py-1 rounded-full">GET</button>
+                    <Share size={13} className="text-blue-500 ml-auto" />
+                  </div>
                 </div>
-              ))}
-            </div>
+              </div>
+              <div className="mx-4 py-2 border-t border-b border-gray-100 flex items-center justify-around text-center">
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400">NO RATINGS</p>
+                  <div className="flex justify-center mt-0.5">
+                    {[1, 2, 3, 4, 5].map(s => <Star key={s} size={8} className="text-gray-300 fill-gray-300" />)}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400">AGE</p>
+                  <p className="text-[11px] font-semibold text-gray-500 mt-0.5">4+</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400">VERSION</p>
+                  <p className="text-[11px] font-semibold text-gray-500 mt-0.5">{version}</p>
+                </div>
+              </div>
+              {ekranlar}
+              <div className="px-4 py-2">
+                <p className="text-[11px] text-gray-600 leading-relaxed line-clamp-3">{shortDesc}</p>
+              </div>
+              <div className="px-4 py-2 flex items-center justify-between border-t border-gray-100">
+                <span className="text-[9px] text-gray-400">{meta?.bundle_id || 'com.example.app'}</span>
+                <span className="text-[9px] text-blue-500">more</span>
+              </div>
+              <div className="h-4" />
+            </>
           ) : (
-            <div className="px-4 py-3 flex gap-2">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="w-20 h-36 bg-gray-100 rounded-lg flex-shrink-0 flex items-center justify-center">
-                  <Image size={16} className="text-gray-300" />
+            /* ─── Google Play listing ─── */
+            <>
+              <div className="flex items-center justify-between px-4 pt-3 pb-1 bg-white">
+                <span className="text-[10px] font-medium text-gray-700">12:30</span>
+                <div className="flex items-center gap-1 text-gray-600">
+                  <Wifi size={9} strokeWidth={2.5} />
+                  <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-b-[7px] border-b-gray-600 rotate-180" />
+                  <div className="w-2 h-3 bg-gray-600 rounded-[1px]" />
                 </div>
-              ))}
-            </div>
+              </div>
+              <div className="flex items-center justify-between px-4 py-2">
+                <ChevronLeft size={14} className="text-gray-600" />
+                <div className="flex items-center gap-3 text-gray-600">
+                  <Search size={12} />
+                  <MoreVertical size={12} />
+                </div>
+              </div>
+              <div className="px-4 pb-2 flex items-start gap-3">
+                {appIcon('w-14 h-14', 'rounded-xl')}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[15px] font-medium text-gray-900 leading-tight truncate">{appName}</p>
+                  <p className="text-[11px] font-medium text-[#01875f] mt-0.5">Your Studio</p>
+                  <p className="text-[9px] text-gray-400">Contains ads · In-app purchases</p>
+                </div>
+              </div>
+              <div className="px-4 py-2 flex items-center justify-around text-center">
+                <div className="px-2">
+                  <p className="text-[11px] font-semibold text-gray-700 flex items-center justify-center gap-0.5">
+                    — <Star size={8} className="text-gray-700 fill-gray-700" />
+                  </p>
+                  <p className="text-[8px] text-gray-400 mt-0.5">No reviews</p>
+                </div>
+                <div className="w-px h-6 bg-gray-200" />
+                <div className="px-2">
+                  <p className="text-[11px] font-semibold text-gray-700 flex items-center justify-center"><Download size={10} /></p>
+                  <p className="text-[8px] text-gray-400 mt-0.5">New</p>
+                </div>
+                <div className="w-px h-6 bg-gray-200" />
+                <div className="px-2">
+                  <p className="text-[11px] font-semibold text-gray-700 border border-gray-400 rounded-[3px] px-1 leading-tight inline-block">E</p>
+                  <p className="text-[8px] text-gray-400 mt-0.5">Everyone</p>
+                </div>
+              </div>
+              <div className="px-4 py-2">
+                <button className="w-full bg-[#01875f] text-white text-[12px] font-medium py-2 rounded-lg">Install</button>
+              </div>
+              {ekranlar}
+              <div className="px-4 py-2">
+                <p className="text-[12px] font-medium text-gray-900 mb-1">About this app</p>
+                <p className="text-[11px] text-gray-600 leading-relaxed line-clamp-3">{shortDesc}</p>
+              </div>
+              <div className="px-4 py-2 flex items-center justify-between border-t border-gray-100">
+                <span className="text-[9px] text-gray-400">Version {version}</span>
+                <span className="text-[9px] text-gray-400">{meta?.bundle_id || 'com.example.app'}</span>
+              </div>
+              <div className="h-4" />
+            </>
           )}
-          <div className="px-4 py-3 border-t border-gray-100">
-            <p className="text-[11px] text-gray-600 leading-relaxed line-clamp-3">{shortDesc}</p>
-          </div>
-          <div className="px-4 py-2 border-t border-gray-100 flex items-center justify-between">
-            <span className="text-[9px] text-gray-400">Version {version}</span>
-            <span className="text-[9px] text-gray-400">{meta?.bundle_id || 'com.example.app'}</span>
-          </div>
-          <div className="h-4" />
         </div>
       </div>
       <div className="text-center mt-3">
