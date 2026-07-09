@@ -1,5 +1,7 @@
 # AppTrack
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+
 Mobile app CI/CD and Store management platform. Build, test, deploy and manage your mobile applications from a single dashboard.
 
 ## Supported Frameworks & Languages
@@ -10,7 +12,7 @@ AppTrack supports **9 mobile/web frameworks** across **6 programming languages**
 
 | Framework | Language | Platforms | Build Provider | Workflow |
 |-----------|----------|-----------|----------------|----------|
-| **Swift** | Swift | iOS | GitHub Actions (GitHub Hosted macos-latest) | `build-ios.yml` |
+| **Swift** | Swift | iOS | GitHub Actions (GitHub Hosted macos-26) | `build-ios.yml` |
 | **Kotlin** | Kotlin | Android | GitHub Actions | `build-android.yml` |
 
 ### Cross-Platform Frameworks
@@ -108,7 +110,7 @@ AppTrack supports **9 mobile/web frameworks** across **6 programming languages**
   │   │  EAS Build ──────── React Native, Expo                               │ │
   │   │  Codemagic ──────── Flutter                                          │ │
   │   │  GitHub Actions ─── Swift, Kotlin, Capacitor, Ionic, Cordova, PWA    │ │
-  │   │  macOS Hosted ───── iOS builds via macos-latest (free, no Mac needed)│ │
+  │   │  macOS Hosted ───── iOS builds via macos-26 (free, no Mac needed)│ │
   │   │                                                                      │ │
   │   └──────────────────────────────────────────────────────────────────────┘ │
   │                                                                            │
@@ -127,7 +129,7 @@ AppTrack supports **9 mobile/web frameworks** across **6 programming languages**
   │                                                                            │
   │   Output Artifacts:                                                        │
   │   ├── Android: Signed APK / AAB                                            │
-  │   ├── iOS: Signed IPA (via GitHub hosted macos-latest runner)               │
+  │   ├── iOS: Signed IPA (via GitHub hosted macos-26 runner)               │
   │   ├── Web: Static build (dist.zip)                                         │
   │   └── PWA Android: TWA APK (via Bubblewrap)                                │
   └────────────────────────────────────────────────────────────────────────────┘
@@ -237,12 +239,12 @@ AppTrack provides built-in OTA update support for Capacitor, Ionic, and Cordova 
 
 ---
 
-## iOS Build — GitHub Hosted Runner (macos-latest)
+## iOS Build — GitHub Hosted Runner (macos-26)
 
-AppTrack uses GitHub's hosted `macos-latest` runner for iOS builds — **no Mac Mini or self-hosted hardware needed**:
+AppTrack uses GitHub's hosted `macos-26` runner for iOS builds — **no Mac Mini or self-hosted hardware needed**:
 
 ```
-  GitHub Actions                    macos-latest (GitHub Hosted)
+  GitHub Actions                    macos-26 (GitHub Hosted)
   ──────────────                    ────────────────────────────
        │                                    │
        │  workflow_dispatch                 │
@@ -272,8 +274,8 @@ AppTrack uses GitHub's hosted `macos-latest` runner for iOS builds — **no Mac 
 
 | Repo Type | Runner | Monthly Limit | Cost |
 |-----------|--------|---------------|------|
-| **Public** | `macos-latest` | Unlimited | $0 |
-| **Private** | `macos-latest` | ~200 min (~13 builds) | $0 |
+| **Public** | `macos-26` | Unlimited | $0 |
+| **Private** | `macos-26` | ~200 min (~13 builds) | $0 |
 
 **Alternatives for private repos exceeding free tier:**
 - Codemagic free tier: 500 min/mo (~33 builds)
@@ -284,7 +286,7 @@ AppTrack uses GitHub's hosted `macos-latest` runner for iOS builds — **no Mac 
 ## Features
 
 - **Multi-Framework Support**: React Native, Flutter, Expo, Swift, Kotlin, Capacitor, Ionic, Cordova, PWA
-- **CI/CD Pipeline**: Automated builds via EAS, Codemagic, GitHub Actions (macos-latest for iOS)
+- **CI/CD Pipeline**: Automated builds via EAS, Codemagic, GitHub Actions (macos-26 for iOS)
 - **Store Deployment**: Google Play, App Store, and Web (Netlify/Vercel) publishing
 - **OTA Live Updates**: Over-the-air JavaScript bundle updates with channel-based rollout
 - **Live Preview**: Real-time app preview with device emulation
@@ -553,6 +555,20 @@ apptrack/
 └── Makefile
 ```
 
+## Self-Hosting
+
+AppTrack is open-core: this repository contains the full platform and can be
+self-hosted with Docker Compose (see Quick Start above). The hosted cloud
+version adds managed billing, multi-tenancy and automated iOS signing.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for the vulnerability disclosure process and a
+summary of the security model (encrypted credentials, signed webhooks,
+hash-chained audit log).
+
 ## License
 
-MIT License -- see [LICENSE](LICENSE) for details.
+GNU Affero General Public License v3.0 — see [LICENSE](LICENSE) for details.
+If you run a modified version of AppTrack as a network service, the AGPL
+requires you to offer its source to your users.

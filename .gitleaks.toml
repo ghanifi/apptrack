@@ -1,0 +1,17 @@
+# gitleaks yapılandırması — bilinen yanlış pozitifler
+# Tarama: gitleaks git . --config .gitleaks.toml
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Dokümantasyon placeholder'ları ve test fixture'ları"
+paths = [
+  '''docs/capacitor-ota-plugin\.md''',          # YOUR_TOKEN placeholder
+  '''scripts/generate_credential_docs\.js''',    # örnek service-account JSON şablonu
+  '''scripts/generate_credential_pdf\.py''',     # örnek service-account JSON şablonu
+]
+regexes = [
+  '''-----BEGIN PRIVATE KEY-----\\nfake''',      # test fixture (store-deploy testleri)
+  '''YOUR_TOKEN''',
+]

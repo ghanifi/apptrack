@@ -21,3 +21,6 @@ android_gen/
 ios_gen/
 .playwright-mcp/
 .mcp.json
+
+track.txt
+test_asma.txt
