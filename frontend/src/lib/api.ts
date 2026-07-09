@@ -20,7 +20,10 @@ api.interceptors.response.use(
   (res) => res,
   async (err) => {
     const originalRequest = err.config
-    if (err.response?.status === 401 && !(originalRequest as any)._retry) {
+    // Login/register/refresh'in kendi 401'i oturum süresi dolması değildir;
+    // refresh+redirect akışına girerse sayfa yenilenir ve form hatası kaybolur.
+    const isAuthEndpoint = /\/auth\/(login|register|refresh)$/.test(originalRequest?.url ?? '')
+    if (err.response?.status === 401 && !isAuthEndpoint && !(originalRequest as any)._retry) {
       (originalRequest as any)._retry = true
       const refreshed = await useAuthStore.getState().refreshAccessToken()
       if (refreshed) {

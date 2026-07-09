@@ -227,6 +227,7 @@ async def list_projects(
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=ProjectResponse)
 async def create_project(
     req: ProjectCreate,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -274,6 +275,7 @@ async def create_project(
         db, action="project.created", resource_type="project",
         resource_id=project.id, user_id=current_user["id"],
         details={"name": project.name, "repo_url": project.repo_url, "repo_visibility": repo_visibility},
+        request=request,
     )
     await db.commit()
 

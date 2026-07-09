@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, FolderGit2, LogOut, Settings, BarChart3, Shield, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { LayoutDashboard, FolderGit2, LogOut, Settings, BarChart3, Shield, AlertTriangle, ChevronLeft, ChevronRight, LifeBuoy } from 'lucide-react'
 import logoImg from '@/assets/logo.png'
 import { useAuthStore } from '@/store/authStore'
 import clsx from 'clsx'
@@ -13,6 +13,7 @@ const navItems = [
   { to: '/dashboard/audit', icon: Shield, label: 'Audit Log' },
   { to: '/dashboard/status', icon: AlertTriangle, label: 'Status' },
   { to: '/dashboard/settings', icon: Settings, label: 'Settings' },
+  { to: '/support', icon: LifeBuoy, label: 'Support' },
 ]
 
 const SIDEBAR_KEY = 'apptrack-sidebar-collapsed'

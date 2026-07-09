@@ -101,7 +101,9 @@ export default function AuditPage() {
                   <td className={`p-3 font-mono ${actionColors[log.action] || 'text-gray-300'}`}>{actionLabel(log)}</td>
                   <td className="p-3 text-gray-400">{log.resource_type}{log.resource_id ? `:${log.resource_id.slice(0, 8)}` : ''}</td>
                   <td className="p-3 text-gray-500 font-mono text-xs">{log.ip_address || '-'}</td>
-                  <td className="p-3 text-gray-500 text-xs">{new Date(log.created_at).toLocaleString()}</td>
+                  <td className="p-3 text-gray-500 text-xs" title={log.created_at}>
+                    {new Date(log.created_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'UTC' })} UTC
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -37,7 +37,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-26  # Xcode 26 zorunlu (ASC 28 Nis 2026); macos-latest migrasyonu nondeterministik
     timeout-minutes: 30
     env:
       KEYCHAIN_NAME: apptrack-build-${{ github.event.inputs.build_id }}

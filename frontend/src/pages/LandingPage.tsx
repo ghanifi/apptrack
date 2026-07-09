@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Github, Smartphone, Store, Shield, Zap, ArrowRight, Check, Globe, BarChart3, Clock, Lock, Star, Users, Timer, ChevronRight, RefreshCw, ShieldCheck, RotateCcw, Play } from 'lucide-react'
+import { Github, Smartphone, Store, Shield, Zap, ArrowRight, Check, Globe, BarChart3, Clock, Lock, Users, Timer, ChevronRight, RefreshCw, ShieldCheck, RotateCcw, Play } from 'lucide-react'
 import logoImg from '@/assets/logo.png'
 
 const FEATURES = [
@@ -75,30 +75,6 @@ const VALUE_PROPS = [
   },
 ]
 
-const TESTIMONIALS = [
-  {
-    name: 'Sarah K.',
-    role: 'Indie Developer',
-    text: 'I spent 2 weeks trying to set up Fastlane. With AppTrack, my first app was on the Play Store in 20 minutes.',
-    avatar: 'SK',
-    stars: 5,
-  },
-  {
-    name: 'Mehmet A.',
-    role: 'Startup CTO',
-    text: 'We moved our entire mobile CI/CD from GitHub Actions to AppTrack. Our team saves 10+ hours per release cycle.',
-    avatar: 'MA',
-    stars: 5,
-  },
-  {
-    name: 'Lisa T.',
-    role: 'Freelance Developer',
-    text: 'The credential wizard alone is worth it. No more fumbling with App Store Connect API keys — it just works.',
-    avatar: 'LT',
-    stars: 5,
-  },
-]
-
 const PAIN_POINTS = [
   'Setting up Xcode build environments',
   'Managing signing certificates',
@@ -144,7 +120,7 @@ export default function LandingPage() {
 
         <div className="relative max-w-6xl mx-auto px-6 pt-24 pb-20 text-center">
           <div className="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/20 text-green-400 text-sm px-4 py-1.5 rounded-full mb-8 animate-pulse">
-            <Globe size={14} /> Trusted by 500+ developers worldwide
+            <Globe size={14} /> Built for indie developers & startups
           </div>
           <h1 className="text-5xl md:text-7xl font-extrabold leading-[1.1] mb-6 max-w-5xl mx-auto tracking-tight">
             Ship your mobile app<br />
@@ -299,10 +275,10 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
             {[
-              { label: 'Avg Time to First Deploy', value: '< 30 min' },
-              { label: 'Build Success Rate', value: '99.2%' },
+              { label: 'Repo to Store', value: '< 30 min' },
+              { label: 'Build Providers', value: '3' },
               { label: 'Frameworks Supported', value: '9' },
-              { label: 'Avg Cost Per Build', value: '$0.50' },
+              { label: 'Free Builds / Month', value: '10' },
             ].map(({ label, value }) => (
               <div key={label}>
                 <p className="text-3xl font-bold text-primary-400">{value}</p>
@@ -373,34 +349,6 @@ export default function LandingPage() {
             <Link to="/login" className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-500 text-white px-8 py-3 rounded-xl font-semibold transition-all hover:scale-105">
               Try It Now — It's Free <ArrowRight size={18} />
             </Link>
-          </div>
-        </div>
-      </section>
-
-      <section className="border-t border-gray-800 py-20">
-        <div className="max-w-6xl mx-auto px-6">
-          <h2 className="text-3xl font-bold text-center mb-4">Developers love AppTrack</h2>
-          <p className="text-gray-400 text-center mb-12">Here's what our users say after their first deploy.</p>
-          <div className="grid md:grid-cols-3 gap-6">
-            {TESTIMONIALS.map(({ name, role, text, avatar, stars }) => (
-              <div key={name} className="bg-gray-900 border border-gray-800 rounded-2xl p-6 hover:border-gray-700 transition-colors">
-                <div className="flex items-center gap-1 mb-4">
-                  {Array.from({ length: stars }).map((_, i) => (
-                    <Star key={i} size={16} className="text-yellow-400 fill-yellow-400" />
-                  ))}
-                </div>
-                <p className="text-sm text-gray-300 leading-relaxed mb-6">"{text}"</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-primary-600/20 rounded-full flex items-center justify-center text-sm font-bold text-primary-400">
-                    {avatar}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{name}</p>
-                    <p className="text-xs text-gray-500">{role}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       </section>
@@ -501,7 +449,7 @@ export default function LandingPage() {
             <span className="text-primary-400">in 30 minutes?</span>
           </h2>
           <p className="text-xl text-gray-400 mb-8">
-            Join 500+ developers who deploy faster with AppTrack.<br />
+            Deploy faster with AppTrack.<br />
             Free forever. No credit card required.
           </p>
           <Link
@@ -511,7 +459,7 @@ export default function LandingPage() {
             Start Free — Deploy Now <ArrowRight size={20} />
           </Link>
           <div className="flex items-center justify-center gap-6 mt-6 text-sm text-gray-500">
-            <span className="flex items-center gap-1"><Users size={14} /> 500+ developers</span>
+            <span className="flex items-center gap-1"><Users size={14} /> Free forever plan</span>
             <span className="flex items-center gap-1"><Clock size={14} /> Setup in 2 min</span>
             <span className="flex items-center gap-1"><Shield size={14} /> SOC2 ready</span>
           </div>

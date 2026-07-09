@@ -86,7 +86,7 @@ async def _ensure_workflow_exists(
     workflow_file: str,
     branch: str,
     github_token: str,
-    runner_label: str = "macos-latest",
+    runner_label: str = "macos-26",
 ) -> tuple[bool, bool]:
     """Check if workflow exists in user's repo; if not, auto-create it via GitHub API.
 
@@ -281,7 +281,9 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
     platform = payload.get("platform", "android")
     framework = payload.get("framework", "")
     repo_visibility = payload.get("repo_visibility", "private")
-    runner_label = "macos-latest"  # Free for public (unlimited) and private (~200min/mo)
+    # macos-26: ASC 28 Nis 2026'dan beri Xcode 26 zorunlu; macos-latest migrasyonu
+    # (Haz-Tem 2026) sırasında eski Xcode gelebilir. Ücretsiz: public sınırsız, private ~200dk/ay.
+    runner_label = "macos-26"
     logger.info("Runner strategy: visibility=%s runner=%s", repo_visibility, runner_label)
 
     owner_repo = ""
