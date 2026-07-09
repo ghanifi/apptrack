@@ -474,8 +474,11 @@ function AutoCapturePanel({
             disabled={capturing || !url.trim() || devices.length === 0}
             className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-500 text-white text-sm font-medium rounded-lg transition-all shadow-lg shadow-cyan-500/10 disabled:shadow-none"
           >
-            {capturing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-            {capturing ? 'Capturing...' : 'Capture'}
+            {capturing ? (
+              <><Loader2 size={14} className="animate-spin" /> Capturing...</>
+            ) : (
+              <><Zap size={14} /> Capture</>
+            )}
           </button>
         </div>
 

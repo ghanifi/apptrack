@@ -13,3 +13,11 @@ venv/
 # K8s secrets (never commit real credentials)
 infra/k8s/secrets.yaml
 k8s/base/secrets.yaml
+
+# Local test artifacts (screenshots, generated native projects, tool configs)
+/*.png
+/frontend/*.png
+android_gen/
+ios_gen/
+.playwright-mcp/
+.mcp.json
