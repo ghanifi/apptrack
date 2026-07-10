@@ -115,3 +115,87 @@ def test_health_item_statuses():
     assert sign._health_item("c", "certificate", datetime.utcnow() + timedelta(days=10))["status"] == "expiring_soon"
     assert sign._health_item("c", "certificate", datetime.utcnow() + timedelta(days=200))["status"] == "ok"
     assert sign._health_item("c", "certificate", None)["status"] == "unknown"
+
+
+# ---- open_fix_pr: real HTTP flow via MockTransport ----
+
+import httpx
+
+
+def _b64(text: str) -> str:
+    return base64.b64encode(text.encode()).decode()
+
+
+def _patch_client(monkeypatch, handler):
+    """bf.httpx.AsyncClient'ı MockTransport'lu istemciyle değiştir (header/timeout yut)."""
+    real_cls = httpx.AsyncClient
+    def _factory(*args, **kwargs):
+        return real_cls(transport=httpx.MockTransport(handler),
+                        base_url="https://api.github.com")
+    monkeypatch.setattr(bf.httpx, "AsyncClient", _factory)
+
+
+OOM_PLAN = {"id": "gradle_oom", "title": "Increase Gradle heap size", "kind": "gradle_property",
+            "files": ["gradle.properties", "android/gradle.properties"],
+            "create_if_missing": "gradle.properties",
+            "properties": {"org.gradle.jvmargs": "-Xmx4096m -XX:MaxMetaspaceSize=512m"}}
+FIXED = "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=512m\n"
+
+
+@pytest.mark.asyncio
+async def test_open_fix_pr_first_run_creates_pr(monkeypatch):
+    calls = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append((req.method, req.url.path))
+        p = req.url.path
+        if req.method == "GET" and p.endswith("/git/ref/heads/main"):
+            return httpx.Response(200, json={"object": {"sha": "abc1234deadbeef"}})
+        if req.method == "GET" and "/contents/" in p:
+            return httpx.Response(404, json={})  # dosya base'de yok → create_if_missing
+        if req.method == "POST" and p.endswith("/git/refs"):
+            return httpx.Response(201, json={})  # branch oluştu
+        if req.method == "PUT" and "/contents/" in p:
+            return httpx.Response(201, json={})
+        if req.method == "POST" and p.endswith("/pulls"):
+            return httpx.Response(201, json={"html_url": "https://github.com/o/r/pull/1"})
+        return httpx.Response(500, json={})
+
+    _patch_client(monkeypatch, handler)
+    res = await bf.open_fix_pr("o/r", "main", "tok", OOM_PLAN)
+    assert res["reused"] is False
+    assert res["pr_url"].endswith("/pull/1")
+    assert res["file"] == "gradle.properties"
+    assert ("PUT", "/repos/o/r/contents/gradle.properties") in calls
+
+
+@pytest.mark.asyncio
+async def test_open_fix_pr_second_run_reuses_pr(monkeypatch):
+    """Tekrar-tık: branch+dosya zaten var, PR açık → yeni commit yok, mevcut PR döner."""
+    put_calls = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        p = req.url.path
+        if req.method == "GET" and p.endswith("/git/ref/heads/main"):
+            return httpx.Response(200, json={"object": {"sha": "abc1234deadbeef"}})
+        if req.method == "GET" and "/contents/" in p:
+            ref = req.url.params.get("ref", "")
+            if ref == "main":
+                return httpx.Response(404, json={})           # base'de yok
+            return httpx.Response(200, json={"sha": "blob99", "content": _b64(FIXED)})  # branch'te var, aynı içerik
+        if req.method == "POST" and p.endswith("/git/refs"):
+            return httpx.Response(422, json={"message": "Reference already exists"})
+        if req.method == "PUT" and "/contents/" in p:
+            put_calls.append(p)
+            return httpx.Response(201, json={})
+        if req.method == "POST" and p.endswith("/pulls"):
+            return httpx.Response(422, json={"message": "A pull request already exists"})
+        if req.method == "GET" and p.endswith("/pulls"):
+            return httpx.Response(200, json=[{"html_url": "https://github.com/o/r/pull/1"}])
+        return httpx.Response(500, json={})
+
+    _patch_client(monkeypatch, handler)
+    res = await bf.open_fix_pr("o/r", "main", "tok", OOM_PLAN)
+    assert res["reused"] is True
+    assert res["pr_url"].endswith("/pull/1")
+    assert put_calls == []  # içerik aynı olduğu için yeniden commit YOK

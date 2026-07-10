@@ -161,18 +161,36 @@ async def open_fix_pr(owner_repo: str, base_branch: str, github_token: str, plan
             # 422 = branch zaten var (tekrar tıklama) — devam et
             raise RuntimeError(f"Fix branch oluşturulamadı ({create_ref.status_code}).")
 
-        # 5) dosyayı yeni branch'e commit'le
-        put_body: dict = {
-            "message": f"AppTrack auto-fix: {plan['title']}",
-            "content": base64.b64encode(new_content.encode()).decode(),
-            "branch": branch,
-        }
-        if file_sha:
-            put_body["sha"] = file_sha
-        put = await c.put(f"https://api.github.com/repos/{owner_repo}/contents/{target_path}",
-                          json=put_body)
-        if put.status_code not in (200, 201):
-            raise RuntimeError(f"Yama commit edilemedi ({put.status_code}).")
+        # 5) dosyayı yeni branch'e commit'le.
+        # Tekrar-tık: branch zaten varsa dosya orada değişmiş olabilir; contents PUT
+        # hedef branch'teki blob sha'sını ister (base branch'inki değil). Branch'teki
+        # güncel hâli okuyup ona göre karar ver — yoksa 422 alır ve reuse'a hiç ulaşamayız.
+        commit_sha = file_sha
+        if create_ref.status_code == 422:
+            on_branch = await c.get(
+                f"https://api.github.com/repos/{owner_repo}/contents/{target_path}",
+                params={"ref": branch})
+            if on_branch.status_code == 200:
+                bdata = on_branch.json()
+                commit_sha = bdata["sha"]
+                branch_content = base64.b64decode(bdata["content"]).decode("utf-8", "replace")
+                if branch_content == new_content:
+                    # Yama zaten branch'te — commit'i atla, doğrudan PR adımına geç.
+                    commit_sha = None
+                    new_content = None
+
+        if new_content is not None:
+            put_body: dict = {
+                "message": f"AppTrack auto-fix: {plan['title']}",
+                "content": base64.b64encode(new_content.encode()).decode(),
+                "branch": branch,
+            }
+            if commit_sha:
+                put_body["sha"] = commit_sha
+            put = await c.put(f"https://api.github.com/repos/{owner_repo}/contents/{target_path}",
+                              json=put_body)
+            if put.status_code not in (200, 201):
+                raise RuntimeError(f"Yama commit edilemedi ({put.status_code}).")
 
         # 6) PR aç
         pr = await c.post(
