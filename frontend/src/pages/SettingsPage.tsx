@@ -168,6 +168,33 @@ const PROVIDERS: ProviderSection[] = [
     ],
   },
   {
+    provider: 'sentry',
+    label: 'Sentry (Release Health)',
+    icon: Shield,
+    description: 'iOS kademeli yayınlarda crash-free izleme + otomatik durdurma için. Uygulamanızda Sentry SDK kurulu olmalı.',
+    fields: [
+      {
+        key_name: 'SENTRY_AUTH_TOKEN',
+        label: 'Auth Token',
+        placeholder: 'sntrys_xxxxxxxxxxxx',
+        helpText: 'sentry.io > Settings > Auth Tokens > Create New Token. "org:read" ve "project:read" scope yeterli — AppTrack yalnızca session istatistiği okur.',
+        helpUrl: 'https://sentry.io/settings/auth-tokens/',
+      },
+      {
+        key_name: 'SENTRY_ORG_SLUG',
+        label: 'Organization Slug',
+        placeholder: 'my-org',
+        helpText: 'Sentry URL\'inizdeki organizasyon adı: sentry.io/organizations/<slug>/',
+      },
+      {
+        key_name: 'SENTRY_PROJECT_SLUG',
+        label: 'Project Slug',
+        placeholder: 'my-ios-app',
+        helpText: 'Sentry > Projects > proje adı (slug). iOS uygulamanızın Sentry projesi.',
+      },
+    ],
+  },
+  {
     provider: 'ios_signing',
     label: 'iOS Signing',
     icon: Shield,

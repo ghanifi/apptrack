@@ -101,3 +101,23 @@ def test_crash_free_clamped():
     # crash rate > 1 gibi absürt değerde crash_free 0'a kırpılır
     snap = rh._parse_crash_rate_response({"rows": [_crash_row(1.5, 10)]})
     assert snap.crash_free_rate == 0.0
+
+
+# ---- Sentry release health (iOS auto-halt) ----
+
+def test_parse_sentry_sessions_fraction():
+    resp = {"groups": [{"totals": {"crash_free_rate(user)": 0.9945, "count_unique(user)": 812}}]}
+    snap = rh._parse_sentry_sessions(resp)
+    assert snap and abs(snap.crash_free_rate - 0.9945) < 1e-9 and snap.distinct_users == 812
+
+
+def test_parse_sentry_sessions_percentage_tolerated():
+    resp = {"groups": [{"totals": {"crash_free_rate(user)": 99.45, "count_unique(user)": 10}}]}
+    snap = rh._parse_sentry_sessions(resp)
+    assert snap and abs(snap.crash_free_rate - 0.9945) < 1e-9
+
+
+def test_parse_sentry_sessions_empty_or_missing():
+    assert rh._parse_sentry_sessions({"groups": []}) is None
+    assert rh._parse_sentry_sessions({}) is None
+    assert rh._parse_sentry_sessions({"groups": [{"totals": {"count_unique(user)": 5}}]}) is None

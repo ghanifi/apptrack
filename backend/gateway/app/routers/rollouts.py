@@ -101,8 +101,16 @@ async def start_rollout(
     if req.target not in ("google_play", "app_store"):
         raise HTTPException(status_code=400, detail="Staged rollout only supports google_play or app_store.")
 
-    # Sağlık sağlayıcısı yalnızca Android'de var → iOS'ta auto-halt otomatik kapanır.
+    # Android: Play Reporting her zaman mevcut (deploy creds ile).
+    # iOS: yalnızca kullanıcı Sentry bağladıysa auto-halt açılabilir.
     auto_halt = req.auto_halt and req.target == "google_play"
+    if req.auto_halt and req.target == "app_store":
+        sentry_ok = all([
+            await get_user_credential(db, current_user["id"], "sentry", "SENTRY_AUTH_TOKEN"),
+            await get_user_credential(db, current_user["id"], "sentry", "SENTRY_ORG_SLUG"),
+            await get_user_credential(db, current_user["id"], "sentry", "SENTRY_PROJECT_SLUG"),
+        ])
+        auto_halt = sentry_ok
 
     dep = Deployment(build_id=build_id, target=req.target, track=req.track)
     db.add(dep)

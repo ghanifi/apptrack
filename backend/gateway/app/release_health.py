@@ -112,6 +112,68 @@ async def get_release_health(platform: str, package_name: str | None,
     return snap
 
 
+def _parse_sentry_sessions(resp: dict) -> HealthSnapshot | None:
+    """Sentry sessions API yanıtından crash-free + kullanıcı sayısını çöz (saf).
+
+    Beklenen: {"groups": [{"totals": {"crash_free_rate(user)": 0.998,
+    "count_unique(user)": 1234}}]}. Oran >1 gelirse yüzde varsayıp /100."""
+    groups = resp.get("groups") or []
+    for g in groups:
+        totals = g.get("totals") or {}
+        rate = totals.get("crash_free_rate(user)")
+        if rate is None:
+            continue
+        try:
+            rate = float(rate)
+        except (TypeError, ValueError):
+            continue
+        if rate > 1.0:
+            rate = rate / 100.0
+        users = totals.get("count_unique(user)") or 0
+        return HealthSnapshot(
+            crash_free_rate=max(0.0, min(1.0, rate)),
+            distinct_users=int(users),
+        )
+    return None
+
+
+async def get_sentry_health(auth_token: str, org_slug: str,
+                            project_slug: str) -> HealthSnapshot | None:
+    """Sentry release health — iOS (ve istenirse tüm platformlar) için crash-free.
+
+    Kullanıcının kendi Sentry hesabı; bize maliyet yok. Hata → None (auto-halt
+    o tur atlanır)."""
+    import httpx
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    try:
+        async with httpx.AsyncClient(timeout=20, headers=headers,
+                                     base_url="https://sentry.io/api/0") as c:
+            projects = await c.get(f"/organizations/{org_slug}/projects/")
+            if projects.status_code != 200:
+                logger.warning("Sentry projects listelenemedi (%s)", projects.status_code)
+                return None
+            proj_id = next((p["id"] for p in projects.json()
+                            if p.get("slug") == project_slug), None)
+            if not proj_id:
+                logger.warning("Sentry projesi bulunamadı: %s", project_slug)
+                return None
+            sessions = await c.get(
+                f"/organizations/{org_slug}/sessions/",
+                params=[("field", "crash_free_rate(user)"),
+                        ("field", "count_unique(user)"),
+                        ("project", proj_id), ("statsPeriod", "24h")])
+            if sessions.status_code != 200:
+                logger.warning("Sentry sessions sorgusu başarısız (%s)", sessions.status_code)
+                return None
+    except Exception as exc:
+        logger.warning("Sentry health alınamadı: %s", exc)
+        return None
+    snap = _parse_sentry_sessions(sessions.json())
+    if snap:
+        snap.sampled_at = datetime.utcnow()
+    return snap
+
+
 def evaluate_halt(snapshot: HealthSnapshot, threshold: float,
                   baseline: float | None, min_users: int) -> tuple[bool, str | None]:
     """Sağlık örneğine göre halt kararı. (halt?, reason). Saf ve test edilebilir.

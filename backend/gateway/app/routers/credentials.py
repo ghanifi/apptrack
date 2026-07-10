@@ -24,7 +24,7 @@ ALLOWED_PROVIDERS = {
     "xcode_cloud": ["XCODE_CLOUD_TEAM_ID"],
     "netlify": ["NETLIFY_TOKEN"],
     "vercel": ["VERCEL_TOKEN"],
-    "sentry": ["SENTRY_DSN", "SENTRY_PROJECT_SLUG", "SENTRY_AUTH_TOKEN"],
+    "sentry": ["SENTRY_DSN", "SENTRY_PROJECT_SLUG", "SENTRY_AUTH_TOKEN", "SENTRY_ORG_SLUG"],
     "test_automation": ["TEST_AUTOMATION_WEBHOOK_URL"],
 }
 

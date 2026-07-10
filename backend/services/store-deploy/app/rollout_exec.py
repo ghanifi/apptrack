@@ -89,14 +89,49 @@ def _asc_jwt(key_id: str, issuer_id: str, private_key_pem: str) -> str:
     return pyjwt.encode(payload, private_key_pem, algorithm="ES256", headers={"kid": key_id})
 
 
+def _first_app_id(apps_resp: dict) -> str | None:
+    """`GET /v1/apps?filter[bundleId]` yanıtından ilk app id (saf)."""
+    data = apps_resp.get("data") or []
+    return data[0]["id"] if data else None
+
+
+async def resolve_phased_release_id(client: httpx.AsyncClient, bundle_id: str) -> str | None:
+    """Bundle id'den canlı phased release id'sini çöz (external_ref saklanmadığında).
+
+    apps?filter[bundleId] → app → son appStoreVersions → ilk phased release'i olan sürüm.
+    """
+    apps = await client.get(f"{ASC_BASE}/v1/apps", params={"filter[bundleId]": bundle_id})
+    if apps.status_code != 200:
+        return None
+    app_id = _first_app_id(apps.json())
+    if not app_id:
+        return None
+    versions = await client.get(f"{ASC_BASE}/v1/apps/{app_id}/appStoreVersions",
+                                params={"limit": 5})
+    if versions.status_code != 200:
+        return None
+    for v in versions.json().get("data") or []:
+        pr = await client.get(
+            f"{ASC_BASE}/v1/appStoreVersions/{v['id']}/appStoreVersionPhasedRelease")
+        if pr.status_code == 200 and (pr.json().get("data") or {}).get("id"):
+            return pr.json()["data"]["id"]
+    return None
+
+
 async def pause_apple(key_id: str, issuer_id: str, private_key_pem: str,
-                      phased_release_id: str) -> None:
-    """Apple phased release'i PAUSED yap. 409 (durum uygun değil) tolere edilir."""
+                      phased_release_id: str | None, bundle_id: str | None = None) -> None:
+    """Apple phased release'i PAUSED yap. Id yoksa bundle-id'den canlı çözer.
+
+    409 (durum uygun değil) tolere edilir."""
     token = _asc_jwt(key_id, issuer_id, private_key_pem)
-    async with httpx.AsyncClient(timeout=30) as c:
+    async with httpx.AsyncClient(timeout=30, headers={"Authorization": f"Bearer {token}"}) as c:
+        if not phased_release_id and bundle_id:
+            phased_release_id = await resolve_phased_release_id(c, bundle_id)
+        if not phased_release_id:
+            raise RuntimeError(
+                "Aktif bir phased release bulunamadı — sürüm 'Phased Release' ile yayınlanmamış olabilir.")
         r = await c.patch(
             f"{ASC_BASE}/v1/appStoreVersionPhasedReleases/{phased_release_id}",
-            headers={"Authorization": f"Bearer {token}"},
             json={"data": {"type": "appStoreVersionPhasedReleases", "id": phased_release_id,
                            "attributes": {"phasedReleaseState": "PAUSED"}}})
         if r.status_code not in (200, 409):

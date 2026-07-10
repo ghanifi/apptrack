@@ -499,7 +499,8 @@ async def handle_rollout_halt(message: aio_pika.abc.AbstractIncomingMessage, cha
             if payload.get("target") == "app_store":
                 await rollout_exec.pause_apple(
                     payload["app_store_key_id"], payload["app_store_issuer_id"],
-                    payload["app_store_private_key"], payload["external_ref"])
+                    payload["app_store_private_key"], payload.get("external_ref"),
+                    bundle_id=payload.get("package_name"))
             else:
                 await rollout_exec.halt_google(
                     payload["google_play_key_json"], payload["package_name"],

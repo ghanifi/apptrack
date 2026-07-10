@@ -21,13 +21,42 @@ logger = logging.getLogger(__name__)
 POLL_INTERVAL = int(os.getenv("ROLLOUT_POLL_INTERVAL", "1800"))  # 30 dk
 
 
+async def _resolve_health(db, owner_id: str, rollout: ReleaseRollout):
+    """Platforma göre sağlık sağlayıcısı: Android=Play Reporting, iOS=Sentry."""
+    if rollout.platform == "google_play":
+        key_json = await get_user_credential(db, owner_id, "google_play", "GOOGLE_PLAY_KEY_JSON")
+        return await release_health.get_release_health(rollout.platform, rollout.package_name, key_json), key_json
+    if rollout.platform == "app_store":
+        token = await get_user_credential(db, owner_id, "sentry", "SENTRY_AUTH_TOKEN")
+        org = await get_user_credential(db, owner_id, "sentry", "SENTRY_ORG_SLUG")
+        proj = await get_user_credential(db, owner_id, "sentry", "SENTRY_PROJECT_SLUG")
+        if not (token and org and proj):
+            return None, None
+        return await release_health.get_sentry_health(token, org, proj), None
+    return None, None
+
+
+async def _halt_payload(db, owner_id: str, rollout: ReleaseRollout,
+                        reason: str, google_key_json: str | None) -> dict:
+    payload = {"rollout_id": rollout.id, "target": rollout.platform, "reason": reason,
+               "package_name": rollout.package_name, "track": rollout.track,
+               "external_ref": rollout.external_ref}
+    if rollout.platform == "google_play":
+        payload["google_play_key_json"] = google_key_json or await get_user_credential(
+            db, owner_id, "google_play", "GOOGLE_PLAY_KEY_JSON")
+    else:
+        payload["app_store_key_id"] = await get_user_credential(db, owner_id, "app_store", "APP_STORE_KEY_ID")
+        payload["app_store_issuer_id"] = await get_user_credential(db, owner_id, "app_store", "APP_STORE_ISSUER_ID")
+        payload["app_store_private_key"] = await get_user_credential(db, owner_id, "app_store", "APP_STORE_PRIVATE_KEY")
+    return payload
+
+
 async def _check_rollout(db, rollout: ReleaseRollout) -> None:
     project = (await db.execute(
         select(Project).where(Project.id == rollout.project_id))).scalar_one_or_none()
     if not project:
         return
-    key_json = await get_user_credential(db, project.owner_id, "google_play", "GOOGLE_PLAY_KEY_JSON")
-    snap = await release_health.get_release_health(rollout.platform, rollout.package_name, key_json)
+    snap, key_json = await _resolve_health(db, project.owner_id, rollout)
     if snap is None:
         return  # bu tur sağlık verisi yok — maliyet yok, sonraki turda dene
 
@@ -45,11 +74,9 @@ async def _check_rollout(db, rollout: ReleaseRollout) -> None:
     await db.commit()
 
     if halt:
-        await events.publish_event("rollout.halt", {
-            "rollout_id": rollout.id, "target": rollout.platform, "reason": reason,
-            "google_play_key_json": key_json, "package_name": rollout.package_name,
-            "track": rollout.track,
-        })
+        await events.publish_event(
+            "rollout.halt",
+            await _halt_payload(db, project.owner_id, rollout, reason, key_json))
         await notification_worker.dispatch_for_event(
             {"rollout_id": rollout.id, "project_id": rollout.project_id, "reason": reason},
             "rollout.auto_halted")

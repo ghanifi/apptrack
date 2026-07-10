@@ -23,3 +23,10 @@ def test_pick_release_falls_back_to_first():
 
 def test_pick_release_empty_returns_none():
     assert _pick_release([], ("inProgress",)) is None
+
+
+def test_first_app_id():
+    from rollout_exec import _first_app_id
+    assert _first_app_id({"data": [{"id": "app123"}, {"id": "app456"}]}) == "app123"
+    assert _first_app_id({"data": []}) is None
+    assert _first_app_id({}) is None
