@@ -12,6 +12,7 @@ import type { Project, Build, Deployment } from '@/types'
 import BuildDiagnosisPanel from '@/components/ui/BuildDiagnosisPanel'
 import LiveBuildProgress from '@/components/LiveBuildProgress'
 import BuildRunnerCard from '@/components/BuildRunnerCard'
+import ProjectPipeline from '@/components/ProjectPipeline'
 import { frameworkLabel, platformLabel, providerLabel } from '@/lib/labels'
 import clsx from 'clsx'
 
@@ -455,6 +456,8 @@ export default function ProjectDetailPage() {
           <p className="text-2xl font-bold">{project.builds?.length ?? 0} <span className="text-sm text-gray-500 font-normal">/ {deployments.length}</span></p>
         </div>
       </div>
+
+      <ProjectPipeline project={project} hasDeployment={deployments.length > 0} />
 
       {preview && preview.status !== 'not_ready' && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">

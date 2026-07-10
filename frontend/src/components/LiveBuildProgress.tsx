@@ -54,7 +54,7 @@ export default function LiveBuildProgress({ buildId, projectId }: { buildId: str
   const elapsed = progress?.elapsed_seconds ?? 0
 
   return (
-    <div className="bg-gray-900 border border-blue-500/30 rounded-xl mb-6">
+    <div className="bg-gray-900 border border-blue-500/30 rounded-xl mb-6 animate-fade-up">
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
         <h2 className="text-sm font-semibold flex items-center gap-2">
           <Radio size={15} className={connected ? 'text-green-400 animate-pulse' : 'text-gray-500'} />

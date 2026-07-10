@@ -103,7 +103,7 @@ export default function OnboardingChecklist() {
               }`}
             >
               {step.done ? (
-                <CheckCircle2 size={18} className="text-green-400 shrink-0" />
+                <CheckCircle2 size={18} className="text-green-400 shrink-0 animate-pop-in" />
               ) : (
                 <Circle size={18} className="text-gray-600 shrink-0" />
               )}

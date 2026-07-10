@@ -42,8 +42,12 @@ export default function DashboardPage() {
       </div>
       <OnboardingChecklist />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {stats.map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        {stats.map(({ label, value, icon: Icon, color }, i) => (
+          <div
+            key={label}
+            className="bg-gray-900 border border-gray-800 rounded-xl p-5 animate-fade-up hover:border-gray-700 transition-colors"
+            style={{ animationDelay: `${i * 60}ms` }}
+          >
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm text-gray-400">{label}</span>
               <Icon size={18} className={color} />

@@ -7,3 +7,14 @@
     @apply bg-gray-950 text-gray-100 antialiased;
   }
 }
+
+/* Erişilebilirlik: hareket azaltma tercihine saygı göster */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
