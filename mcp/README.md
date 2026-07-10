@@ -84,3 +84,40 @@ Claude Code içinde:
 |----------|---------|------------|
 | `APPTRACK_API_KEY` | evet | — (`atk_` ile başlamalı) |
 | `APPTRACK_API_URL` | hayır | `http://localhost:8000` |
+| `MCP_TRANSPORT` | hayır | `stdio` (`streamable-http` = HTTP modu) |
+| `MCP_PORT` | hayır | `8010` (yalnız HTTP modu) |
+
+## HTTP modu (Faz 2 — kurulumsuz uzak bağlantı)
+
+Docker Compose ile `mcp` servisi Streamable HTTP olarak çalışır (`:8010/mcp`).
+stdio'dan farkı: anahtar env'den değil, **istek başına** `Authorization` header'ından
+gelir — tek sunucu birden çok kullanıcıya hizmet eder (her anahtar kendi kullanıcısının
+yetkisiyle çalışır).
+
+```bash
+docker compose up -d mcp        # http://localhost:8010/mcp
+curl http://localhost:8010/health
+```
+
+Claude Code'a ekleme:
+
+```bash
+claude mcp add --transport http apptrack http://localhost:8010/mcp \
+  --header "Authorization: Bearer atk_XXXXXXXX"
+```
+
+Cursor (`.cursor/mcp.json`):
+
+```json
+{ "mcpServers": { "apptrack": {
+    "url": "http://localhost:8010/mcp",
+    "headers": { "Authorization": "Bearer atk_XXXXXXXX" } } } }
+```
+
+Notlar:
+- Anahtarsız/geçersiz anahtarlı istekler **401** alır; anahtarlar gateway'in
+  `/api/api-keys/exchange` ucuyla doğrulanır (5 dk edge cache).
+- OAuth 2.1 resource-server akışı bilinçli olarak sonraya bırakıldı — API-key
+  bearer, headless ajanlar için yeterli ve mevcut anahtar altyapısıyla tutarlı.
+- Sunucu stateless çalışır; DNS-rebinding koruması kapalıdır çünkü kimlik
+  doğrulama zaten Bearer katmanında yapılır ve host adı deploy'a göre değişir.
