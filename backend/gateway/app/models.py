@@ -615,3 +615,54 @@ class ApiKey(Base):
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ReleaseRollout(Base):
+    """Staged (kademeli) yayın kaydı — bir production deploy'un rollout yaşam döngüsü.
+
+    Android: userFraction 1%→10%→50%→100% + Play Reporting health + auto-halt.
+    iOS: Apple'ın sabit phased-release programı (yalnız başlat/duraklat)."""
+    __tablename__ = "release_rollouts"
+    __table_args__ = (
+        Index("idx_rollout_deployment", "deployment_id"),
+        Index("idx_rollout_project_state", "project_id", "state"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    deployment_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("deployments.id", ondelete="CASCADE"), nullable=False)
+    project_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    platform: Mapped[str] = mapped_column(String(50), nullable=False, comment="google_play | app_store")
+    package_name: Mapped[str | None] = mapped_column(String(255), nullable=True, comment="Android package / iOS bundle — health & advance/halt için")
+    track: Mapped[str] = mapped_column(String(50), default="production", comment="Google Play track")
+    current_fraction: Mapped[float] = mapped_column(Float, default=0.01, comment="Mevcut rollout oranı (0.01/0.1/0.5/1.0); Apple'da bilgi amaçlı")
+    state: Mapped[str] = mapped_column(String(20), default="in_progress", comment="in_progress | paused | halted | completed | failed")
+    auto_halt_enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="Sağlık sağlayıcısı yoksa false'a düşer")
+    crash_free_threshold: Mapped[float] = mapped_column(Float, default=0.99, comment="Mutlak crash-free taban eşiği")
+    baseline_crash_free: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Rollout öncesi referans; >0.5pp düşüş de halt tetikler")
+    min_users: Mapped[int] = mapped_column(Integer, default=1000, comment="Altında örnek değerlendirilmez (gürültü koruması)")
+    halted_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    external_ref: Mapped[str | None] = mapped_column(String(255), nullable=True, comment="Apple phased release id vb.")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    deployment: Mapped["Deployment"] = relationship("Deployment")
+    samples: Mapped[list["ReleaseHealthSample"]] = relationship(
+        "ReleaseHealthSample", back_populates="rollout", cascade="all, delete-orphan")
+
+
+class ReleaseHealthSample(Base):
+    """Rollout sırasında periyodik crash-free/ANR/adoption örneği (zaman serisi)."""
+    __tablename__ = "release_health_samples"
+    __table_args__ = (
+        Index("idx_health_sample_rollout", "rollout_id", "sampled_at"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    rollout_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("release_rollouts.id", ondelete="CASCADE"), nullable=False)
+    sampled_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    crash_free_rate: Mapped[float] = mapped_column(Float, nullable=False, comment="0.0–1.0")
+    anr_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    distinct_users: Mapped[int] = mapped_column(Integer, default=0)
+    adoption: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Sürümün kurulu taban içindeki payı, varsa")
+
+    rollout: Mapped["ReleaseRollout"] = relationship("ReleaseRollout", back_populates="samples")

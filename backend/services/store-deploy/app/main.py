@@ -14,6 +14,8 @@ from pydantic_settings import BaseSettings
 import aio_pika
 import httpx
 
+from app import rollout_exec
+
 import time as _time
 
 logging.basicConfig(level=logging.INFO)
@@ -119,20 +121,35 @@ async def _deploy_google_play(deployment_id: str, payload: dict, channel: aio_pi
             service.edits().bundles().upload(
                 packageName=package_name, editId=edit_id, media_body=media
             ).execute()
+            rollout = payload.get("rollout")
+            if rollout:
+                start_fraction = float(payload.get("start_fraction", 0.01))
+                release = {"status": "inProgress", "userFraction": start_fraction}
+            else:
+                release = {"status": "completed"}
             service.edits().tracks().update(
                 packageName=package_name, editId=edit_id, track=track,
-                body={"releases": [{"status": "completed"}]},
+                body={"releases": [release]},
             ).execute()
             service.edits().commit(packageName=package_name, editId=edit_id).execute()
         finally:
             os.unlink(tmp_path)
 
-        await publish_event(channel, "deploy.completed", {
-            "deployment_id": deployment_id,
-            "build_id": payload.get("build_id"),
-            "target": "google_play",
-            "status": "published",
-        })
+        if rollout:
+            await publish_event(channel, "deploy.rollout.started", {
+                "deployment_id": deployment_id,
+                "rollout_id": payload.get("rollout_id"),
+                "build_id": payload.get("build_id"),
+                "target": "google_play",
+                "fraction": start_fraction,
+            })
+        else:
+            await publish_event(channel, "deploy.completed", {
+                "deployment_id": deployment_id,
+                "build_id": payload.get("build_id"),
+                "target": "google_play",
+                "status": "published",
+            })
     except Exception as exc:
         logger.error("Google Play deploy failed: %s", exc)
         await publish_event(channel, "deploy.failed", {
@@ -452,13 +469,62 @@ async def handle_deploy_triggered(message: aio_pika.abc.AbstractIncomingMessage,
             })
 
 
+async def handle_rollout_set(message: aio_pika.abc.AbstractIncomingMessage, channel: aio_pika.abc.AbstractChannel):
+    """Rollout'u sonraki yüzdeye ilerlet (veya %100'de tamamla). Yalnız google_play."""
+    async with message.process(requeue=False):
+        payload = json.loads(message.body)
+        rollout_id = payload.get("rollout_id")
+        try:
+            fraction = float(payload.get("fraction", 1.0))
+            complete = bool(payload.get("complete")) or fraction >= 1.0
+            await rollout_exec.set_google_fraction(
+                payload["google_play_key_json"], payload["package_name"],
+                payload.get("track", "production"), fraction, complete)
+            await publish_event(channel, "deploy.rollout.advanced", {
+                "rollout_id": rollout_id, "fraction": fraction, "completed": complete,
+            })
+        except Exception as exc:
+            logger.error("Rollout advance failed (%s): %s", rollout_id, exc)
+            await publish_event(channel, "deploy.rollout.error", {
+                "rollout_id": rollout_id, "error": str(exc), "op": "advance",
+            })
+
+
+async def handle_rollout_halt(message: aio_pika.abc.AbstractIncomingMessage, channel: aio_pika.abc.AbstractChannel):
+    """Rollout'u durdur — Google `halted`, Apple phased release `PAUSED`."""
+    async with message.process(requeue=False):
+        payload = json.loads(message.body)
+        rollout_id = payload.get("rollout_id")
+        try:
+            if payload.get("target") == "app_store":
+                await rollout_exec.pause_apple(
+                    payload["app_store_key_id"], payload["app_store_issuer_id"],
+                    payload["app_store_private_key"], payload["external_ref"])
+            else:
+                await rollout_exec.halt_google(
+                    payload["google_play_key_json"], payload["package_name"],
+                    payload.get("track", "production"))
+            await publish_event(channel, "deploy.rollout.halted", {
+                "rollout_id": rollout_id, "reason": payload.get("reason"),
+            })
+        except Exception as exc:
+            logger.error("Rollout halt failed (%s): %s", rollout_id, exc)
+            await publish_event(channel, "deploy.rollout.error", {
+                "rollout_id": rollout_id, "error": str(exc), "op": "halt",
+            })
+
+
 async def start_consumer():
     connection = await aio_pika.connect_robust(settings.RABBITMQ_URL)
     channel = await connection.channel()
     await channel.set_qos(prefetch_count=3)
     queue = await channel.declare_queue("deploy.triggered", durable=True)
     await queue.consume(lambda msg: handle_deploy_triggered(msg, channel))
-    logger.info("Store-deploy consumer started on deploy.triggered")
+    set_q = await channel.declare_queue("rollout.set", durable=True)
+    await set_q.consume(lambda msg: handle_rollout_set(msg, channel))
+    halt_q = await channel.declare_queue("rollout.halt", durable=True)
+    await halt_q.consume(lambda msg: handle_rollout_halt(msg, channel))
+    logger.info("Store-deploy consumer started on deploy.triggered, rollout.set, rollout.halt")
     return connection
 
 

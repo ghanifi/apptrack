@@ -269,6 +269,57 @@ async def _process_deploy_failed(payload: dict):
     await dispatch_for_event(payload, "deploy.failed")
 
 
+async def _process_rollout_event(payload: dict, routing_key: str):
+    """store-deploy'un rollout sonuç event'lerini ReleaseRollout DB'sine işler."""
+    from app.models import ReleaseRollout
+    rollout_id = payload.get("rollout_id")
+    if not rollout_id:
+        return
+    values: dict = {"updated_at": datetime.utcnow()}
+    if routing_key == "deploy.rollout.started":
+        values["state"] = "in_progress"
+        if payload.get("fraction") is not None:
+            values["current_fraction"] = float(payload["fraction"])
+    elif routing_key == "deploy.rollout.advanced":
+        if payload.get("fraction") is not None:
+            values["current_fraction"] = float(payload["fraction"])
+        if payload.get("completed"):
+            values["state"] = "completed"
+    elif routing_key == "deploy.rollout.halted":
+        values["state"] = "halted"
+        if payload.get("reason"):
+            values["halted_reason"] = payload["reason"]
+    elif routing_key == "deploy.rollout.error":
+        # store işlemi başarısız — durumu bozmadan görünürlük için not düş
+        logger.error("Rollout %s store op '%s' error: %s",
+                     rollout_id, payload.get("op"), payload.get("error"))
+        return
+    async with AsyncSessionLocal() as db:
+        await db.execute(update(ReleaseRollout).where(ReleaseRollout.id == rollout_id).values(**values))
+        await db.commit()
+    logger.info("Rollout %s updated from %s", rollout_id, routing_key)
+
+
+async def handle_rollout_started(message: aio_pika.abc.AbstractIncomingMessage):
+    await _with_retry(message, "deploy.rollout.started",
+                      lambda p: _process_rollout_event(p, "deploy.rollout.started"))
+
+
+async def handle_rollout_advanced(message: aio_pika.abc.AbstractIncomingMessage):
+    await _with_retry(message, "deploy.rollout.advanced",
+                      lambda p: _process_rollout_event(p, "deploy.rollout.advanced"))
+
+
+async def handle_rollout_halted(message: aio_pika.abc.AbstractIncomingMessage):
+    await _with_retry(message, "deploy.rollout.halted",
+                      lambda p: _process_rollout_event(p, "deploy.rollout.halted"))
+
+
+async def handle_rollout_error(message: aio_pika.abc.AbstractIncomingMessage):
+    await _with_retry(message, "deploy.rollout.error",
+                      lambda p: _process_rollout_event(p, "deploy.rollout.error"))
+
+
 async def handle_framework_detected(message: aio_pika.abc.AbstractIncomingMessage):
     await _with_retry(message, "framework.detected", _process_framework_detected)
 
@@ -363,6 +414,10 @@ async def start_event_worker():
         "build.failed": handle_build_failed,
         "deploy.completed": handle_deploy_completed,
         "deploy.failed": handle_deploy_failed,
+        "deploy.rollout.started": handle_rollout_started,
+        "deploy.rollout.advanced": handle_rollout_advanced,
+        "deploy.rollout.halted": handle_rollout_halted,
+        "deploy.rollout.error": handle_rollout_error,
     }
 
     for queue_name, handler in queues.items():

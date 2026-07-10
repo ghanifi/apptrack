@@ -13,6 +13,7 @@ import BuildDiagnosisPanel from '@/components/ui/BuildDiagnosisPanel'
 import LiveBuildProgress from '@/components/LiveBuildProgress'
 import BuildRunnerCard from '@/components/BuildRunnerCard'
 import ProjectPipeline from '@/components/ProjectPipeline'
+import RolloutPanel from '@/components/RolloutPanel'
 import { frameworkLabel, platformLabel, providerLabel } from '@/lib/labels'
 import clsx from 'clsx'
 
@@ -383,6 +384,8 @@ export default function ProjectDetailPage() {
   const visibleBuilds = showAllBuilds ? (project.builds ?? []) : (project.builds ?? []).slice(0, 5)
   // En yeni devam eden build — canlı ilerleme paneli bunu izler
   const activeBuild = (project.builds ?? []).find((b) => b.status === 'queued' || b.status === 'running')
+  // En yeni başarılı build — kademeli yayın (staged rollout) paneli bunu hedefler
+  const latestSuccessBuild = (project.builds ?? []).find((b) => b.status === 'success')
 
   return (
     <div className="p-8 max-w-4xl">
@@ -458,6 +461,14 @@ export default function ProjectDetailPage() {
       </div>
 
       <ProjectPipeline project={project} hasDeployment={deployments.length > 0} />
+
+      {latestSuccessBuild && (
+        <RolloutPanel
+          buildId={latestSuccessBuild.id}
+          projectId={project.id}
+          packageName={project.package_name ?? undefined}
+        />
+      )}
 
       {preview && preview.status !== 'not_ready' && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">

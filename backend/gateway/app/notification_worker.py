@@ -15,6 +15,7 @@ EVENT_NOTIFICATION_MAP = {
     },
     "deploy.completed": {"type": "deploy_completed", "title": "Deployment Completed", "pref_key": "notify_deploy_completed"},
     "deploy.failed": {"type": "deploy_failed", "title": "Deployment Failed", "pref_key": "notify_deploy_failed"},
+    "rollout.auto_halted": {"type": "rollout_halted", "title": "Rollout Auto-Halted", "pref_key": "notify_deploy_failed"},
 }
 
 
@@ -183,6 +184,15 @@ async def _process_notification_event(payload: dict, routing_key: str):
         await _dispatch_notification(
             owner_id, config["type"], config["title"], body,
             resource_type="deployment", resource_id=deployment_id,
+        )
+
+    elif routing_key == "rollout.auto_halted":
+        config = EVENT_NOTIFICATION_MAP["rollout.auto_halted"]
+        reason = payload.get("reason", "sağlık eşiği aşıldı")
+        body = f"Kademeli yayın otomatik durduruldu — {reason}"
+        await _dispatch_notification(
+            owner_id, config["type"], config["title"], body,
+            resource_type="rollout", resource_id=payload.get("rollout_id", ""),
         )
 
 

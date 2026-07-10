@@ -24,6 +24,7 @@ from app.routers import credential_validation, deploy_simulator, metrics_kpi, ca
 from app.routers import build_diagnosis, cost_prediction, provider_recommendation
 from app.routers import store_metadata
 from app.routers import auto_signing as auto_signing_router
+from app.routers import rollouts as rollouts_router
 from app.routers import auto_screenshots as auto_screenshots_router
 from app.routers import support as support_router
 from app.routers import organizations as organizations_router
@@ -220,6 +221,10 @@ async def lifespan(app: FastAPI):
     _background_tasks["credential_rotation"] = asyncio.create_task(_credential_rotation_checker())
     logger.info("Credential rotation checker task started")
 
+    from app.rollout_poller import poll_release_health
+    _background_tasks["rollout_health_poller"] = asyncio.create_task(poll_release_health())
+    logger.info("Rollout health poller task started")
+
     logger.info("AppTrack gateway started (v0.9.0)")
     yield
 
@@ -363,6 +368,7 @@ app.include_router(crash_reporting_router.router)
 app.include_router(onboarding_router.router)
 app.include_router(api_keys_router.router)
 app.include_router(auto_signing_router.router, prefix="/api/signing", tags=["auto-signing"])
+app.include_router(rollouts_router.router, prefix="/api/rollouts", tags=["rollouts"])
 app.include_router(ws_router)
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)

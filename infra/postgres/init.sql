@@ -608,3 +608,37 @@ CREATE TABLE IF NOT EXISTS releases (
 
 CREATE INDEX IF NOT EXISTS idx_releases_build ON releases(build_id);
 CREATE INDEX IF NOT EXISTS idx_releases_project ON releases(project_id);
+
+-- Release Rollouts (staged rollout + health + auto-halt)
+CREATE TABLE IF NOT EXISTS release_rollouts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deployment_id UUID NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    platform VARCHAR(50) NOT NULL,
+    package_name VARCHAR(255),
+    track VARCHAR(50) DEFAULT 'production',
+    current_fraction DOUBLE PRECISION DEFAULT 0.01,
+    state VARCHAR(20) DEFAULT 'in_progress',
+    auto_halt_enabled BOOLEAN DEFAULT TRUE,
+    crash_free_threshold DOUBLE PRECISION DEFAULT 0.99,
+    baseline_crash_free DOUBLE PRECISION,
+    min_users INTEGER DEFAULT 1000,
+    halted_reason TEXT,
+    external_ref VARCHAR(255),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_rollout_deployment ON release_rollouts(deployment_id);
+CREATE INDEX IF NOT EXISTS idx_rollout_project_state ON release_rollouts(project_id, state);
+
+-- Release Health Samples (time-series crash-free/ANR/adoption)
+CREATE TABLE IF NOT EXISTS release_health_samples (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    rollout_id UUID NOT NULL REFERENCES release_rollouts(id) ON DELETE CASCADE,
+    sampled_at TIMESTAMP DEFAULT NOW(),
+    crash_free_rate DOUBLE PRECISION NOT NULL,
+    anr_rate DOUBLE PRECISION,
+    distinct_users INTEGER DEFAULT 0,
+    adoption DOUBLE PRECISION
+);
+CREATE INDEX IF NOT EXISTS idx_health_sample_rollout ON release_health_samples(rollout_id, sampled_at);

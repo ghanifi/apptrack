@@ -8,6 +8,7 @@ export interface Project {
   repo_visibility?: 'public' | 'private'
   runner_type?: 'hosted' | 'self_hosted'
   runner_labels?: string | null
+  package_name?: string | null
   created_at: string
   updated_at: string
   owner_id: string
@@ -62,6 +63,32 @@ export interface Deployment {
   status: 'pending' | 'uploading' | 'in_review' | 'published' | 'canary' | 'rolled_back' | 'failed'
   created_at: string
   updated_at: string
+}
+
+export interface RolloutSample {
+  sampled_at: string | null
+  crash_free_rate: number
+  anr_rate: number | null
+  distinct_users: number
+  adoption: number | null
+}
+
+export interface Rollout {
+  id: string
+  deployment_id: string
+  project_id: string
+  platform: 'google_play' | 'app_store'
+  package_name: string | null
+  track: string
+  current_fraction: number
+  state: 'in_progress' | 'paused' | 'halted' | 'completed' | 'failed'
+  auto_halt_enabled: boolean
+  crash_free_threshold: number
+  baseline_crash_free: number | null
+  min_users: number
+  halted_reason: string | null
+  next_fraction: number
+  samples?: RolloutSample[]
 }
 
 export interface StoreMetadata {
