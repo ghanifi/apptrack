@@ -128,6 +128,8 @@ async def _process_build_finished(payload: dict):
             vals = dict(status=status, artifact_url=artifact_url, finished_at=datetime.utcnow())
             if artifact_checksum:
                 vals["artifact_checksum"] = artifact_checksum
+            if isinstance(payload.get("artifact_signature"), dict):
+                vals["artifact_signature"] = payload["artifact_signature"]
             await db.execute(update(Build).where(Build.id == build_id).values(**vals))
         if project_id:
             new_status = "ready" if status == "success" else "error"

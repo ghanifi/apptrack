@@ -57,6 +57,7 @@ class Build(Base):
     status: Mapped[str] = mapped_column(String(50), default="queued", comment="Build durumu: queued, running, success, failed, cancelled")
     artifact_url: Mapped[str | None] = mapped_column(Text, comment="Build artifact (APK/IPA) URL'si")
     artifact_checksum: Mapped[str | None] = mapped_column(String(128), comment="Artifact SHA-256 hash")
+    artifact_signature: Mapped[dict | None] = mapped_column(JSONB, nullable=True, comment="IPA imza incelemesi: has_ipa/signed/profile_name/profile_expires")
     log_output: Mapped[str | None] = mapped_column(Text, comment="Build log çıktısı")
     external_build_id: Mapped[str | None] = mapped_column(String(255), comment="Harici provider build ID'si")
     workflow_file: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="GitHub Actions workflow dosya adı")

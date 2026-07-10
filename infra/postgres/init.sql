@@ -642,3 +642,6 @@ CREATE TABLE IF NOT EXISTS release_health_samples (
     adoption DOUBLE PRECISION
 );
 CREATE INDEX IF NOT EXISTS idx_health_sample_rollout ON release_health_samples(rollout_id, sampled_at);
+
+-- IPA imza incelemesi (build artifact signature)
+ALTER TABLE builds ADD COLUMN IF NOT EXISTS artifact_signature JSONB;

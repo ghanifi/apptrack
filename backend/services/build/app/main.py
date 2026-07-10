@@ -14,6 +14,8 @@ from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 import aio_pika
+
+from app import ipa_inspect
 import boto3
 from botocore.config import Config as BotoConfig
 import httpx
@@ -557,8 +559,11 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
 _MAX_ARTIFACT_SIZE = 500 * 1024 * 1024  # 500 MB
 
 
-async def _download_github_artifact(owner_repo: str, run_id: int, build_id: str, github_token: str) -> str:
-    """Download build artifact from GitHub Actions and upload to MinIO. Returns MinIO URL."""
+async def _download_github_artifact(owner_repo: str, run_id: int, build_id: str, github_token: str) -> tuple[str, dict | None]:
+    """Download build artifact from GitHub Actions and upload to MinIO.
+
+    Returns (minio_url, artifact_signature). Signature: IPA imza incelemesi
+    (ipa_inspect) — iOS-without-Mac yolunun görünürlüğü; hata olursa None."""
     headers = {"Authorization": f"Bearer {github_token}", "Accept": "application/vnd.github.v3+json"}
     try:
         async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
@@ -569,12 +574,12 @@ async def _download_github_artifact(owner_repo: str, run_id: int, build_id: str,
             )
             if resp.status_code != 200:
                 logger.warning("Failed to list artifacts for run %s: %s", run_id, resp.status_code)
-                return ""
+                return "", None
 
             artifacts = resp.json().get("artifacts", [])
             if not artifacts:
                 logger.info("No artifacts found for run %s", run_id)
-                return ""
+                return "", None
 
             # Download first artifact (zip)
             artifact = artifacts[0]
@@ -588,7 +593,7 @@ async def _download_github_artifact(owner_repo: str, run_id: int, build_id: str,
                     "Artifact '%s' too large (%d bytes, limit %d) for run %s",
                     artifact_name, artifact_size_reported, _MAX_ARTIFACT_SIZE, run_id,
                 )
-                return ""
+                return "", None
 
             logger.info("Downloading artifact '%s' from run %s", artifact_name, run_id)
 
@@ -599,16 +604,19 @@ async def _download_github_artifact(owner_repo: str, run_id: int, build_id: str,
                 async with client.stream("GET", download_url, headers=headers) as dl_resp:
                     if dl_resp.status_code != 200:
                         logger.warning("Failed to download artifact: %s", dl_resp.status_code)
-                        return ""
+                        return "", None
                     downloaded = 0
                     async for chunk in dl_resp.aiter_bytes(chunk_size=8192):
                         downloaded += len(chunk)
                         if downloaded > _MAX_ARTIFACT_SIZE:
                             logger.warning("Artifact download exceeded size limit (%d bytes) for run %s", _MAX_ARTIFACT_SIZE, run_id)
-                            return ""
+                            return "", None
                         tmp_file.write(chunk)
                 tmp_file.close()
                 logger.info("Downloaded artifact: %s (%d bytes)", artifact_name, downloaded)
+
+                # IPA imza incelemesi (lokal, saf; hata build'i etkilemez)
+                artifact_signature = ipa_inspect.inspect_artifact_zip(tmp_file.name)
 
                 # Upload to MinIO from temp file
                 s3 = boto3.client(
@@ -636,7 +644,7 @@ async def _download_github_artifact(owner_repo: str, run_id: int, build_id: str,
 
                 minio_url = f"http://{settings.MINIO_ENDPOINT}/{settings.MINIO_BUCKET}/{s3_key}"
                 logger.info("Artifact uploaded to MinIO: %s", minio_url)
-                return minio_url
+                return minio_url, artifact_signature
             finally:
                 if tmp_file:
                     try:
@@ -646,7 +654,7 @@ async def _download_github_artifact(owner_repo: str, run_id: int, build_id: str,
 
     except Exception as exc:
         logger.error("Artifact download/upload failed for build %s: %s", build_id, exc)
-        return ""
+        return "", None
 
 
 async def _poll_github_actions_build(
@@ -766,14 +774,16 @@ async def _poll_github_actions_build(
 
             # Try to download artifact if build succeeded
             artifact_url = ""
+            artifact_signature = None
             if build_status == "success":
-                artifact_url = await _download_github_artifact(owner_repo, run_id, build_id, github_token)
+                artifact_url, artifact_signature = await _download_github_artifact(owner_repo, run_id, build_id, github_token)
 
             await publish_event(channel, event_type, {
                 "build_id": build_id,
                 "project_id": project_id,
                 "status": build_status,
                 "artifact_url": artifact_url,
+                "artifact_signature": artifact_signature,
                 "provider": "github_actions",
                 "run_id": str(run_id),
                 "conclusion": conclusion,

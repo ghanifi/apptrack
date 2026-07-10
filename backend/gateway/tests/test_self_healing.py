@@ -309,3 +309,20 @@ async def test_open_fix_pr_delete_file_second_run_reuses(monkeypatch):
     res = await bf.open_fix_pr("o/r", "main", "tok", DELETE_PLAN)
     assert res["reused"] is True
     assert deletes == []  # ikinci tıkta DELETE çağrılmadı
+
+
+# ---- imza hatasi teshis desenleri (signed-IPA hazirligi) ----
+
+def test_profile_expired_pattern_matches_first():
+    from app.routers.build_diagnosis import _match_error_patterns
+    log = "error: Your provisioning profile 'AppTrack Dist' has expired."
+    ids = [d["id"] for d in _match_error_patterns(log, framework="swift")]
+    assert ids[0] == "xcode_profile_expired"
+
+
+def test_no_profile_for_bundle_pattern():
+    from app.routers.build_diagnosis import _match_error_patterns
+    log = "error: No profiles for 'com.example.app' were found: Xcode couldn't find any provisioning profiles"
+    ids = [d["id"] for d in _match_error_patterns(log, framework="swift")]
+    assert "xcode_no_profile_for_bundle" in ids
+    assert ids.index("xcode_no_profile_for_bundle") < ids.index("xcode_signing")

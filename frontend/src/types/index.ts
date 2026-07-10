@@ -23,6 +23,12 @@ export interface Build {
   provider: 'eas' | 'codemagic' | 'github_actions' | 'self_hosted'
   status: 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
   artifact_url?: string
+  artifact_signature?: {
+    has_ipa: boolean
+    signed?: boolean
+    profile_name?: string | null
+    profile_expires?: string | null
+  } | null
   error_message?: string
   log_output?: string
   trigger_type?: 'push' | 'pull_request' | 'manual'

@@ -80,6 +80,24 @@ BUILD_ERROR_PATTERNS: dict[str, list[dict]] = {
     ],
     "xcode": [
         {
+            # Spesifik imza desenleri genel xcode_signing'den ÖNCE gelir (ilk eşleşen kazanır).
+            "id": "xcode_profile_expired",
+            "pattern": r"provisioning profile.{0,40}(?:has )?expired|profile.{0,20}expired",
+            "diagnosis": "The provisioning profile embedded in this build has expired.",
+            "fix": "Check Settings > iOS Signing > Signing Health for expiry dates, then renew via "
+                   "'Auto-Generate Certificates' (no Mac needed). Re-run the build after renewal.",
+            "auto_fix": False,
+        },
+        {
+            "id": "xcode_no_profile_for_bundle",
+            "pattern": r"No profiles? for '[^']+' (?:were|was) found",
+            "diagnosis": "No provisioning profile matches this app's bundle identifier.",
+            "fix": "Verify the bundle identifier in your project matches your Apple Developer app ID, "
+                   "then use Settings > iOS Signing > 'Auto-Generate Certificates' to create a matching "
+                   "profile (no Mac needed).",
+            "auto_fix": False,
+        },
+        {
             "id": "xcode_signing",
             "pattern": r"Code Sign error|No signing certificate|Signing Identity|provisioning profile",
             "diagnosis": "Xcode code signing failed. The signing certificate or provisioning profile is missing or expired.",

@@ -640,6 +640,23 @@ export default function ProjectDetailPage() {
                               Manual
                             </span>
                           )}
+                          {build.artifact_signature?.has_ipa && (
+                            <span
+                              className={clsx(
+                                'ml-2 text-xs px-1.5 py-0.5 rounded',
+                                build.artifact_signature.signed
+                                  ? 'text-green-400 bg-green-500/10'
+                                  : 'text-yellow-400 bg-yellow-500/10',
+                              )}
+                              title={
+                                build.artifact_signature.signed
+                                  ? `Profil: ${build.artifact_signature.profile_name ?? '?'}${build.artifact_signature.profile_expires ? ` · bitiş ${new Date(build.artifact_signature.profile_expires).toLocaleDateString()}` : ''}`
+                                  : 'IPA imzasız — cihaza kurulamaz. Settings > iOS Signing ile imzalayın.'
+                              }
+                            >
+                              {build.artifact_signature.signed ? 'İmzalı IPA' : 'İmzasız IPA'}
+                            </span>
+                          )}
                         </p>
                         <p className="text-xs text-gray-500">
                           {new Date(build.created_at).toLocaleString()}

@@ -96,6 +96,8 @@ def _extract_error_message(log_output: str | None, status: str) -> str | None:
 
 def _serialize_build(b: Build) -> dict:
     error_message = _extract_error_message(b.log_output, b.status)
+    _sig = getattr(b, "artifact_signature", None)
+    artifact_signature = _sig if isinstance(_sig, dict) else None
     return {
         "id": b.id,
         "project_id": b.project_id,
@@ -103,6 +105,7 @@ def _serialize_build(b: Build) -> dict:
         "provider": b.provider,
         "status": b.status,
         "artifact_url": b.artifact_url,
+        "artifact_signature": artifact_signature,
         "external_build_id": b.external_build_id,
         "idempotency_key": b.idempotency_key,
         "error_message": error_message,
