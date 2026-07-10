@@ -85,6 +85,8 @@ class ProjectCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     name: str | None = None
     branch: str | None = None
+    runner_type: str | None = None
+    runner_labels: str | None = None
 
 
 class BuildResponse(BaseModel):
@@ -110,6 +112,8 @@ class ProjectResponse(BaseModel):
     created_at: datetime | str
     updated_at: datetime | str
     owner_id: str
+    runner_type: str = "hosted"
+    runner_labels: Optional[str] = None
     builds: List[BuildResponse] = []
 
     class Config:
@@ -160,6 +164,11 @@ def _serialize_project(p: Project) -> dict:
         builds = list(p.builds)
     except Exception:
         builds = []
+    # Tip-güvenli okuma: ORM'de her zaman str/None, ama savunmacı.
+    _rt = getattr(p, "runner_type", None)
+    runner_type = _rt if isinstance(_rt, str) else "hosted"
+    _rl = getattr(p, "runner_labels", None)
+    runner_labels = _rl if isinstance(_rl, str) else None
     return {
         "id": p.id,
         "name": p.name,
@@ -171,6 +180,8 @@ def _serialize_project(p: Project) -> dict:
         "updated_at": p.updated_at.isoformat(),
         "owner_id": p.owner_id,
         "repo_visibility": getattr(p, "repo_visibility", "private"),
+        "runner_type": runner_type,
+        "runner_labels": runner_labels,
         "builds": [
             {
                 "id": b.id,
@@ -348,6 +359,13 @@ async def update_project(
         project.name = req.name
     if req.branch:
         project.branch = req.branch
+    if req.runner_type is not None:
+        if req.runner_type not in ("hosted", "self_hosted"):
+            raise HTTPException(status_code=422, detail="runner_type must be 'hosted' or 'self_hosted'")
+        project.runner_type = req.runner_type
+    if req.runner_labels is not None:
+        # Boş string -> None (varsayılan label seti kullanılsın)
+        project.runner_labels = req.runner_labels.strip() or None
     project.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(project)
@@ -526,6 +544,8 @@ async def trigger_build(
         "branch": project.branch,
         "clone_path": project.clone_path,
         "repo_visibility": project.repo_visibility or "private",
+        "runner_type": getattr(project, "runner_type", "hosted") or "hosted",
+        "runner_labels": getattr(project, "runner_labels", None),
     }
 
     if provider == "eas":

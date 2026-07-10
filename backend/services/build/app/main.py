@@ -5,6 +5,7 @@ import io
 import json
 import logging
 import os
+import re
 import tempfile
 import uuid
 from contextlib import asynccontextmanager
@@ -107,11 +108,8 @@ async def _ensure_workflow_exists(
     if not template_content:
         return (False, False)
 
-    # Replace self-hosted runner with dynamic runner label
-    template_content = template_content.replace(
-        "runs-on: [self-hosted, macos-arm64, apptrack-ios]",
-        f"runs-on: {runner_label}",
-    )
+    # Replace AppTrack-managed runs-on with dynamic runner label
+    template_content = _rewrite_runs_on(template_content, runner_label)
 
     content_b64 = _b64.b64encode(template_content.encode()).decode()
     put_resp = await client.put(
@@ -274,6 +272,121 @@ async def _trigger_codemagic(build_id: str, payload: dict, channel: aio_pika.abc
         })
 
 
+# GitHub self-hosted runner kayıtta otomatik bu label'ları alır (self-hosted, macOS, ARM64).
+# Doğrulandı: docs.github.com/actions/.../self-hosted-runners (2026-03-10).
+_SELF_HOSTED_DEFAULT_LABELS = ["self-hosted", "macOS", "ARM64"]
+_LABEL_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
+# Yalnız AppTrack-yönetimli runs-on değerlerini hedefler (macos-* veya self-hosted dizi/placeholder).
+# ubuntu gibi diğer job'ların runs-on'una dokunmaz.
+_RUNS_ON_RE = re.compile(
+    r"(?m)^(?P<pre>\s*runs-on:\s*)(?:macos-[\w.\-]+|\[[^\]]*self-hosted[^\]]*\])\s*$"
+)
+
+
+def _rewrite_runs_on(content: str, runner_label: str) -> str:
+    """AppTrack-yönetimli runs-on satırlarını istenen runner_label ile değiştirir."""
+    return _RUNS_ON_RE.sub(lambda m: f"{m.group('pre')}{runner_label}", content)
+
+
+def _sanitize_labels(raw: str | None) -> list[str]:
+    """Kullanıcı özel label CSV'ini güvenli listeye çevir. Geçersiz token atlanır."""
+    if not raw:
+        return []
+    out: list[str] = []
+    for token in raw.replace("\n", ",").split(","):
+        t = token.strip()
+        if t and _LABEL_RE.match(t):
+            out.append(t)
+    return out
+
+
+def _self_hosted_runner_labels(raw: str | None) -> list[str]:
+    """Enjekte edilecek/preflight'ta aranacak tam label seti: varsayılan + özel."""
+    labels = list(_SELF_HOSTED_DEFAULT_LABELS)
+    for extra in _sanitize_labels(raw):
+        if extra not in labels:
+            labels.append(extra)
+    return labels
+
+
+async def _check_self_hosted_runner(
+    client: httpx.AsyncClient, owner_repo: str, github_token: str, required_labels: list[str]
+) -> tuple[bool, str]:
+    """Dispatch öncesi: eşleşen çevrimiçi (online + boşta) self-hosted runner var mı?
+
+    Returns (ok, reason). ok=True → dispatch güvenli.
+    İzin yetersizse (403) veya API hatasında ok=True döner (doğrulayamıyoruz — bloklamayız).
+    Yalnızca 200 alınıp uygun runner bulunamazsa ok=False.
+    Doğrulanmış alanlar: status ("online"/"offline"), busy (bool), labels[].name.
+    """
+    try:
+        resp = await client.get(
+            f"https://api.github.com/repos/{owner_repo}/actions/runners",
+            headers={
+                "Authorization": f"Bearer {github_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2026-03-10",
+            },
+        )
+    except Exception as exc:
+        logger.warning("Runner preflight request failed (%s) — proceeding without check", exc)
+        return (True, "preflight_error")
+
+    if resp.status_code == 403:
+        logger.warning("Runner preflight 403 (token lacks Administration:read) — proceeding without check")
+        return (True, "preflight_forbidden")
+    if resp.status_code != 200:
+        logger.warning("Runner preflight status %s — proceeding without check", resp.status_code)
+        return (True, "preflight_non_200")
+
+    required = set(required_labels)
+    for r in resp.json().get("runners", []):
+        if r.get("status") != "online" or r.get("busy"):
+            continue
+        names = {lbl.get("name") for lbl in r.get("labels", [])}
+        if required.issubset(names):
+            return (True, "runner_available")
+    return (False, "no_available_runner")
+
+
+async def _sync_workflow_runner(
+    client: httpx.AsyncClient, owner_repo: str, workflow_file: str, branch: str,
+    github_token: str, runner_label: str,
+) -> None:
+    """Mevcut workflow'un runs-on'unu istenen runner_label ile eşitle (runner tipi değişince).
+    AppTrack workflow'u zaten doğruysa hiçbir şey yapmaz. Best-effort."""
+    headers = {"Authorization": f"Bearer {github_token}", "Accept": "application/vnd.github.v3+json"}
+    path = f".github/workflows/{workflow_file}"
+    try:
+        r = await client.get(
+            f"https://api.github.com/repos/{owner_repo}/contents/{path}",
+            headers=headers, params={"ref": branch},
+        )
+        if r.status_code != 200:
+            return
+        data = r.json()
+        current = _b64.b64decode(data["content"]).decode()
+        updated = _rewrite_runs_on(current, runner_label)
+        if updated == current:
+            return  # zaten doğru runner
+        put = await client.put(
+            f"https://api.github.com/repos/{owner_repo}/contents/{path}",
+            headers=headers,
+            json={
+                "message": f"AppTrack: sync runner to {runner_label}",
+                "content": _b64.b64encode(updated.encode()).decode(),
+                "sha": data["sha"],
+                "branch": branch,
+            },
+        )
+        if put.status_code in (200, 201):
+            logger.info("Synced workflow %s runner -> %s in %s", workflow_file, runner_label, owner_repo)
+        else:
+            logger.warning("Runner sync PUT failed %s for %s", put.status_code, owner_repo)
+    except Exception as exc:
+        logger.warning("Runner sync failed for %s: %s", owner_repo, exc)
+
+
 async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pika.abc.AbstractChannel):
     github_token = payload.get("github_token") or settings.GITHUB_ACTIONS_TOKEN
     repo_url = payload.get("repo_url", "")
@@ -281,10 +394,16 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
     platform = payload.get("platform", "android")
     framework = payload.get("framework", "")
     repo_visibility = payload.get("repo_visibility", "private")
+    runner_type = payload.get("runner_type", "hosted")
     # macos-26: ASC 28 Nis 2026'dan beri Xcode 26 zorunlu; macos-latest migrasyonu
     # (Haz-Tem 2026) sırasında eski Xcode gelebilir. Ücretsiz: public sınırsız, private ~200dk/ay.
-    runner_label = "macos-26"
-    logger.info("Runner strategy: visibility=%s runner=%s", repo_visibility, runner_label)
+    if runner_type == "self_hosted":
+        self_hosted_labels = _self_hosted_runner_labels(payload.get("runner_labels"))
+        runner_label = "[" + ", ".join(self_hosted_labels) + "]"
+    else:
+        self_hosted_labels = []
+        runner_label = "macos-26"
+    logger.info("Runner strategy: visibility=%s type=%s runner=%s", repo_visibility, runner_type, runner_label)
 
     owner_repo = ""
     if "github.com/" in repo_url:
@@ -356,10 +475,27 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
         logger.warning("Build %s: No Android signing credentials — Play Store requires signed AAB (Play App Signing)", build_id)
 
     async with httpx.AsyncClient(timeout=30.0) as client:
+        # Self-hosted preflight: eşleşen çevrimiçi runner yoksa 24 saat kuyrukta beklemesin.
+        if runner_type == "self_hosted":
+            ok, reason = await _check_self_hosted_runner(client, owner_repo, github_token, self_hosted_labels)
+            if not ok:
+                logger.warning("Build %s: no available self-hosted runner (%s)", build_id, reason)
+                await publish_event(channel, "build.failed", {
+                    "build_id": build_id,
+                    "project_id": payload["project_id"],
+                    "error": "Çevrimiçi self-hosted runner bulunamadı. Runner'ınızın repoya kayıtlı ve "
+                             f"çalışır (online) olduğundan ve şu label'ları taşıdığından emin olun: "
+                             f"{', '.join(self_hosted_labels)}.",
+                })
+                return
+
         workflow_ready, just_created = await _ensure_workflow_exists(client, owner_repo, workflow_file, branch, github_token, runner_label)
         if just_created:
             logger.info("Workflow just created, waiting 10s for GitHub to register it...")
             await asyncio.sleep(10)
+        elif workflow_ready:
+            # Mevcut workflow'un runner'ı değişmiş olabilir (hosted <-> self_hosted) — eşitle.
+            await _sync_workflow_runner(client, owner_repo, workflow_file, branch, github_token, runner_label)
         if not workflow_ready:
             logger.error("Workflow file %s not found and could not be auto-created in %s", workflow_file, owner_repo)
             await publish_event(channel, "build.failed", {

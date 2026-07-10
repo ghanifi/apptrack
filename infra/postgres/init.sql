@@ -471,6 +471,10 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS build_provider VARCHAR(50);
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS repo_visibility VARCHAR(20) DEFAULT 'private';
 ALTER TABLE builds ADD COLUMN IF NOT EXISTS workflow_file VARCHAR(100);
 
+-- Self-hosted runner support (per-project)
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS runner_type VARCHAR(20) DEFAULT 'hosted';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS runner_labels TEXT;
+
 -- Add org_id to projects (nullable, for gradual migration)
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES organizations(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);

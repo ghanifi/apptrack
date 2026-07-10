@@ -11,6 +11,7 @@ import { api } from '@/lib/api'
 import type { Project, Build, Deployment } from '@/types'
 import BuildDiagnosisPanel from '@/components/ui/BuildDiagnosisPanel'
 import LiveBuildProgress from '@/components/LiveBuildProgress'
+import BuildRunnerCard from '@/components/BuildRunnerCard'
 import { frameworkLabel, platformLabel, providerLabel } from '@/lib/labels'
 import clsx from 'clsx'
 
@@ -543,6 +544,8 @@ export default function ProjectDetailPage() {
           )}
         </div>
       )}
+
+      {canBuild && <BuildRunnerCard project={project} />}
 
       {canBuild && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">

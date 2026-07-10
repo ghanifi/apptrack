@@ -37,6 +37,8 @@ class Project(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Oluşturulma tarihi")
     build_provider: Mapped[str | None] = mapped_column(String(50), nullable=True, comment="Override build provider: github_actions, eas, codemagic, self_hosted")
     repo_visibility: Mapped[str] = mapped_column(String(20), default="private", comment="GitHub repo gorunurlugu: public, private")
+    runner_type: Mapped[str] = mapped_column(String(20), default="hosted", comment="GitHub Actions runner tipi: hosted (macos-26), self_hosted")
+    runner_labels: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Self-hosted için opsiyonel özel runner label CSV'i (boşsa self-hosted,macOS,ARM64)")
     org_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True, comment="Bağlı organizasyon ID (opsiyonel)")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="Son güncelleme tarihi")
 

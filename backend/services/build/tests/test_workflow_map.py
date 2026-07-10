@@ -149,7 +149,7 @@ async def test_capacitor_android_build_dispatch():
     mock_response = MagicMock()
     mock_response.status_code = 204
 
-    with patch("main._ensure_workflow_exists", new_callable=AsyncMock, return_value=True):
+    with patch("main._ensure_workflow_exists", new_callable=AsyncMock, return_value=(True, False)):
         with patch("main.httpx.AsyncClient") as MockClient:
             client_instance = AsyncMock()
             client_instance.post = AsyncMock(return_value=mock_response)
@@ -200,7 +200,7 @@ async def test_android_signing_credentials_forwarded():
     mock_response = MagicMock()
     mock_response.status_code = 204
 
-    with patch("main._ensure_workflow_exists", new_callable=AsyncMock, return_value=True):
+    with patch("main._ensure_workflow_exists", new_callable=AsyncMock, return_value=(True, False)):
         with patch("main.httpx.AsyncClient") as MockClient:
             client_instance = AsyncMock()
             client_instance.post = AsyncMock(return_value=mock_response)

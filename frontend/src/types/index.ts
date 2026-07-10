@@ -6,6 +6,8 @@ export interface Project {
   framework: 'flutter' | 'react_native' | 'expo' | 'swift' | 'kotlin' | 'capacitor' | 'ionic' | 'cordova' | 'pwa' | 'unknown'
   status: 'pending' | 'analyzing' | 'ready' | 'building' | 'deploying' | 'error'
   repo_visibility?: 'public' | 'private'
+  runner_type?: 'hosted' | 'self_hosted'
+  runner_labels?: string | null
   created_at: string
   updated_at: string
   owner_id: string
