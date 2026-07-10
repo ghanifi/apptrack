@@ -5,6 +5,7 @@ import { Check, Trash2, KeyRound, Github, Smartphone, Store, CreditCard, Bell, A
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
 import clsx from 'clsx'
+import ApiKeysSection from '@/components/ApiKeysSection'
 import type { CurrentPlan, PlanInfo, NotificationPreferences } from '@/types'
 
 function InfoTooltip({ lines }: { lines: string[] }) {
@@ -936,6 +937,13 @@ export default function SettingsPage() {
           <Bell size={14} /> Notification Preferences
         </h2>
         <NotificationSection />
+      </section>
+
+      <section className="mb-8">
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <KeyRound size={14} /> API Keys
+        </h2>
+        <ApiKeysSection />
       </section>
     </div>
   )

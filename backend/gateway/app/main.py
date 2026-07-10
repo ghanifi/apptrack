@@ -34,6 +34,7 @@ from app.routers import releases as releases_router
 from app.routers import cache as cache_router
 from app.routers import crash_reporting as crash_reporting_router
 from app.routers import onboarding as onboarding_router
+from app.routers import api_keys as api_keys_router
 from app.ws import router as ws_router
 import time as _time
 from app.config import settings
@@ -360,6 +361,7 @@ app.include_router(releases_router.router)
 app.include_router(cache_router.router)
 app.include_router(crash_reporting_router.router)
 app.include_router(onboarding_router.router)
+app.include_router(api_keys_router.router)
 app.include_router(auto_signing_router.router, prefix="/api/signing", tags=["auto-signing"])
 app.include_router(ws_router)
 

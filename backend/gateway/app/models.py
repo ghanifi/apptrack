@@ -596,3 +596,22 @@ class Release(Base):
     created_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ApiKey(Base):
+    """Programatik erişim için API anahtarı (MCP server / CLI / public API).
+    Sadece SHA-256 hash saklanır; ham anahtar yalnızca oluşturma anında gösterilir."""
+    __tablename__ = "api_keys"
+    __table_args__ = (
+        Index("idx_api_keys_user", "user_id"),
+        Index("idx_api_keys_hash", "key_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, comment="Kullanıcının verdiği etiket")
+    key_prefix: Mapped[str] = mapped_column(String(20), nullable=False, comment="Görüntüleme için ilk karakterler (atk_xxxxxxxx)")
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False, comment="Ham anahtarın SHA-256 hash'i")
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
