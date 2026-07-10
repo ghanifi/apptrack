@@ -239,6 +239,14 @@ export interface RunnerSetupCommand {
   download_url: string
 }
 
+export interface RunnerJitConfig {
+  runner_name: string
+  labels: string
+  script: string
+  docker_command: string
+  note: string
+}
+
 export interface UsageSummary {
   plan: string
   period: string

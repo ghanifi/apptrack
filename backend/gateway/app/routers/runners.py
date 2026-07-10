@@ -62,6 +62,22 @@ def build_setup_script(repo_url: str, download_url: str, filename: str,
     )
 
 
+def build_jit_script(download_url: str, filename: str, encoded_jitconfig: str) -> str:
+    """Tek-kullanımlık (JIT) runner çalıştırma bloğu (saf). Tek job koşar, kendini siler."""
+    return (
+        "mkdir -p actions-runner && cd actions-runner\n"
+        f"curl -o {filename} -L {download_url}\n"
+        f"tar xzf {filename}\n"
+        f"./run.sh --jitconfig {encoded_jitconfig}\n"
+    )
+
+
+def build_jit_docker_command(encoded_jitconfig: str) -> str:
+    """Tek komutluk Docker JIT runner (saf) — GitHub'ın resmî runner imajı."""
+    return (f"docker run --rm ghcr.io/actions/actions-runner:latest "
+            f"./run.sh --jitconfig {encoded_jitconfig}")
+
+
 def _owner_repo(repo_url: str) -> str:
     if "github.com/" not in repo_url:
         return ""
@@ -160,6 +176,48 @@ async def setup_command(
     )
     return {"script": script, "expires_at": reg_data.get("expires_at"),
             "labels": labels, "download_url": entry["download_url"]}
+
+
+@router.post("/{project_id}/runners/jit-config")
+async def jit_config(
+    project_id: str,
+    req: SetupCommandRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tek-kullanımlık (JIT/ephemeral) runner konfigürasyonu üretir.
+
+    Runner tek job çalıştırır ve GitHub tarafından otomatik silinir — temiz ortam,
+    kalıcı kayıt yok. Docker tek-komut alternatifi de döner. Config saklanmaz.
+    """
+    import secrets
+    project, token, owner_repo = await _load_project_and_token(db, project_id, current_user["id"])
+    headers = {"Authorization": f"Bearer {token}"}
+    labels = resolve_labels(getattr(project, "runner_labels", None), req.os, req.arch)
+    runner_name = f"apptrack-jit-{secrets.token_hex(4)}"
+    async with httpx.AsyncClient(timeout=20, headers=headers) as c:
+        dl = await c.get(f"{GITHUB_API}/repos/{owner_repo}/actions/runners/downloads")
+        if dl.status_code != 200:
+            raise _map_github_error(dl)
+        entry = pick_download(dl.json(), req.os, req.arch)
+        if not entry:
+            raise HTTPException(status_code=502, detail=f"İndirme bulunamadı: {req.os}/{req.arch}.")
+
+        jit = await c.post(
+            f"{GITHUB_API}/repos/{owner_repo}/actions/runners/generate-jitconfig",
+            json={"name": runner_name, "runner_group_id": 1,
+                  "labels": labels.split(",")})
+        if jit.status_code != 201:
+            raise _map_github_error(jit)
+        encoded = jit.json()["encoded_jit_config"]
+
+    return {
+        "runner_name": runner_name,
+        "labels": labels,
+        "script": build_jit_script(entry["download_url"], entry["filename"], encoded),
+        "docker_command": build_jit_docker_command(encoded),
+        "note": "Runner tek job çalıştırır ve otomatik silinir (ephemeral).",
+    }
 
 
 @router.delete("/{project_id}/runners/{runner_id}")

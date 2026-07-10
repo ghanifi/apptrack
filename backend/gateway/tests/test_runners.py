@@ -76,3 +76,18 @@ def test_owner_repo_parsing():
     assert rn._owner_repo("https://github.com/o/r.git") == "o/r"
     assert rn._owner_repo("https://github.com/o/r") == "o/r"
     assert rn._owner_repo("https://gitlab.com/o/r") == ""
+
+
+# ---- JIT runner (saf) ----
+
+def test_build_jit_script_flow_order():
+    s = rn.build_jit_script("https://dl/x.tar.gz", "x.tar.gz", "ENCODED123")
+    idx = [s.index(p) for p in ("mkdir", "curl", "tar xzf", "./run.sh --jitconfig ENCODED123")]
+    assert idx == sorted(idx)
+    assert "config.sh" not in s  # JIT'te config.sh yok
+
+
+def test_build_jit_docker_command():
+    cmd = rn.build_jit_docker_command("ENC")
+    assert cmd.startswith("docker run --rm ghcr.io/actions/actions-runner")
+    assert "--jitconfig ENC" in cmd
