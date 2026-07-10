@@ -6,6 +6,7 @@ import { api } from '@/lib/api'
 import { toast } from 'sonner'
 import clsx from 'clsx'
 import ApiKeysSection from '@/components/ApiKeysSection'
+import SigningHealthPanel from '@/components/SigningHealthPanel'
 import type { CurrentPlan, PlanInfo, NotificationPreferences } from '@/types'
 
 function InfoTooltip({ lines }: { lines: string[] }) {
@@ -921,7 +922,10 @@ export default function SettingsPage() {
               <React.Fragment key={section.provider}>
                 <ProviderCard section={section} credentials={credentials} />
                 {section.provider === 'ios_signing' && (
-                  <AutoGenerateIOS credentials={credentials} />
+                  <>
+                    <AutoGenerateIOS credentials={credentials} />
+                    <SigningHealthPanel />
+                  </>
                 )}
                 {section.provider === 'android_signing' && (
                   <AutoGenerateAndroid credentials={credentials} />

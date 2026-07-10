@@ -1,7 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   AlertTriangle, ChevronRight, RefreshCw, Wrench, Shield,
-  ChevronDown, ChevronUp, FileText,
+  ChevronDown, ChevronUp, FileText, GitPullRequest, ExternalLink,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { BuildDiagnosisResult } from '@/types'
@@ -30,6 +30,10 @@ export default function BuildDiagnosisPanel({ buildId, errorMessage, logOutput, 
     queryFn: () => api.post(`/build-diagnosis/diagnose/${buildId}`).then(r => r.data),
     retry: false,
     staleTime: 5 * 60 * 1000,
+  })
+
+  const autofix = useMutation<{ pr_url: string; title: string; reused: boolean }, unknown>({
+    mutationFn: () => api.post(`/build-diagnosis/autofix/${buildId}`).then(r => r.data),
   })
 
   return (
@@ -123,14 +127,46 @@ export default function BuildDiagnosisPanel({ buildId, errorMessage, logOutput, 
         </div>
       )}
 
-      {/* Retry Button */}
-      {onRetry && (
-        <button
-          onClick={onRetry}
-          className="flex items-center gap-1.5 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs font-medium transition-colors"
-        >
-          <RefreshCw size={12} /> Retry Build
-        </button>
+      {/* Actions */}
+      <div className="flex flex-wrap items-center gap-2">
+        {diagnosis?.auto_fixable && !autofix.data && (
+          <button
+            onClick={() => autofix.mutate()}
+            disabled={autofix.isPending}
+            className="flex items-center gap-1.5 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg text-xs font-medium transition-colors"
+          >
+            <Wrench size={12} className={autofix.isPending ? 'animate-spin' : ''} />
+            {autofix.isPending ? 'Opening fix PR…' : 'Auto-fix (open PR)'}
+          </button>
+        )}
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="flex items-center gap-1.5 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs font-medium transition-colors"
+          >
+            <RefreshCw size={12} /> Retry Build
+          </button>
+        )}
+      </div>
+
+      {/* Auto-fix result */}
+      {autofix.data && (
+        <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/5 p-3 text-xs animate-fade-up">
+          <GitPullRequest size={14} className="text-green-400 shrink-0" />
+          <span className="text-green-200/90">
+            {autofix.data.reused ? 'Fix PR already open' : 'Fix PR opened'}: {autofix.data.title}.{' '}
+            <a href={autofix.data.pr_url} target="_blank" rel="noreferrer"
+               className="text-primary-400 hover:underline inline-flex items-center gap-0.5">
+              Review on GitHub <ExternalLink size={9} />
+            </a>
+          </span>
+        </div>
+      )}
+      {autofix.isError && (
+        <p className="text-xs text-red-400">
+          {(autofix.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+            ?? 'Auto-fix failed.'}
+        </p>
       )}
     </div>
   )

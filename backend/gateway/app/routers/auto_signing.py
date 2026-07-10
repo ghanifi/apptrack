@@ -8,6 +8,7 @@ Works on Linux, Windows, macOS — anywhere Python runs.
 
 import base64
 import logging
+import plistlib
 from datetime import datetime
 
 import httpx
@@ -463,3 +464,82 @@ async def auto_generate_android_keystore(
         key_alias=req.key_alias,
         message=f"Android release keystore generated and saved. Key alias: {req.key_alias}, validity: {req.validity_years} years.",
     )
+
+
+# ---------------------------------------------------------------------------
+# iOS Signing Doctor — sertifika/profil süre bitimini proaktif izle
+# ---------------------------------------------------------------------------
+def _to_naive_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+
+def parse_provisioning_expiry(profile_b64: str) -> datetime | None:
+    """.mobileprovision (CMS-imzalı) içindeki gömülü plist'ten ExpirationDate okur."""
+    try:
+        raw = base64.b64decode(profile_b64)
+    except Exception:
+        return None
+    start = raw.find(b"<?xml")
+    end = raw.find(b"</plist>")
+    if start == -1 or end == -1:
+        return None
+    try:
+        data = plistlib.loads(raw[start:end + len(b"</plist>")])
+    except Exception:
+        return None
+    return _to_naive_utc(data.get("ExpirationDate"))
+
+
+def parse_cert_expiry(p12_b64: str, password: str) -> datetime | None:
+    """p12 (PKCS#12) içindeki sertifikanın notAfter (bitiş) tarihini okur."""
+    try:
+        raw = base64.b64decode(p12_b64)
+        _, cert, _ = pkcs12.load_key_and_certificates(raw, password.encode() if password else None)
+    except Exception:
+        return None
+    if cert is None:
+        return None
+    expiry = getattr(cert, "not_valid_after_utc", None) or cert.not_valid_after
+    return _to_naive_utc(expiry)
+
+
+def _health_item(name: str, kind: str, expiry: datetime | None) -> dict:
+    if expiry is None:
+        return {"name": name, "kind": kind, "expires_at": None, "days_left": None,
+                "status": "unknown"}
+    days_left = (expiry - datetime.utcnow()).days
+    if days_left < 0:
+        status = "expired"
+    elif days_left <= 30:
+        status = "expiring_soon"
+    else:
+        status = "ok"
+    return {"name": name, "kind": kind, "expires_at": expiry.isoformat(),
+            "days_left": days_left, "status": status}
+
+
+@router.get("/health")
+async def signing_health(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """iOS imzalama kimlik bilgilerinin sağlığı — sertifika/profil süre bitimini raporlar.
+    Yüklenmiş kimlik bilgileri okunarak (ASC API gerektirmeden) hesaplanır."""
+    uid = current_user["id"]
+    profile_b64 = await get_user_credential(db, uid, "ios_signing", "IOS_PROVISIONING_PROFILE_BASE64")
+    cert_b64 = await get_user_credential(db, uid, "ios_signing", "IOS_CERT_P12_BASE64")
+    cert_pass = await get_user_credential(db, uid, "ios_signing", "IOS_CERT_PASSWORD")
+
+    items: list[dict] = []
+    if cert_b64:
+        items.append(_health_item("Signing Certificate", "certificate",
+                                  parse_cert_expiry(cert_b64, cert_pass or "")))
+    if profile_b64:
+        items.append(_health_item("Provisioning Profile", "profile",
+                                  parse_provisioning_expiry(profile_b64)))
+
+    order = {"expired": 0, "expiring_soon": 1, "unknown": 2, "ok": 3}
+    overall = min((i["status"] for i in items), key=lambda s: order.get(s, 3)) if items else "not_configured"
+    return {"configured": bool(items), "overall": overall, "items": items}

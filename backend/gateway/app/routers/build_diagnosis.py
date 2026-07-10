@@ -14,7 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.dependencies import get_current_user
 from app.database import get_db
-from app.models import Build, Project
+from app.models import Build, Project, User
+from app.routers.credentials import get_user_credential
+from app.crypto import decrypt
+from app import build_autofix
 
 router = APIRouter(prefix="/api/build-diagnosis", tags=["build-diagnosis"])
 logger = logging.getLogger(__name__)
@@ -449,6 +452,83 @@ async def diagnose_build(
         "diagnosis_count": len(diagnoses),
         "severity": severity,
         "auto_fixable": auto_fixable,
+    }
+
+
+async def _resolve_github_token(db: AsyncSession, user_id: str) -> str | None:
+    """Build tetiklemeyle aynı token zinciri: credential → user.github_access_token."""
+    token = await get_user_credential(db, user_id, "github_actions", "GITHUB_ACTIONS_TOKEN")
+    if token:
+        return token
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if user and user.github_access_token:
+        try:
+            return decrypt(user.github_access_token)
+        except Exception:
+            return None
+    return None
+
+
+def _parse_owner_repo(repo_url: str) -> str:
+    if "github.com/" not in repo_url:
+        return ""
+    raw = repo_url.rstrip("/").split("github.com/")[-1]
+    return raw[:-4] if raw.endswith(".git") else raw
+
+
+@router.post("/autofix/{build_id}")
+async def autofix_build(
+    build_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Başarısız bir build için deterministik bir düzeltme PR'ı açar (tek-tık self-healing).
+
+    Yalnızca tanınan, güvenli-yamalı hatalar için çalışır (Gradle heap, AndroidX, minSdk).
+    Kullanıcının reposuna yazar — bu yüzden kullanıcı tarafından tetiklenir.
+    """
+    build = (await db.execute(select(Build).where(Build.id == build_id))).scalar_one_or_none()
+    if not build:
+        raise HTTPException(status_code=404, detail="Build not found")
+    project = (await db.execute(select(Project).where(Project.id == build.project_id))).scalar_one_or_none()
+    if not project or project.owner_id != current_user["id"]:
+        raise HTTPException(status_code=404, detail="Build not found")
+    if build.status != "failed":
+        raise HTTPException(status_code=400, detail="Only failed builds can be auto-fixed.")
+    if not build.log_output:
+        raise HTTPException(status_code=400, detail="No build log available to diagnose.")
+
+    diagnoses = _match_error_patterns(build.log_output, framework=project.framework)
+    plan = build_autofix.plan_fix(diagnoses, build.log_output)
+    if not plan:
+        raise HTTPException(
+            status_code=400,
+            detail="No auto-fixable issue found for this build. Review the diagnosis and fix manually.",
+        )
+
+    owner_repo = _parse_owner_repo(project.repo_url)
+    if not owner_repo:
+        raise HTTPException(status_code=400, detail="Could not parse GitHub repository from project.")
+    token = await _resolve_github_token(db, current_user["id"])
+    if not token:
+        raise HTTPException(status_code=400, detail="No GitHub token available. Add one in Settings > Credentials.")
+
+    try:
+        result = await build_autofix.open_fix_pr(owner_repo, project.branch or "main", token, plan)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error("Autofix failed for build %s: %s", build_id, exc)
+        raise HTTPException(status_code=500, detail="Auto-fix failed unexpectedly.")
+
+    logger.info("Autofix PR opened for build %s: %s (%s)", build_id, result["pr_url"], plan["id"])
+    return {
+        "build_id": build_id,
+        "fix_id": plan["id"],
+        "title": plan["title"],
+        "pr_url": result["pr_url"],
+        "file": result["file"],
+        "reused": result.get("reused", False),
     }
 
 
