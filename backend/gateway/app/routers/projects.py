@@ -845,14 +845,20 @@ async def get_compliance_checklist(
             "message": "Auto-checked and fixed during build if below 36",
         })
 
-        # Data Safety
+        # Data Safety — AppTrack'te beyan kaydedildiyse hazır say (Play Console'a manuel girilir)
+        from app.models import StoreMetadata as _SM
+        _ds_row = (await db.execute(
+            select(_SM).where(_SM.project_id == project_id, _SM.data_safety.isnot(None))
+        )).scalars().first()
         checks.append({
             "id": "data_safety",
             "platform": "android",
             "category": "metadata",
             "title": "Data Safety Section",
-            "status": "warning",
-            "message": "Must be manually configured in Google Play Console — cannot be automated via API",
+            "status": "passed" if _ds_row else "warning",
+            "message": ("Declared in AppTrack store metadata — remember to mirror it in Play Console (API cannot set it)"
+                        if _ds_row else
+                        "Must be manually configured in Google Play Console — declare it in AppTrack Store Config to track readiness"),
             "help_url": "https://support.google.com/googleplay/android-developer/answer/10787469",
         })
 

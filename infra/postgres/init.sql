@@ -645,3 +645,6 @@ CREATE INDEX IF NOT EXISTS idx_health_sample_rollout ON release_health_samples(r
 
 -- IPA imza incelemesi (build artifact signature)
 ALTER TABLE builds ADD COLUMN IF NOT EXISTS artifact_signature JSONB;
+
+-- Play Data Safety beyanı (AppTrack'te takip)
+ALTER TABLE store_metadata ADD COLUMN IF NOT EXISTS data_safety JSONB;

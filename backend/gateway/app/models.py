@@ -365,6 +365,7 @@ class StoreMetadata(Base):
     support_url: Mapped[str | None] = mapped_column(Text)
     marketing_url: Mapped[str | None] = mapped_column(Text)
     category: Mapped[str | None] = mapped_column(String(100))
+    data_safety: Mapped[dict | None] = mapped_column(JSONB, nullable=True, comment="Play Data Safety beyanı (AppTrack'te takip; Play Console'a manuel girilir)")
     bundle_id: Mapped[str | None] = mapped_column(String(255))
     version: Mapped[str | None] = mapped_column(String(50))
     icon_url: Mapped[str | None] = mapped_column(Text)

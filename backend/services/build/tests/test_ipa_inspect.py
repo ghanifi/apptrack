@@ -83,3 +83,26 @@ def test_corrupt_outer_zip_returns_none(tmp_path):
 def test_corrupt_inner_ipa_returns_none(tmp_path):
     path = _make_artifact_zip(tmp_path, "app.ipa", b"garbage-not-zip")
     assert ipa_inspect.inspect_artifact_zip(path) is None
+
+
+# ---- Xcode Cloud workflow secimi (saf) ----
+
+def test_pick_ci_workflow_matches_repo_name():
+    import main
+    products = [{"id": "p1", "attributes": {"name": "OtherApp"}},
+                {"id": "p2", "attributes": {"name": "Bitki iOS"}}]
+    wfs = {"p1": [{"id": "w1"}], "p2": [{"id": "w2"}]}
+    assert main._pick_ci_workflow(products, wfs, "bitki") == ("p2", "w2")
+
+
+def test_pick_ci_workflow_single_product_fallback():
+    import main
+    products = [{"id": "p1", "attributes": {"name": "Solo"}}]
+    assert main._pick_ci_workflow(products, {"p1": [{"id": "w9"}]}, "unmatched") == ("p1", "w9")
+
+
+def test_pick_ci_workflow_ambiguous_returns_none():
+    import main
+    products = [{"id": "p1", "attributes": {"name": "A"}}, {"id": "p2", "attributes": {"name": "B"}}]
+    wfs = {"p1": [{"id": "w1"}], "p2": [{"id": "w2"}]}
+    assert main._pick_ci_workflow(products, wfs, "zzz") is None

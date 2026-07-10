@@ -113,13 +113,11 @@ jobs:
           EOF
 
       - name: Build release AAB (Play Store mandatory format)
-        working-directory: ${{ env.APP_DIR }}
         if: ${{ github.event.inputs.android_keystore_base64 != '' }}
         working-directory: ${{ env.APP_DIR }}/android
         run: ./gradlew bundleRelease
 
       - name: Build debug APK (for testing only)
-        working-directory: ${{ env.APP_DIR }}
         if: ${{ github.event.inputs.android_keystore_base64 == '' }}
         working-directory: ${{ env.APP_DIR }}/android
         run: ./gradlew assembleDebug

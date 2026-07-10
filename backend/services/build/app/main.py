@@ -803,9 +803,42 @@ async def _poll_github_actions_build(
     })
 
 
+def _asc_jwt(key_id: str, issuer_id: str, private_key_pem: str) -> str:
+    """App Store Connect API için kısa ömürlü ES256 JWT."""
+    import jwt as pyjwt
+    now = int(_time.time())
+    return pyjwt.encode(
+        {"iss": issuer_id, "iat": now, "exp": now + 600, "aud": "appstoreconnect-v1"},
+        private_key_pem, algorithm="ES256", headers={"kid": key_id})
+
+
+def _pick_ci_workflow(products: list[dict], workflows_by_product: dict[str, list[dict]],
+                      repo_name: str | None) -> tuple[str, str] | None:
+    """(product_id, workflow_id) seç: repo adı eşleşen ürün, yoksa tek ürün (saf)."""
+    def _first_wf(pid: str) -> str | None:
+        wfs = workflows_by_product.get(pid) or []
+        return wfs[0]["id"] if wfs else None
+
+    if repo_name:
+        for p in products:
+            name = (p.get("attributes") or {}).get("name", "")
+            if repo_name.lower() in name.lower():
+                wf = _first_wf(p["id"])
+                if wf:
+                    return p["id"], wf
+    if len(products) == 1:
+        wf = _first_wf(products[0]["id"])
+        if wf:
+            return products[0]["id"], wf
+    return None
+
+
 async def _trigger_xcode_cloud(build_id: str, payload: dict, channel: aio_pika.abc.AbstractChannel):
-    """Trigger build via Xcode Cloud (Apple's CI — 1500 min/mo free with Apple Dev Program).
-    Uses App Store Connect API to start a build."""
+    """Xcode Cloud build tetikle (Apple CI — Apple Dev Program ile 1500 dk/ay ücretsiz).
+
+    ASC API: ciProducts → ürünün workflow'ları → POST ciBuildRuns. Tamamlanma takibi
+    ASC Webhooks ile (gelecek faz); şimdilik gerçek ciBuildRun id'si external_build_id olur.
+    """
     asc_key_id = payload.get("appstore_api_key_id", "")
     asc_issuer_id = payload.get("appstore_api_issuer_id", "")
     asc_key_b64 = payload.get("appstore_api_key_base64", "")
@@ -815,18 +848,56 @@ async def _trigger_xcode_cloud(build_id: str, payload: dict, channel: aio_pika.a
             "Xcode Cloud requires App Store Connect API credentials. "
             "Settings > Credentials > appstore_connect bölümünden API Key, Issuer ID ve Key P8'i ekleyin."
         )
+    try:
+        private_key = _b64.b64decode(asc_key_b64).decode()
+    except Exception:
+        raise ConfigurationError("APPSTORE_API_KEY_BASE64 çözülemedi — geçerli base64 .p8 olmalı.")
 
-    # Xcode Cloud builds are managed through App Store Connect API
-    # The actual CI workflow runs on Apple's infrastructure
-    logger.info("Xcode Cloud build requested for %s (build_id=%s)", payload.get("repo_url"), build_id)
+    token = _asc_jwt(asc_key_id, asc_issuer_id, private_key)
+    headers = {"Authorization": f"Bearer {token}"}
+    repo_url = payload.get("repo_url", "")
+    repo_name = repo_url.rstrip("/").split("/")[-1].removesuffix(".git") if repo_url else None
+
+    async with httpx.AsyncClient(timeout=30.0, headers=headers,
+                                 base_url="https://api.appstoreconnect.apple.com") as client:
+        prod_resp = await client.get("/v1/ciProducts", params={"limit": 50})
+        if prod_resp.status_code != 200:
+            raise ConfigurationError(
+                f"Xcode Cloud ürünleri listelenemedi ({prod_resp.status_code}) — "
+                "ASC key'inizin Xcode Cloud erişimi olduğundan emin olun.")
+        products = prod_resp.json().get("data") or []
+        if not products:
+            raise ConfigurationError(
+                "Bu hesapta Xcode Cloud ürünü yok. Önce Xcode'da bir Xcode Cloud workflow oluşturun.")
+
+        workflows_by_product: dict[str, list[dict]] = {}
+        for p in products:
+            wf_resp = await client.get(f"/v1/ciProducts/{p['id']}/workflows", params={"limit": 10})
+            workflows_by_product[p["id"]] = (wf_resp.json().get("data") or []) if wf_resp.status_code == 200 else []
+
+        picked = _pick_ci_workflow(products, workflows_by_product, repo_name)
+        if not picked:
+            names = ", ".join((p.get("attributes") or {}).get("name", "?") for p in products)
+            raise ConfigurationError(
+                f"Repo ile eşleşen Xcode Cloud workflow bulunamadı (ürünler: {names}). "
+                "Xcode Cloud ürün adının repo adını içermesi gerekir.")
+        _product_id, workflow_id = picked
+
+        run_resp = await client.post("/v1/ciBuildRuns", json={
+            "data": {"type": "ciBuildRuns",
+                     "relationships": {"workflow": {"data": {"type": "ciWorkflows", "id": workflow_id}}}}})
+        if run_resp.status_code not in (200, 201):
+            raise ConfigurationError(f"Xcode Cloud build başlatılamadı ({run_resp.status_code}).")
+        run_id = run_resp.json()["data"]["id"]
+
+    logger.info("Xcode Cloud build started: %s (run=%s workflow=%s)", build_id, run_id, workflow_id)
     await publish_event(channel, "build.started", {
         "build_id": build_id,
         "project_id": payload["project_id"],
         "framework": payload.get("framework"),
-        "external_build_id": f"xc-{build_id[:8]}",
+        "external_build_id": run_id,
         "provider": "xcode_cloud",
     })
-    logger.info("Xcode Cloud build initiated: %s", build_id)
 
 
 async def _cancel_eas_build(external_build_id: str, eas_token: str) -> bool:

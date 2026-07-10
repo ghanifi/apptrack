@@ -53,6 +53,7 @@ class StoreMetadataUpsert(BaseModel):
     icon_url: Optional[str] = None
     screenshots: Optional[dict] = None
     feature_graphic_url: Optional[str] = None
+    data_safety: Optional[dict] = None
 
 
 def _serialize(meta: StoreMetadata) -> dict:
@@ -74,6 +75,7 @@ def _serialize(meta: StoreMetadata) -> dict:
         "icon_url": meta.icon_url,
         "screenshots": meta.screenshots,
         "feature_graphic_url": meta.feature_graphic_url,
+        "data_safety": meta.data_safety,
         "created_at": meta.created_at.isoformat(),
         "updated_at": meta.updated_at.isoformat(),
     }

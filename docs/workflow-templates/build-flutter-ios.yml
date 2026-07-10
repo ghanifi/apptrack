@@ -98,6 +98,45 @@ jobs:
             fi
           fi
 
+
+      - name: Ensure PrivacyInfo.xcprivacy (Apple 2026 requirement)
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          PRIVACY_FILE="ios/Runner/PrivacyInfo.xcprivacy"
+          if [ ! -f "$PRIVACY_FILE" ]; then
+            echo "PrivacyInfo.xcprivacy not found — generating default..."
+            mkdir -p "$(dirname "$PRIVACY_FILE")"
+            cat > "$PRIVACY_FILE" << 'PRIVEOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>NSPrivacyTracking</key>
+            <false/>
+            <key>NSPrivacyTrackingDomains</key>
+            <array/>
+            <key>NSPrivacyCollectedDataTypes</key>
+            <array/>
+            <key>NSPrivacyAccessedAPITypes</key>
+            <array>
+              <dict>
+                <key>NSPrivacyAccessedAPIType</key>
+                <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+                <key>NSPrivacyAccessedAPITypeReasons</key>
+                <array>
+                  <string>CA92.1</string>
+                </array>
+              </dict>
+            </array>
+          </dict>
+          </plist>
+          PRIVEOF
+            echo "Default PrivacyInfo.xcprivacy created at $PRIVACY_FILE"
+            echo "NOTE: Projects created with Flutter <3.19 may need the file added to the Runner target in Xcode."
+          else
+            echo "PrivacyInfo.xcprivacy already exists — skipping generation"
+          fi
+
       - name: Install dependencies
         working-directory: ${{ env.APP_DIR }}
         run: flutter pub get

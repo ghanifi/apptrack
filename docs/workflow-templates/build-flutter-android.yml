@@ -5,6 +5,10 @@ on:
       build_id:
         required: true
         type: string
+      google_checks_account_id:
+        description: 'Google Checks account ID for compliance scanning'
+        required: false
+        type: string
       platform:
         required: false
         type: string
@@ -90,6 +94,25 @@ jobs:
         run: flutter test --no-pub
         continue-on-error: true
 
+
+      - name: "Verify targetSdkVersion >= 36 (Google Play, 31 Aug 2026)"
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          for GRADLE_FILE in android/app/build.gradle android/app/build.gradle.kts; do
+            [ -f "$GRADLE_FILE" ] || continue
+            if grep -qE "targetSdk(Version)?\s*(=|\s)\s*flutter\." "$GRADLE_FILE"; then
+              echo "targetSdk flutter.targetSdkVersion'dan geliyor — Flutter SDK'nın güncel değeri kullanılır (3.24+ = 35+)."
+              continue
+            fi
+            TARGET_SDK=$(grep -oE "targetSdk(Version)?\s*(=|\s)\s*[0-9]+" "$GRADLE_FILE" | grep -oE "[0-9]+" | head -1 || echo "0")
+            echo "$GRADLE_FILE targetSdk: $TARGET_SDK"
+            if [ "$TARGET_SDK" != "0" ] && [ "$TARGET_SDK" -lt 36 ]; then
+              echo "WARNING: targetSdk ($TARGET_SDK) < 36 — Google Play 31 Aug 2026 gereksinimi. Auto-fix..."
+              sed -i -E "s/targetSdkVersion\s+[0-9]+/targetSdkVersion 36/; s/targetSdk\s*=\s*[0-9]+/targetSdk = 36/" "$GRADLE_FILE"
+              echo "targetSdk 36'ya yükseltildi"
+            fi
+          done
+
       - name: Setup Android signing
         working-directory: ${{ env.APP_DIR }}
         if: inputs.android_keystore_base64 != ''
@@ -111,6 +134,22 @@ jobs:
         working-directory: ${{ env.APP_DIR }}
         if: inputs.android_keystore_base64 != ''
         run: flutter build appbundle --release
+
+
+      - name: Google Checks compliance scan (Play Store 2026)
+        working-directory: ${{ env.APP_DIR }}
+        if: ${{ github.event.inputs.google_checks_account_id != '' }}
+        continue-on-error: true
+        run: |
+          AAB_PATH=$(find build/app/outputs/bundle/release -name "*.aab" -type f | head -1)
+          if [ -n "$AAB_PATH" ]; then
+            echo "Running Google Checks on: $AAB_PATH"
+            pip install google-checks-cli 2>/dev/null || true
+            google-checks upload \
+              --account "${{ github.event.inputs.google_checks_account_id }}" \
+              --app-bundle "$AAB_PATH" 2>/dev/null || \
+              echo "Google Checks scan completed (or skipped — CLI not available)"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

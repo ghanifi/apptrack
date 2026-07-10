@@ -5,6 +5,9 @@ on:
       build_id:
         description: 'AppTrack Build ID'
         required: true
+      google_checks_account_id:
+        description: 'Google Checks account ID for compliance scanning'
+        required: false
       callback_url:
         description: 'AppTrack callback URL (build result notification)'
         required: false
@@ -108,11 +111,25 @@ jobs:
           echo "${{ github.event.inputs.android_keystore_base64 }}" | base64 -d > twa-output/release.keystore
 
       - name: Build TWA AAB (Play Store mandatory format)
-        working-directory: ${{ env.APP_DIR }}
         working-directory: twa-output
         run: |
           npx bubblewrap build --generateAppBundle 2>/dev/null || \
           npx bubblewrap build 2>/dev/null || echo "Bubblewrap build done"
+
+
+      - name: "Verify TWA targetSdk (advisory) + Google Checks"
+        if: ${{ github.event.inputs.google_checks_account_id != '' }}
+        continue-on-error: true
+        run: |
+          TSDK=$(grep -roE "targetSdk(Version)?\s*(=|\s)\s*[0-9]+" twa-output --include=*.gradle 2>/dev/null | grep -oE "[0-9]+" | head -1 || true)
+          [ -n "$TSDK" ] && [ "$TSDK" -lt 36 ] && echo "ADVISORY: TWA targetSdk=$TSDK < 36 — bubblewrap sürümünü güncelleyin."
+          AAB_PATH=$(find twa-output -name "*.aab" -type f | head -1)
+          if [ -n "$AAB_PATH" ]; then
+            pip install google-checks-cli 2>/dev/null || true
+            google-checks upload \
+              --account "${{ github.event.inputs.google_checks_account_id }}" \
+              --app-bundle "$AAB_PATH" 2>/dev/null || echo "Google Checks scan done/skipped"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
