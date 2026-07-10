@@ -216,6 +216,23 @@ export interface CurrentPlan {
   }
 }
 
+export interface Runner {
+  id: number
+  name: string
+  os: string | null
+  status: 'online' | 'offline'
+  busy: boolean
+  labels: string[]
+  version: string | null
+}
+
+export interface RunnerSetupCommand {
+  script: string
+  expires_at: string
+  labels: string
+  download_url: string
+}
+
 export interface UsageSummary {
   plan: string
   period: string

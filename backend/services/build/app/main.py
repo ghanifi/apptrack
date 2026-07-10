@@ -275,6 +275,11 @@ async def _trigger_codemagic(build_id: str, payload: dict, channel: aio_pika.abc
 # GitHub self-hosted runner kayıtta otomatik bu label'ları alır (self-hosted, macOS, ARM64).
 # Doğrulandı: docs.github.com/actions/.../self-hosted-runners (2026-03-10).
 _SELF_HOSTED_DEFAULT_LABELS = ["self-hosted", "macOS", "ARM64"]
+# Platforma göre varsayılan runner label seti: iOS build macOS ister, Android Linux'ta koşar.
+_SELF_HOSTED_PLATFORM_LABELS = {
+    "ios": ["self-hosted", "macOS", "ARM64"],
+    "android": ["self-hosted", "Linux", "X64"],
+}
 _LABEL_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 # Yalnız AppTrack-yönetimli runs-on değerlerini hedefler (macos-* veya self-hosted dizi/placeholder).
 # ubuntu gibi diğer job'ların runs-on'una dokunmaz.
@@ -300,13 +305,20 @@ def _sanitize_labels(raw: str | None) -> list[str]:
     return out
 
 
-def _self_hosted_runner_labels(raw: str | None) -> list[str]:
-    """Enjekte edilecek/preflight'ta aranacak tam label seti: varsayılan + özel."""
-    labels = list(_SELF_HOSTED_DEFAULT_LABELS)
-    for extra in _sanitize_labels(raw):
-        if extra not in labels:
-            labels.append(extra)
-    return labels
+def _self_hosted_runner_labels(raw: str | None, platform: str | None = None) -> list[str]:
+    """Enjekte edilecek/preflight'ta aranacak tam label seti.
+
+    Özel label varsa OS varsayımı yapılmaz: `self-hosted` + özel label'lar (kullanıcının
+    Linux runner'ına macOS label'ı dayatmamak için). Boşsa platforma göre varsayılan:
+    ios → macOS/ARM64, android → Linux/X64, bilinmeyen → macOS varsayılanı."""
+    custom = _sanitize_labels(raw)
+    if custom:
+        labels = ["self-hosted"]
+        for extra in custom:
+            if extra not in labels:
+                labels.append(extra)
+        return labels
+    return list(_SELF_HOSTED_PLATFORM_LABELS.get(platform or "", _SELF_HOSTED_DEFAULT_LABELS))
 
 
 async def _check_self_hosted_runner(
@@ -398,7 +410,7 @@ async def _trigger_github_actions(build_id: str, payload: dict, channel: aio_pik
     # macos-26: ASC 28 Nis 2026'dan beri Xcode 26 zorunlu; macos-latest migrasyonu
     # (Haz-Tem 2026) sırasında eski Xcode gelebilir. Ücretsiz: public sınırsız, private ~200dk/ay.
     if runner_type == "self_hosted":
-        self_hosted_labels = _self_hosted_runner_labels(payload.get("runner_labels"))
+        self_hosted_labels = _self_hosted_runner_labels(payload.get("runner_labels"), platform)
         runner_label = "[" + ", ".join(self_hosted_labels) + "]"
     else:
         self_hosted_labels = []

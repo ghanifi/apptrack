@@ -35,6 +35,14 @@
 
 ## 3. Runner'ı GitHub'a kaydetme
 
+> **✨ Artık sihirbaz var:** AppTrack'te proje sayfasındaki **Build Runner** kartında
+> *Self-hosted* seçip **"Runner ekle"** düğmesine bas. Platformunu seç (macOS ARM64 /
+> macOS x64 / Linux x64 / Linux ARM64) — AppTrack senin adına kayıt token'ı üretir ve
+> aşağıdaki adımların tamamını tek kopyala-yapıştır bloğu olarak verir. Token **1 saat**
+> geçerlidir; süre geçerse "Yeniden üret" ile tazele. Kayıtlı runner'ların canlı
+> online/offline durumu aynı kartta görünür. Aşağıdaki elle kurulum, sihirbazı
+> kullanamadığın durumlar içindir (örn. repo admin'i değilsen).
+
 1. GitHub'da repona git: **Settings → Actions → Runners → New self-hosted runner**.
 2. İşletim sistemi olarak **macOS**, mimari olarak **ARM64** seç. GitHub sana indirme
    komutlarını ve tek kullanımlık bir kayıt token'ı verir. Kayıt komutu şu biçimdedir:
@@ -81,13 +89,41 @@
 Sonraki build'ler senin Mac'inde çalışır. Workflow şu şekilde hedeflenir:
 
 ```yaml
-runs-on: [self-hosted, macOS, ARM64, apptrack-ios]
+# Özel label YOKSA (platforma göre varsayılan):
+runs-on: [self-hosted, macOS, ARM64]   # iOS build
+runs-on: [self-hosted, Linux, X64]     # Android build
+
+# Özel label VARSA (OS varsayımı yapılmaz — runner'ın label'ları esas alınır):
+runs-on: [self-hosted, apptrack-ios]
 ```
 
 > **Preflight kontrolü.** AppTrack build'i tetiklemeden önce **çevrimiçi bir runner
 > var mı** diye kontrol eder. Yoksa build **hemen net bir hatayla** başarısız olur —
 > 24 saat boyunca kuyrukta beklemez. Bu sayede Mac'in kapalıyken build'lerin
 > takılıp kalmaz.
+
+## 4b. Android build'leri için Linux runner 🐧
+
+iOS için Mac şart, ama **Android build'leri herhangi bir Linux x64 makinede** koşar
+(eski bir masaüstü, ev sunucusu, ucuz bir VPS). Sihirbazda **Linux x64**'ü seç; makinede
+şunlar kurulu olmalı:
+
+- **JDK 17** (Android Gradle Plugin 8.x asgari gereksinimi; JDK 21 de desteklenir):
+  `sudo apt install openjdk-17-jdk`
+- **Android SDK cmdline-tools** + gerekli paketler:
+
+  ```bash
+  # cmdline-tools'u indir ve ANDROID_HOME'a aç (ör. ~/android-sdk)
+  export ANDROID_HOME="$HOME/android-sdk"
+  sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+  ```
+
+- `ANDROID_HOME` ortam değişkeni runner servisinin gördüğü ortamda tanımlı olmalı
+  (gerekirse `actions-runner/.env` dosyasına `ANDROID_HOME=/home/kullanici/android-sdk`
+  satırı ekleyip servisi yeniden başlat).
+
+Android projelerinde AppTrack, özel label vermediysen workflow'u otomatik olarak
+`[self-hosted, Linux, X64]` hedefler — Linux runner'ın kutudan çıkar.
 
 ## 5. PAT izni notu
 

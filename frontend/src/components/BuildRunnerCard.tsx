@@ -1,8 +1,129 @@
-import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Server, Cloud, Cpu, AlertTriangle, ExternalLink, Check } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Server, Cloud, Cpu, AlertTriangle, ExternalLink, Check, Trash2, Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { Project } from '@/types'
+import type { Project, Runner } from '@/types'
+import RunnerSetupWizard from './RunnerSetupWizard'
+
+/** Repoya kayıtlı self-hosted runner'ların canlı listesi (30 sn'de bir yenilenir). */
+function RunnerList({ projectId, enabled }: { projectId: string; enabled: boolean }) {
+  const queryClient = useQueryClient()
+  const [confirmingId, setConfirmingId] = useState<number | null>(null)
+  const confirmTimer = useRef<ReturnType<typeof setTimeout>>()
+
+  const { data: runners, isLoading, error } = useQuery<Runner[]>({
+    queryKey: ['runners', projectId],
+    queryFn: () => api.get(`/projects/${projectId}/runners`).then((r) => r.data),
+    refetchInterval: 30_000,
+    retry: false,
+    enabled,
+  })
+
+  const remove = useMutation({
+    mutationFn: (runnerId: number) =>
+      api.delete(`/projects/${projectId}/runners/${runnerId}`),
+    onSuccess: () => {
+      setConfirmingId(null)
+      queryClient.invalidateQueries({ queryKey: ['runners', projectId] })
+    },
+  })
+
+  const handleRemoveClick = (runnerId: number) => {
+    if (confirmingId === runnerId) {
+      clearTimeout(confirmTimer.current)
+      remove.mutate(runnerId)
+      return
+    }
+    setConfirmingId(runnerId)
+    clearTimeout(confirmTimer.current)
+    confirmTimer.current = setTimeout(() => setConfirmingId(null), 3000)
+  }
+
+  const status403 = (error as { response?: { status?: number; data?: { detail?: string } } })
+    ?.response
+
+  if (status403?.status === 403) {
+    return (
+      <div className="flex items-start gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-2.5">
+        <AlertTriangle size={14} className="text-yellow-400 shrink-0 mt-0.5" />
+        <p className="text-xs text-yellow-200/90">
+          {status403.data?.detail ?? 'Bu repo için admin yetkiniz yok.'}{' '}
+          <a
+            href="https://github.com/holladevai/apptrackv2/blob/main/docs/self-hosted-runner.md"
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary-400 hover:underline inline-flex items-center gap-0.5"
+          >
+            Kurulum rehberi <ExternalLink size={9} />
+          </a>
+        </p>
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-gray-400">
+        <Loader2 size={12} className="animate-spin" />
+        Runner'lar yükleniyor…
+      </div>
+    )
+  }
+
+  if (!runners || runners.length === 0) {
+    return <p className="text-xs text-gray-500">Henüz runner yok — aşağıdan ekleyin.</p>
+  }
+
+  return (
+    <ul className="space-y-1.5">
+      {runners.map((runner) => (
+        <li
+          key={runner.id}
+          className="flex items-center gap-2 rounded-lg border border-gray-800 bg-gray-950/50 px-3 py-2"
+        >
+          <span
+            title={runner.status === 'online' ? 'çevrimiçi' : 'çevrimdışı'}
+            className={`w-2 h-2 rounded-full shrink-0 ${
+              runner.status === 'online' ? 'bg-green-500' : 'bg-gray-600'
+            }`}
+          />
+          <span className="text-sm font-medium">{runner.name}</span>
+          {runner.busy && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 font-medium">
+              meşgul
+            </span>
+          )}
+          <span className="flex flex-wrap gap-1">
+            {runner.labels.map((label) => (
+              <span
+                key={label}
+                className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-800 text-gray-400"
+              >
+                {label}
+              </span>
+            ))}
+          </span>
+          {runner.version && (
+            <span className="text-xs text-gray-600">v{runner.version}</span>
+          )}
+          <button
+            type="button"
+            onClick={() => handleRemoveClick(runner.id)}
+            disabled={remove.isPending}
+            className={`ml-auto flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors ${
+              confirmingId === runner.id
+                ? 'bg-red-600/20 text-red-300 border border-red-500/30'
+                : 'text-gray-500 hover:text-red-400'
+            }`}
+          >
+            <Trash2 size={12} />
+            {confirmingId === runner.id ? 'Emin misin?' : 'Kaldır'}
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 /** Proje bazlı GitHub Actions runner tercihi: hosted (macos-26) veya self-hosted. */
 export default function BuildRunnerCard({ project }: { project: Project }) {
@@ -76,6 +197,9 @@ export default function BuildRunnerCard({ project }: { project: Project }) {
 
       {runnerType === 'self_hosted' && (
         <div className="space-y-3 mb-3">
+          <RunnerList projectId={project.id} enabled={runnerType === 'self_hosted'} />
+          <RunnerSetupWizard projectId={project.id} />
+
           <div>
             <label className="block text-xs text-gray-400 mb-1">Özel label (opsiyonel)</label>
             <input
@@ -86,7 +210,10 @@ export default function BuildRunnerCard({ project }: { project: Project }) {
               className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm focus:border-primary-600 focus:outline-none"
             />
             <p className="text-xs text-gray-600 mt-1">
-              Boş bırakırsan <code className="text-gray-400">self-hosted, macOS, ARM64</code> kullanılır.
+              Boş bırakırsan platforma göre varsayılan kullanılır: iOS{' '}
+              <code className="text-gray-400">self-hosted, macOS, ARM64</code> · Android{' '}
+              <code className="text-gray-400">self-hosted, Linux, X64</code>. Özel label girersen
+              OS varsayımı yapılmaz.
             </p>
           </div>
 

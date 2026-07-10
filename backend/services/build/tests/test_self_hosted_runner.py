@@ -35,10 +35,22 @@ def test_self_hosted_labels_default():
     assert main._self_hosted_runner_labels(None) == ["self-hosted", "macOS", "ARM64"]
 
 
-def test_self_hosted_labels_with_custom_and_dedup():
-    # ozel label eklenir; zaten var olan (macOS) tekrar eklenmez
+def test_self_hosted_labels_platform_aware():
+    # platforma gore varsayilan: ios -> macOS, android -> Linux
+    assert main._self_hosted_runner_labels(None, "ios") == ["self-hosted", "macOS", "ARM64"]
+    assert main._self_hosted_runner_labels(None, "android") == ["self-hosted", "Linux", "X64"]
+    # bilinmeyen platform -> macOS varsayilani
+    assert main._self_hosted_runner_labels(None, "web") == ["self-hosted", "macOS", "ARM64"]
+
+
+def test_self_hosted_labels_custom_replaces_os_defaults():
+    # ozel label varsa OS varsayimi yapilmaz: self-hosted + ozel (dedup)
     assert main._self_hosted_runner_labels("apptrack-ios, macOS") == [
-        "self-hosted", "macOS", "ARM64", "apptrack-ios"
+        "self-hosted", "apptrack-ios", "macOS"
+    ]
+    # android platformunda bile ozel label OS dayatmaz
+    assert main._self_hosted_runner_labels("my-linux", "android") == [
+        "self-hosted", "my-linux"
     ]
 
 
