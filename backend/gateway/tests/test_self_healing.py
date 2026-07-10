@@ -199,3 +199,113 @@ async def test_open_fix_pr_second_run_reuses_pr(monkeypatch):
     assert res["reused"] is True
     assert res["pr_url"].endswith("/pull/1")
     assert put_calls == []  # içerik aynı olduğu için yeniden commit YOK
+
+
+# ---- Autofix genişletme: iOS/CocoaPods yamaları ----
+
+def test_extract_ios_target_patterns():
+    assert bf.extract_ios_target("the range of supported deployment target versions is 12.0 to 17.5") == "12.0"
+    assert bf.extract_ios_target("requires a minimum deployment target of iOS 13.0") == "13.0"
+    assert bf.extract_ios_target("no version hint here") is None
+
+
+def test_apply_podfile_platform_raises():
+    out = bf.apply_podfile_platform("platform :ios, '11.0'\ntarget 'Runner' do\n", "12.0")
+    assert "platform :ios, '12.0'" in out
+
+
+def test_apply_podfile_platform_no_downgrade():
+    assert bf.apply_podfile_platform("platform :ios, '15.0'", "12.0") is None
+
+
+def test_apply_podfile_platform_double_quotes():
+    out = bf.apply_podfile_platform('platform :ios, "10.0"', "12.0")
+    assert 'platform :ios, "12.0"' in out
+
+
+def test_apply_regex_replace_bitcode():
+    content = "ENABLE_BITCODE = YES;\nOTHER = 1;\nENABLE_BITCODE = YES;\n"
+    out = bf.apply_regex_replace(content, r"ENABLE_BITCODE\s*=\s*YES", "ENABLE_BITCODE = NO")
+    assert out.count("ENABLE_BITCODE = NO") == 2
+    assert "YES" not in out
+
+
+def test_apply_regex_replace_no_match_returns_none():
+    assert bf.apply_regex_replace("ENABLE_BITCODE = NO;", r"ENABLE_BITCODE\s*=\s*YES", "X") is None
+
+
+def test_plan_fix_podfile_platform_needs_target():
+    diags = [{"id": "xcode_deployment_target", "auto_fix": True}]
+    assert bf.plan_fix(diags, "no version") is None
+    plan = bf.plan_fix(diags, "supported deployment target versions is 12.0 to 17.0")
+    assert plan and plan["kind"] == "podfile_platform" and plan["target"] == "12.0"
+
+
+def test_plan_fix_delete_and_regex_kinds():
+    plan = bf.plan_fix([{"id": "flutter_cocoapods", "auto_fix": True}], "")
+    assert plan and plan["kind"] == "delete_file" and "ios/Podfile.lock" in plan["files"]
+    plan2 = bf.plan_fix([{"id": "xcode_bitcode", "auto_fix": True}], "")
+    assert plan2 and plan2["kind"] == "regex_replace" and plan2["pattern"]
+
+
+DELETE_PLAN = {"id": "flutter_cocoapods", "title": "Reset Podfile.lock to re-resolve CocoaPods",
+               "kind": "delete_file", "files": ["ios/Podfile.lock", "Podfile.lock"],
+               "create_if_missing": None, "properties": None, "pattern": None, "replacement": None}
+
+
+@pytest.mark.asyncio
+async def test_open_fix_pr_delete_file_first_run(monkeypatch):
+    calls = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append((req.method, req.url.path))
+        p = req.url.path
+        if req.method == "GET" and p.endswith("/git/ref/heads/main"):
+            return httpx.Response(200, json={"object": {"sha": "abc1234deadbeef"}})
+        if req.method == "GET" and "/contents/" in p:
+            return httpx.Response(200, json={"sha": "lock99", "content": _b64("PODS:\n")})
+        if req.method == "POST" and p.endswith("/git/refs"):
+            return httpx.Response(201, json={})
+        if req.method == "DELETE" and "/contents/" in p:
+            return httpx.Response(200, json={})
+        if req.method == "POST" and p.endswith("/pulls"):
+            return httpx.Response(201, json={"html_url": "https://github.com/o/r/pull/9"})
+        return httpx.Response(500, json={})
+
+    _patch_client(monkeypatch, handler)
+    res = await bf.open_fix_pr("o/r", "main", "tok", DELETE_PLAN)
+    assert res["reused"] is False and res["file"] == "ios/Podfile.lock"
+    assert ("DELETE", "/repos/o/r/contents/ios/Podfile.lock") in calls
+    # PUT hiç çağrılmamalı
+    assert not any(m == "PUT" for m, _ in calls)
+
+
+@pytest.mark.asyncio
+async def test_open_fix_pr_delete_file_second_run_reuses(monkeypatch):
+    """Tekrar-tık: branch var, dosya branch'te zaten silinmiş → commit yok, PR reuse."""
+    deletes = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        p = req.url.path
+        if req.method == "GET" and p.endswith("/git/ref/heads/main"):
+            return httpx.Response(200, json={"object": {"sha": "abc1234deadbeef"}})
+        if req.method == "GET" and "/contents/" in p:
+            ref = req.url.params.get("ref", "")
+            if ref == "main":
+                return httpx.Response(200, json={"sha": "lock99", "content": _b64("PODS:\n")})
+            return httpx.Response(404, json={})  # branch'te silinmiş
+        if req.method == "POST" and p.endswith("/git/refs"):
+            return httpx.Response(422, json={"message": "Reference already exists"})
+        if req.method == "DELETE" and "/contents/" in p:
+            deletes.append(p)
+            return httpx.Response(200, json={})
+        if req.method == "POST" and p.endswith("/pulls"):
+            return httpx.Response(422, json={"message": "already exists"})
+        if req.method == "GET" and p.endswith("/pulls"):
+            return httpx.Response(200, json=[{"html_url": "https://github.com/o/r/pull/9"}])
+        return httpx.Response(500, json={})
+
+    _patch_client(monkeypatch, handler)
+    res = await bf.open_fix_pr("o/r", "main", "tok", DELETE_PLAN)
+    assert res["reused"] is True
+    assert deletes == []  # ikinci tıkta DELETE çağrılmadı

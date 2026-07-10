@@ -36,6 +36,26 @@ FIXABLE_PATCHES: dict[str, dict] = {
                   "android/app/build.gradle.kts"],
         "create_if_missing": None,
     },
+    "flutter_cocoapods": {
+        "title": "Reset Podfile.lock to re-resolve CocoaPods",
+        "kind": "delete_file",
+        "files": ["ios/Podfile.lock", "Podfile.lock"],
+        "create_if_missing": None,
+    },
+    "xcode_deployment_target": {
+        "title": "Raise iOS deployment target in Podfile",
+        "kind": "podfile_platform",
+        "files": ["ios/Podfile", "Podfile"],
+        "create_if_missing": None,
+    },
+    "xcode_bitcode": {
+        "title": "Disable Bitcode (no longer required by Apple)",
+        "kind": "regex_replace",
+        "files": ["ios/Runner.xcodeproj/project.pbxproj", "ios/App.xcodeproj/project.pbxproj"],
+        "create_if_missing": None,
+        "pattern": r"ENABLE_BITCODE\s*=\s*YES",
+        "replacement": "ENABLE_BITCODE = NO",
+    },
 }
 
 
@@ -87,6 +107,45 @@ def apply_min_sdk(content: str, target: int) -> str | None:
     return new_content if changed else None
 
 
+def extract_ios_target(log_output: str) -> str | None:
+    """Xcode/CocoaPods logundan gereken asgari iOS sürümünü çıkar (ör. '12.0')."""
+    patterns = [
+        r"supported deployment target versions is (\d+(?:\.\d+)?)",
+        r"minimum deployment target of (?:iOS )?(\d+(?:\.\d+)?)",
+        r"requires a higher minimum (?:iOS )?deployment target[^\d]*(\d+(?:\.\d+)?)",
+    ]
+    for p in patterns:
+        m = re.search(p, log_output, re.IGNORECASE)
+        if m:
+            return m.group(1)
+    return None
+
+
+def apply_podfile_platform(content: str, target: str) -> str | None:
+    """Podfile'daki `platform :ios, 'X'` değerini target'a yükselt (yalnız daha küçükse)."""
+    pattern = re.compile(r"(platform\s*:ios\s*,\s*['\"])(\d+(?:\.\d+)?)(['\"])")
+    changed = False
+
+    def _ver(v: str) -> tuple[int, ...]:
+        return tuple(int(x) for x in v.split("."))
+
+    def _repl(m: re.Match) -> str:
+        nonlocal changed
+        if _ver(m.group(2)) < _ver(target):
+            changed = True
+            return f"{m.group(1)}{target}{m.group(3)}"
+        return m.group(0)
+
+    new_content = pattern.sub(_repl, content)
+    return new_content if changed else None
+
+
+def apply_regex_replace(content: str, pattern: str, replacement: str) -> str | None:
+    """Genel regex değiştirme. Eşleşme/değişiklik yoksa None."""
+    new_content, count = re.subn(pattern, replacement, content)
+    return new_content if count and new_content != content else None
+
+
 def plan_fix(diagnoses: list[dict], log_output: str) -> dict | None:
     """İlk auto_fix'lenebilir ve tanımlı yaması olan tanıyı seç. Yoksa None."""
     for d in diagnoses:
@@ -97,12 +156,18 @@ def plan_fix(diagnoses: list[dict], log_output: str) -> dict | None:
             continue
         plan = {"id": d["id"], "title": patch["title"], "kind": patch["kind"],
                 "files": patch["files"], "create_if_missing": patch.get("create_if_missing"),
-                "properties": patch.get("properties")}
+                "properties": patch.get("properties"),
+                "pattern": patch.get("pattern"), "replacement": patch.get("replacement")}
         if patch["kind"] == "min_sdk":
             target = extract_min_sdk_target(log_output)
             if not target:
                 continue  # gereken sürüm loglardan okunamadı → atla
             plan["target"] = target
+        elif patch["kind"] == "podfile_platform":
+            ios_target = extract_ios_target(log_output)
+            if not ios_target:
+                continue
+            plan["target"] = ios_target
         return plan
     return None
 
@@ -112,6 +177,10 @@ def _transform(plan: dict, content: str) -> str | None:
         return apply_gradle_property(content, plan["properties"])
     if plan["kind"] == "min_sdk":
         return apply_min_sdk(content, plan["target"])
+    if plan["kind"] == "podfile_platform":
+        return apply_podfile_platform(content, plan["target"])
+    if plan["kind"] == "regex_replace":
+        return apply_regex_replace(content, plan["pattern"], plan["replacement"])
     return None
 
 
@@ -146,10 +215,14 @@ async def open_fix_pr(owner_repo: str, base_branch: str, github_token: str, plan
             else:
                 raise RuntimeError("Düzeltilecek dosya repoda bulunamadı (ör. app/build.gradle).")
 
-        # 3) yamayı uygula
-        new_content = _transform(plan, current_content)
-        if new_content is None:
-            raise RuntimeError("Dosya zaten doğru görünüyor — uygulanacak değişiklik yok.")
+        # 3) yamayı uygula (delete_file'da dönüşüm yok — dosyanın varlığı yeterli)
+        is_delete = plan["kind"] == "delete_file"
+        if is_delete:
+            new_content = None
+        else:
+            new_content = _transform(plan, current_content)
+            if new_content is None:
+                raise RuntimeError("Dosya zaten doğru görünüyor — uygulanacak değişiklik yok.")
 
         # 4) yeni branch oluştur
         branch = f"apptrack/fix-{plan['id']}-{base_sha[:7]}"
@@ -162,10 +235,11 @@ async def open_fix_pr(owner_repo: str, base_branch: str, github_token: str, plan
             raise RuntimeError(f"Fix branch oluşturulamadı ({create_ref.status_code}).")
 
         # 5) dosyayı yeni branch'e commit'le.
-        # Tekrar-tık: branch zaten varsa dosya orada değişmiş olabilir; contents PUT
+        # Tekrar-tık: branch zaten varsa dosya orada değişmiş olabilir; contents PUT/DELETE
         # hedef branch'teki blob sha'sını ister (base branch'inki değil). Branch'teki
         # güncel hâli okuyup ona göre karar ver — yoksa 422 alır ve reuse'a hiç ulaşamayız.
         commit_sha = file_sha
+        skip_commit = False
         if create_ref.status_code == 422:
             on_branch = await c.get(
                 f"https://api.github.com/repos/{owner_repo}/contents/{target_path}",
@@ -173,11 +247,25 @@ async def open_fix_pr(owner_repo: str, base_branch: str, github_token: str, plan
             if on_branch.status_code == 200:
                 bdata = on_branch.json()
                 commit_sha = bdata["sha"]
-                branch_content = base64.b64decode(bdata["content"]).decode("utf-8", "replace")
-                if branch_content == new_content:
-                    # Yama zaten branch'te — commit'i atla, doğrudan PR adımına geç.
-                    commit_sha = None
-                    new_content = None
+                if not is_delete:
+                    branch_content = base64.b64decode(bdata["content"]).decode("utf-8", "replace")
+                    if branch_content == new_content:
+                        # Yama zaten branch'te — commit'i atla, doğrudan PR adımına geç.
+                        skip_commit = True
+            elif on_branch.status_code == 404 and is_delete:
+                # Dosya branch'te zaten silinmiş (tekrar-tık) — commit'i atla.
+                skip_commit = True
+
+        if is_delete and not skip_commit:
+            delete_resp = await c.request(
+                "DELETE",
+                f"https://api.github.com/repos/{owner_repo}/contents/{target_path}",
+                json={"message": f"AppTrack auto-fix: {plan['title']}",
+                      "sha": commit_sha, "branch": branch})
+            if delete_resp.status_code not in (200, 201):
+                raise RuntimeError(f"Dosya silinemedi ({delete_resp.status_code}).")
+        if skip_commit:
+            new_content = None
 
         if new_content is not None:
             put_body: dict = {
