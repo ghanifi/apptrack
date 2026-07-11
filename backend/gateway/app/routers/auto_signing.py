@@ -543,3 +543,141 @@ async def signing_health(
     order = {"expired": 0, "expiring_soon": 1, "unknown": 2, "ok": 3}
     overall = min((i["status"] for i in items), key=lambda s: order.get(s, 3)) if items else "not_configured"
     return {"configured": bool(items), "overall": overall, "items": items}
+
+
+# ---------------------------------------------------------------------------
+# İmzalama Doktoru — proje-bağlı yerel teşhis (Apple API YOK)
+# ---------------------------------------------------------------------------
+import hashlib
+
+_EXPIRY_WARN_DAYS = 30
+_SEVERITY = {"expired": "critical", "error": "critical", "mismatch": "critical",
+             "expiring_soon": "warning", "missing": "warning",
+             "unknown": "info", "ok": "info"}
+_OVERALL_ORDER = ["expired", "error", "mismatch", "expiring_soon", "missing", "unknown", "ok"]
+
+
+def parse_provisioning_profile(profile_b64: str) -> dict | None:
+    """.mobileprovision → {expiry, bundle_id, cert_shas}. Parse edilemezse None."""
+    try:
+        raw = base64.b64decode(profile_b64)
+    except Exception:
+        return None
+    start = raw.find(b"<?xml")
+    end = raw.find(b"</plist>")
+    if start == -1 or end == -1:
+        return None
+    try:
+        data = plistlib.loads(raw[start:end + len(b"</plist>")])
+    except Exception:
+        return None
+    app_id = (data.get("Entitlements") or {}).get("application-identifier", "")
+    bundle_id = app_id.split(".", 1)[1] if "." in app_id else None
+    cert_shas = set()
+    for der in data.get("DeveloperCertificates", []) or []:
+        der_bytes = bytes(der) if isinstance(der, (bytes, bytearray, memoryview)) else None
+        if der_bytes:
+            cert_shas.add(hashlib.sha256(der_bytes).hexdigest())
+    return {"expiry": _to_naive_utc(data.get("ExpirationDate")),
+            "bundle_id": bundle_id, "cert_shas": cert_shas}
+
+
+def _cert_sha256_and_expiry(p12_b64: str, password: str) -> tuple[str | None, datetime | None, bool]:
+    """p12 → (sertifika DER SHA-256, notAfter, decrypt_ok). Şifre yanlışsa (None, None, False)."""
+    try:
+        raw = base64.b64decode(p12_b64)
+        _, cert, _ = pkcs12.load_key_and_certificates(raw, password.encode() if password else None)
+    except Exception:
+        return None, None, False
+    if cert is None:
+        return None, None, True
+    der = cert.public_bytes(serialization.Encoding.DER)
+    expiry = _to_naive_utc(getattr(cert, "not_valid_after_utc", None) or cert.not_valid_after)
+    return hashlib.sha256(der).hexdigest(), expiry, True
+
+
+def _expiry_status(expiry: datetime | None) -> str:
+    if expiry is None:
+        return "unknown"
+    days = (expiry - datetime.utcnow()).days
+    if days < 0:
+        return "expired"
+    return "expiring_soon" if days <= _EXPIRY_WARN_DAYS else "ok"
+
+
+def _check(cid: str, title: str, status: str, detail: str, fixable: bool) -> dict:
+    return {"id": cid, "title": title, "status": status,
+            "severity": _SEVERITY.get(status, "info"), "detail": detail, "fixable": fixable}
+
+
+def diagnose_signing(cert_b64: str | None, cert_pass: str | None, profile_b64: str | None,
+                     project_bundle_id: str | None, asc_configured: bool) -> dict:
+    """Saklı iOS imza kimlik bilgilerini proje bundle id'siyle çapraz-kontrol eder.
+    Apple API çağrısı YOK — tamamen yerel."""
+    checks: list[dict] = []
+    configured = bool(cert_b64 or profile_b64)
+    cert_sha = None
+
+    # --- sertifika + şifre ---
+    if not cert_b64:
+        checks.append(_check("certificate", "İmzalama sertifikası", "missing",
+                             "Dağıtım sertifikası yüklü değil.", True))
+    else:
+        cert_sha, cert_expiry, decrypt_ok = _cert_sha256_and_expiry(cert_b64, cert_pass or "")
+        if not decrypt_ok:
+            checks.append(_check("cert_password", "Sertifika şifresi", "error",
+                                 "p12 saklı şifreyle çözülemedi — yeniden üretim düzeltir.", True))
+        else:
+            st = _expiry_status(cert_expiry)
+            detail = {"expired": "Sertifika süresi doldu.",
+                      "expiring_soon": "Sertifika 30 gün içinde doluyor.",
+                      "ok": "Sertifika geçerli.", "unknown": "Süre okunamadı."}[st]
+            checks.append(_check("certificate", "İmzalama sertifikası", st, detail,
+                                 st in ("expired", "expiring_soon")))
+
+    # --- profil + bundle eşleşme + sertifika-profil bağı ---
+    prof = parse_provisioning_profile(profile_b64) if profile_b64 else None
+    if not profile_b64:
+        checks.append(_check("profile", "Provizyon profili", "missing",
+                             "Provizyon profili yüklü değil.", True))
+    elif prof is None:
+        checks.append(_check("profile", "Provizyon profili", "error",
+                             "Profil okunamadı (bozuk olabilir) — yeniden üretin.", True))
+    else:
+        st = _expiry_status(prof["expiry"])
+        detail = {"expired": "Profil süresi doldu.",
+                  "expiring_soon": "Profil 30 gün içinde doluyor.",
+                  "ok": "Profil geçerli.", "unknown": "Süre okunamadı."}[st]
+        checks.append(_check("profile", "Provizyon profili", st, detail,
+                             st in ("expired", "expiring_soon")))
+        if project_bundle_id:
+            if prof["bundle_id"] in ("*", project_bundle_id):
+                checks.append(_check("bundle_match", "Bundle ID eşleşmesi", "ok",
+                                     f"Profil {project_bundle_id} ile eşleşiyor.", False))
+            else:
+                checks.append(_check("bundle_match", "Bundle ID eşleşmesi", "mismatch",
+                                     f"Profil '{prof['bundle_id']}' ≠ proje '{project_bundle_id}'. "
+                                     "Bu sessiz imza hatasının en yaygın sebebidir.", True))
+        if cert_sha:
+            if cert_sha in prof["cert_shas"]:
+                checks.append(_check("cert_in_profile", "Sertifika-profil bağı", "ok",
+                                     "Sertifika bu profilde kayıtlı.", False))
+            else:
+                checks.append(_check("cert_in_profile", "Sertifika-profil bağı", "error",
+                                     "Saklı sertifika bu profilde yok — profil bu sertifikayla imzalamaz.", True))
+
+    # --- ön koşullar ---
+    if not project_bundle_id:
+        checks.append(_check("project_bundle_id", "Proje bundle id", "missing",
+                             "Projenin bundle id'si tanımlı değil (Store Config).", False))
+    if not asc_configured:
+        checks.append(_check("asc_creds", "App Store Connect API", "missing",
+                             "Otomatik onarım için ASC API kimlik bilgisi gerekli (Ayarlar).", False))
+
+    statuses = [c["status"] for c in checks]
+    overall = next((s for s in _OVERALL_ORDER if s in statuses), "ok") if configured else "not_configured"
+    has_fixable = any(c["fixable"] and c["status"] != "missing" for c in checks) or \
+        any(c["id"] in ("certificate", "profile") and c["status"] == "missing" for c in checks)
+    can_auto_repair = has_fixable and asc_configured and bool(project_bundle_id)
+    return {"configured": configured, "overall": overall,
+            "checks": checks, "can_auto_repair": can_auto_repair}
