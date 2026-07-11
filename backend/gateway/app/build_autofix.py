@@ -32,8 +32,8 @@ FIXABLE_PATCHES: dict[str, dict] = {
     "gradle_min_sdk": {
         "title": "Raise minSdkVersion to satisfy dependency",
         "kind": "min_sdk",
-        "files": ["app/build.gradle", "android/app/build.gradle", "app/build.gradle.kts",
-                  "android/app/build.gradle.kts"],
+        "files": ["app/build.gradle", "android/app/build.gradle", "android/build.gradle",
+                  "app/build.gradle.kts", "android/app/build.gradle.kts"],
         "create_if_missing": None,
     },
     "flutter_cocoapods": {
@@ -211,6 +211,13 @@ async def open_fix_pr(owner_repo: str, base_branch: str, github_token: str, plan
         if target_path is None:
             if plan.get("create_if_missing"):
                 target_path = plan["create_if_missing"]
+                # Flutter/RN yapısında doğru yer android/gradle.properties'tir.
+                if target_path == "gradle.properties":
+                    android_dir = await c.get(
+                        f"https://api.github.com/repos/{owner_repo}/contents/android",
+                        params={"ref": base_branch})
+                    if android_dir.status_code == 200:
+                        target_path = "android/gradle.properties"
                 current_content = ""
             else:
                 raise RuntimeError("Düzeltilecek dosya repoda bulunamadı (ör. app/build.gradle).")
@@ -222,7 +229,19 @@ async def open_fix_pr(owner_repo: str, base_branch: str, github_token: str, plan
         else:
             new_content = _transform(plan, current_content)
             if new_content is None:
-                raise RuntimeError("Dosya zaten doğru görünüyor — uygulanacak değişiklik yok.")
+                raise RuntimeError(
+                "Dosya beklenen deseni içermiyor (değer bir değişkenden geliyor olabilir) — elle düzeltin.")
+
+        # 3.5) Aynı fix için AÇIK bir PR zaten varsa (eski base_sha'lı branch dahil)
+        # yenisini açma — kullanıcı iki "aynı" PR görmesin (critic 9).
+        existing_prs = await c.get(f"https://api.github.com/repos/{owner_repo}/pulls",
+                                   params={"state": "open", "per_page": 50})
+        if existing_prs.status_code == 200:
+            prefix = f"apptrack/fix-{plan['id']}-"
+            for pr_item in existing_prs.json():
+                if (pr_item.get("head") or {}).get("ref", "").startswith(prefix):
+                    return {"pr_url": pr_item["html_url"], "file": target_path,
+                            "branch": pr_item["head"]["ref"], "reused": True}
 
         # 4) yeni branch oluştur
         branch = f"apptrack/fix-{plan['id']}-{base_sha[:7]}"

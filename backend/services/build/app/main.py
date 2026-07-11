@@ -775,8 +775,12 @@ async def _poll_github_actions_build(
             # Try to download artifact if build succeeded
             artifact_url = ""
             artifact_signature = None
+            error_log = ""
             if build_status == "success":
                 artifact_url, artifact_signature = await _download_github_artifact(owner_repo, run_id, build_id, github_token)
+            else:
+                # Gerçek hata logunu taşı — diagnose/autofix bunu bekler (critic 4a).
+                error_log = await _fetch_run_log_tail(client, owner_repo, run_id, github_token)
 
             await publish_event(channel, event_type, {
                 "build_id": build_id,
@@ -787,6 +791,7 @@ async def _poll_github_actions_build(
                 "provider": "github_actions",
                 "run_id": str(run_id),
                 "conclusion": conclusion,
+                "error": error_log or f"Workflow concluded: {conclusion}",
                 "source": "github_actions_poll",
             })
             logger.info("GitHub Actions build %s completed: %s artifact=%s (run %s)", build_id, conclusion, bool(artifact_url), run_id)
@@ -801,6 +806,38 @@ async def _poll_github_actions_build(
         "provider": "github_actions",
         "source": "github_actions_poll_timeout",
     })
+
+
+
+async def _fetch_run_log_tail(client: httpx.AsyncClient, owner_repo: str, run_id: int,
+                              github_token: str, max_bytes: int = 60_000) -> str:
+    """Başarısız run'ın loglarını indir, teşhis için son kısmı döndür.
+
+    Bu olmadan GH Actions'ta gerçek hata (Gradle/Xcode) DB'ye hiç ulaşmaz ve
+    autofix/diagnose çalışamaz. Hata olursa boş string (build akışını bozmaz)."""
+    import io
+    import zipfile as _zip
+    try:
+        resp = await client.get(
+            f"https://api.github.com/repos/{owner_repo}/actions/runs/{run_id}/logs",
+            headers={"Authorization": f"Bearer {github_token}",
+                     "Accept": "application/vnd.github.v3+json"},
+            follow_redirects=True, timeout=60.0)
+        if resp.status_code != 200 or len(resp.content) > 50 * 1024 * 1024:
+            return ""
+        pieces: list[str] = []
+        with _zip.ZipFile(io.BytesIO(resp.content)) as z:
+            for name in z.namelist():
+                if not name.endswith(".txt"):
+                    continue
+                data = z.read(name)
+                # her dosyanın son kısmı (hata genelde sondadır)
+                pieces.append(data[-20_000:].decode("utf-8", "replace"))
+        tail = "\n".join(pieces)
+        return tail[-max_bytes:]
+    except Exception as exc:
+        logger.warning("Run log indirilemedi (%s run %s): %s", owner_repo, run_id, exc)
+        return ""
 
 
 def _asc_jwt(key_id: str, issuer_id: str, private_key_pem: str) -> str:
@@ -820,12 +857,15 @@ def _pick_ci_workflow(products: list[dict], workflows_by_product: dict[str, list
         return wfs[0]["id"] if wfs else None
 
     if repo_name:
-        for p in products:
-            name = (p.get("attributes") or {}).get("name", "")
-            if repo_name.lower() in name.lower():
-                wf = _first_wf(p["id"])
-                if wf:
-                    return p["id"], wf
+        rn = repo_name.lower()
+        exact = [p for p in products if (p.get("attributes") or {}).get("name", "").lower() == rn]
+        partial = [p for p in products if rn in (p.get("attributes") or {}).get("name", "").lower()]
+        # Tam eşleşme öncelikli; birden çok kısmi eşleşme belirsizdir → seçme (critic 8).
+        candidates = exact or (partial if len(partial) == 1 else [])
+        for p in candidates:
+            wf = _first_wf(p["id"])
+            if wf:
+                return p["id"], wf
     if len(products) == 1:
         wf = _first_wf(products[0]["id"])
         if wf:
@@ -897,6 +937,52 @@ async def _trigger_xcode_cloud(build_id: str, payload: dict, channel: aio_pika.a
         "framework": payload.get("framework"),
         "external_build_id": run_id,
         "provider": "xcode_cloud",
+    })
+    # Tamamlanma takibi (critic 7): yoksa build sonsuza dek 'running' kalır /
+    # stale-sweeper yanlış 'timeout' basar. ASC webhooks gelene dek polling.
+    asyncio.create_task(_poll_xcode_cloud_build(
+        build_id, payload["project_id"], run_id,
+        asc_key_id, asc_issuer_id, private_key, channel))
+
+
+async def _poll_xcode_cloud_build(build_id: str, project_id: str, run_id: str,
+                                  key_id: str, issuer_id: str, private_key: str,
+                                  channel: aio_pika.abc.AbstractChannel,
+                                  interval: int = 60, max_minutes: int = 90):
+    """ciBuildRun'ı tamamlanana dek yokla; build.finished/failed yayınla."""
+    deadline = _time.time() + max_minutes * 60
+    while _time.time() < deadline:
+        await asyncio.sleep(interval)
+        try:
+            token = _asc_jwt(key_id, issuer_id, private_key)  # JWT 10 dk — her turda tazele
+            async with httpx.AsyncClient(timeout=30.0) as c:
+                resp = await c.get(
+                    f"https://api.appstoreconnect.apple.com/v1/ciBuildRuns/{run_id}",
+                    headers={"Authorization": f"Bearer {token}"})
+            if resp.status_code != 200:
+                logger.warning("Xcode Cloud poll %s: HTTP %s", run_id, resp.status_code)
+                continue
+            attrs = (resp.json().get("data") or {}).get("attributes") or {}
+            progress = attrs.get("executionProgress")
+            completion = attrs.get("completionStatus")
+            if progress != "COMPLETE":
+                continue
+            ok = completion == "SUCCEEDED"
+            await publish_event(channel, "build.finished" if ok else "build.failed", {
+                "build_id": build_id, "project_id": project_id,
+                "status": "success" if ok else "failed",
+                "external_build_id": run_id, "provider": "xcode_cloud",
+                "error": None if ok else f"Xcode Cloud completion: {completion}",
+                "source": "xcode_cloud_poll",
+            })
+            logger.info("Xcode Cloud build %s finished: %s", build_id, completion)
+            return
+        except Exception as exc:
+            logger.warning("Xcode Cloud poll error (%s): %s", run_id, exc)
+    await publish_event(channel, "build.failed", {
+        "build_id": build_id, "project_id": project_id, "status": "failed",
+        "error": f"Xcode Cloud polling timeout ({max_minutes}min) — durum ASC'de kontrol edin",
+        "provider": "xcode_cloud", "source": "xcode_cloud_poll_timeout",
     })
 
 
@@ -1004,7 +1090,11 @@ async def start_consumer():
         "x-message-ttl": 86400000,
     }
 
-    trigger_queue = await _channel.declare_queue("build.triggered", durable=True)
+    trigger_queue = await _channel.declare_queue(
+        "build.triggered", durable=True,
+        arguments={"x-dead-letter-exchange": "dlx",
+                   "x-dead-letter-routing-key": "dead_letter_queue",
+                   "x-message-ttl": 86400000})
     await trigger_queue.consume(lambda msg: handle_build_triggered(msg, _channel))
 
     finished_queue = await _channel.declare_queue("build.finished", durable=True, arguments=queue_args)

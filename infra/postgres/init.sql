@@ -648,3 +648,7 @@ ALTER TABLE builds ADD COLUMN IF NOT EXISTS artifact_signature JSONB;
 
 -- Play Data Safety beyanı (AppTrack'te takip)
 ALTER TABLE store_metadata ADD COLUMN IF NOT EXISTS data_safety JSONB;
+
+-- Rollout hata görünürlüğü + sürüm-filtreli sağlık (kalite turu)
+ALTER TABLE release_rollouts ADD COLUMN IF NOT EXISTS last_error TEXT;
+ALTER TABLE release_rollouts ADD COLUMN IF NOT EXISTS release_version VARCHAR(100);

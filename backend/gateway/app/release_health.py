@@ -77,8 +77,13 @@ def _daily_window(days_back: int = 7) -> dict:
     return {"aggregationPeriod": "DAILY", "startTime": _d(start), "endTime": _d(end)}
 
 
-def _query_crash_rate(key_json: str, package_name: str) -> dict:
-    """Senkron Google API çağrısı (thread'e alınır). Play Developer Reporting."""
+def _query_crash_rate(key_json: str, package_name: str,
+                      version_code: str | None = None) -> dict:
+    """Senkron Google API çağrısı (thread'e alınır). Play Developer Reporting.
+
+    version_code verilirse yalnız O SÜRÜMÜN sağlığı sorgulanır — auto-halt'ın
+    amacı rollout'taki sürümü izlemek; tüm-uygulama ortalaması kötü canary'yi
+    seyreltir ve eşik neredeyse hiç tetiklenmez."""
     from google.oauth2 import service_account
     from googleapiclient.discovery import build as gapi_build
 
@@ -90,19 +95,24 @@ def _query_crash_rate(key_json: str, package_name: str) -> dict:
         "metrics": ["userPerceivedCrashRate", "distinctUsers"],
         "timelineSpec": _daily_window(),
     }
+    if version_code:
+        body["dimensions"] = ["versionCode"]
+        body["filter"] = f"versionCode = {version_code}"
     return service.vitals().crashrate().query(name=name, body=body).execute()
 
 
 async def get_release_health(platform: str, package_name: str | None,
-                             key_json: str | None) -> HealthSnapshot | None:
+                             key_json: str | None,
+                             version_code: str | None = None) -> HealthSnapshot | None:
     """Platforma göre release health döndür. Sağlayıcı yok/creds yok/hata → None.
 
-    Android (`google_play`) → Play Reporting crashRateMetricSet. Diğer platform → None.
+    Android (`google_play`) → Play Reporting crashRateMetricSet; version_code
+    verilirse sürüm-filtreli (rollout'taki sürüm), yoksa tüm-uygulama.
     """
     if platform != "google_play" or not key_json or not package_name:
         return None
     try:
-        resp = await asyncio.to_thread(_query_crash_rate, key_json, package_name)
+        resp = await asyncio.to_thread(_query_crash_rate, key_json, package_name, version_code)
     except Exception as exc:  # yetki yok / API disabled / ağ — hepsi graceful None
         logger.warning("Release health alınamadı (%s): %s", package_name, exc)
         return None
@@ -138,7 +148,8 @@ def _parse_sentry_sessions(resp: dict) -> HealthSnapshot | None:
 
 
 async def get_sentry_health(auth_token: str, org_slug: str,
-                            project_slug: str) -> HealthSnapshot | None:
+                            project_slug: str,
+                            release: str | None = None) -> HealthSnapshot | None:
     """Sentry release health — iOS (ve istenirse tüm platformlar) için crash-free.
 
     Kullanıcının kendi Sentry hesabı; bize maliyet yok. Hata → None (auto-halt
@@ -157,11 +168,13 @@ async def get_sentry_health(auth_token: str, org_slug: str,
             if not proj_id:
                 logger.warning("Sentry projesi bulunamadı: %s", project_slug)
                 return None
-            sessions = await c.get(
-                f"/organizations/{org_slug}/sessions/",
-                params=[("field", "crash_free_rate(user)"),
-                        ("field", "count_unique(user)"),
-                        ("project", proj_id), ("statsPeriod", "24h")])
+            params = [("field", "crash_free_rate(user)"),
+                      ("field", "count_unique(user)"),
+                      ("project", proj_id), ("statsPeriod", "24h")]
+            if release:
+                # Yalnız rollout'taki release'in sağlığı (tüm-uygulama seyreltmesini önler).
+                params.append(("query", f"release:{release}"))
+            sessions = await c.get(f"/organizations/{org_slug}/sessions/", params=params)
             if sessions.status_code != 200:
                 logger.warning("Sentry sessions sorgusu başarısız (%s)", sessions.status_code)
                 return None

@@ -93,6 +93,9 @@ export interface Rollout {
   baseline_crash_free: number | null
   min_users: number
   halted_reason: string | null
+  last_error?: string | null
+  release_version?: string | null
+  health_status?: 'disabled' | 'no_data' | 'stale' | 'ok'
   next_fraction: number
   samples?: RolloutSample[]
 }

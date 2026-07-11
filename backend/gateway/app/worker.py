@@ -19,7 +19,8 @@ _retry_counts: dict[str, int] = {}
 
 
 def _get_retry_key(queue_name: str, payload: dict) -> str:
-    return f"{queue_name}:{payload.get('build_id', '')}:{payload.get('project_id', '')}:{payload.get('deployment_id', '')}"
+    return (f"{queue_name}:{payload.get('build_id', '')}:{payload.get('project_id', '')}"
+            f":{payload.get('deployment_id', '')}:{payload.get('rollout_id', '')}")
 
 
 async def _with_retry(message: aio_pika.abc.AbstractIncomingMessage, queue_name: str, handler):
@@ -257,6 +258,13 @@ async def _process_deploy_failed(payload: dict):
                 .where(Deployment.id == deployment_id)
                 .values(status="failed", updated_at=datetime.utcnow())
             )
+            # Staged deploy başarısızsa bağlı rollout sonsuza dek in_progress kalmasın (F3).
+            from app.models import ReleaseRollout as _RR
+            await db.execute(
+                update(_RR).where(_RR.deployment_id == deployment_id, _RR.state == "in_progress")
+                .values(state="failed", last_error=str(payload.get("error", ""))[:500],
+                        updated_at=datetime.utcnow())
+            )
             await db.commit()
 
     try:
@@ -280,21 +288,44 @@ async def _process_rollout_event(payload: dict, routing_key: str):
     values: dict = {"updated_at": datetime.utcnow()}
     if routing_key == "deploy.rollout.started":
         values["state"] = "in_progress"
+        values["last_error"] = None
         if payload.get("fraction") is not None:
             values["current_fraction"] = float(payload["fraction"])
+        if payload.get("release_version"):
+            values["release_version"] = str(payload["release_version"])
+        if payload.get("external_ref"):
+            values["external_ref"] = str(payload["external_ref"])
     elif routing_key == "deploy.rollout.advanced":
+        values["last_error"] = None
         if payload.get("fraction") is not None:
             values["current_fraction"] = float(payload["fraction"])
         if payload.get("completed"):
             values["state"] = "completed"
     elif routing_key == "deploy.rollout.halted":
         values["state"] = "halted"
+        values["last_error"] = None
         if payload.get("reason"):
             values["halted_reason"] = payload["reason"]
     elif routing_key == "deploy.rollout.error":
-        # store işlemi başarısız — durumu bozmadan görünürlük için not düş
-        logger.error("Rollout %s store op '%s' error: %s",
-                     rollout_id, payload.get("op"), payload.get("error"))
+        # Store işlemi BAŞARISIZ — iyimser DB güncellemesini geri al, kullanıcıyı uyar.
+        # Aksi hâlde UI "durduruldu/ilerledi" der ama store'da hiçbir şey olmamıştır.
+        error = payload.get("error", "unknown")
+        op = payload.get("op", "?")
+        logger.error("Rollout %s store op '%s' error: %s", rollout_id, op, error)
+        values["last_error"] = f"Store işlemi başarısız ({op}): {error}"[:500]
+        if payload.get("prev_state"):
+            values["state"] = payload["prev_state"]
+        if payload.get("prev_fraction") is not None:
+            values["current_fraction"] = float(payload["prev_fraction"])
+        async with AsyncSessionLocal() as db:
+            await db.execute(update(ReleaseRollout).where(ReleaseRollout.id == rollout_id).values(**values))
+            row = (await db.execute(select(ReleaseRollout).where(ReleaseRollout.id == rollout_id))).scalar_one_or_none()
+            await db.commit()
+        from app.notification_worker import dispatch_for_event
+        await dispatch_for_event({
+            "rollout_id": rollout_id, "project_id": row.project_id if row else None,
+            "op": op, "error": error,
+        }, "rollout.error")
         return
     async with AsyncSessionLocal() as db:
         await db.execute(update(ReleaseRollout).where(ReleaseRollout.id == rollout_id).values(**values))

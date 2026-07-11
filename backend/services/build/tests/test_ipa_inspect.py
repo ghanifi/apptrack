@@ -80,9 +80,28 @@ def test_corrupt_outer_zip_returns_none(tmp_path):
     assert ipa_inspect.inspect_artifact_zip(path) is None
 
 
-def test_corrupt_inner_ipa_returns_none(tmp_path):
+def test_corrupt_inner_ipa_keeps_signal(tmp_path):
+    # F8: dis zip'te .ipa VAR ama ic parse bozuk -> sinyal kaybolmaz;
+    # signed=None "inceleme yapilamadi" demektir ("imzasiz" degil).
     path = _make_artifact_zip(tmp_path, "app.ipa", b"garbage-not-zip")
-    assert ipa_inspect.inspect_artifact_zip(path) is None
+    res = ipa_inspect.inspect_artifact_zip(path)
+    assert res == {"has_ipa": True, "signed": None, "profile_name": None, "profile_expires": None}
+
+
+def test_oversized_declared_ipa_skipped(tmp_path):
+    # H1: bildirilen acilmis boyut siniri asarsa cikarim hic baslamaz
+    import zipfile as _z
+    path = str(tmp_path / "bomb.zip")
+    with _z.ZipFile(path, "w") as z:
+        z.writestr("app.ipa", b"x")
+    # getinfo'yu manipule etmek yerine siniri gecici dusur
+    orig = ipa_inspect._MAX_INNER_IPA_BYTES
+    ipa_inspect._MAX_INNER_IPA_BYTES = 0
+    try:
+        res = ipa_inspect.inspect_artifact_zip(path)
+    finally:
+        ipa_inspect._MAX_INNER_IPA_BYTES = orig
+    assert res["has_ipa"] is True and res["signed"] is None
 
 
 # ---- Xcode Cloud workflow secimi (saf) ----

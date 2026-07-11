@@ -196,6 +196,30 @@ export default function RolloutPanel({ buildId, packageName }: RolloutPanelProps
         </div>
       )}
 
+      {/* store işlemi hatası — DB ile store arasındaki tutarsızlık kullanıcıya görünür */}
+      {rollout.last_error && (
+        <div className="flex items-start gap-2 rounded-lg border border-orange-500/30 bg-orange-500/5 p-3 text-xs text-orange-300">
+          <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+          <span>
+            <strong>Son store işlemi başarısız:</strong> {rollout.last_error} — rollout store'daki
+            önceki durumunda; işlemi tekrar deneyin.
+          </span>
+        </div>
+      )}
+
+      {/* sağlık sinyali canlılığı — auto-halt sessizce ölmesin */}
+      {rollout.auto_halt_enabled && rollout.state === 'in_progress' &&
+        (rollout.health_status === 'no_data' || rollout.health_status === 'stale') && (
+        <div className="flex items-start gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-xs text-yellow-200/90">
+          <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+          <span>
+            {rollout.health_status === 'no_data'
+              ? 'Sağlık verisi henüz hiç alınamadı — Play Console\'da "View app information" izni ve Cloud\'da Play Developer Reporting API etkin mi kontrol edin. Auto-halt şu an sizi KORUMUYOR.'
+              : 'Sağlık verisi bayat (3+ döngüdür güncellenmedi) — izleme kesintide olabilir, credential/izinleri kontrol edin.'}
+          </span>
+        </div>
+      )}
+
       {/* Auto-halt rozeti */}
       <div className="flex flex-wrap items-center gap-2 text-xs">
         {rollout.auto_halt_enabled ? (

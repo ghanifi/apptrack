@@ -20,7 +20,7 @@ async def get_channel() -> aio_pika.abc.AbstractChannel:
     return _channel
 
 
-async def publish_event(routing_key: str, payload: dict[str, Any], trace_id: str | None = None) -> None:
+async def publish_event(routing_key: str, payload: dict[str, Any], trace_id: str | None = None) -> bool:
     try:
         if "trace_id" not in payload:
             payload["trace_id"] = trace_id or uuid.uuid4().hex
@@ -40,8 +40,10 @@ async def publish_event(routing_key: str, payload: dict[str, Any], trace_id: str
             routing_key=routing_key,
         )
         logger.info("Published event %s trace_id=%s", routing_key, payload.get("trace_id"))
+        return True
     except Exception as exc:
         logger.error("Failed to publish event %s: %s", routing_key, exc)
+        return False
 
 
 async def close_connection() -> None:

@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 _PROVISION_RE = re.compile(rb"Payload/[^/]+\.app/embedded\.mobileprovision$")
 _CODESIGN_RE = re.compile(rb"Payload/[^/]+\.app/_CodeSignature/CodeResources$")
 
+# Zip bombası koruması (H1): dış zip boyutu üst katmanda sınırlı ama DEFLATE ~1000:1
+# açılabilir — iç .ipa çıkarımına ve provision okumasına mutlak sınır koyulur.
+_MAX_INNER_IPA_BYTES = 2 * 1024 * 1024 * 1024   # 2 GB
+_MAX_PROVISION_BYTES = 5 * 1024 * 1024          # 5 MB
+
 
 def _parse_provision(blob: bytes) -> tuple[str | None, str | None]:
     """CMS-imzalı .mobileprovision içinden (Name, ExpirationDate ISO) çıkar."""
@@ -39,8 +44,12 @@ def _inspect_ipa_file(ipa_path: str) -> dict:
         has_codesign = any(_CODESIGN_RE.search(n) for n in names)
         prov_entry = next((n for n in names if _PROVISION_RE.search(n)), None)
         if prov_entry:
-            blob = z.read(prov_entry.decode())
-            result["profile_name"], result["profile_expires"] = _parse_provision(blob)
+            info = z.getinfo(prov_entry.decode())
+            if info.file_size > _MAX_PROVISION_BYTES:
+                logger.warning("mobileprovision şüpheli büyüklükte (%d B) — atlanıyor", info.file_size)
+            else:
+                blob = z.read(prov_entry.decode())
+                result["profile_name"], result["profile_expires"] = _parse_provision(blob)
         result["signed"] = bool(has_codesign and prov_entry)
     return result
 
@@ -56,17 +65,35 @@ def inspect_artifact_zip(artifact_zip_path: str) -> dict | None:
             ipa_name = next((n for n in outer.namelist() if n.lower().endswith(".ipa")), None)
             if not ipa_name:
                 return {"has_ipa": False}
-            # İç zip'i rastgele-erişim için geçici dosyaya çıkar (boyut üst katmanda sınırlı).
+            # Zip bombası ön kontrolü: bildirilen açılmış boyut sınırı aşıyorsa hiç başlama.
+            declared = outer.getinfo(ipa_name).file_size
+            if declared > _MAX_INNER_IPA_BYTES:
+                logger.warning("İç .ipa bildirilen boyutu sınırı aşıyor (%d B) — inceleme atlandı", declared)
+                return {"has_ipa": True, "signed": None, "profile_name": None, "profile_expires": None}
+            # İç zip'i rastgele-erişim için geçici dosyaya çıkar — yazılan bayt da sınırlı
+            # (bildirilen boyut yalan olabilir).
+            written = 0
             with tempfile.NamedTemporaryFile(suffix=".ipa", delete=False) as tmp:
                 with outer.open(ipa_name) as src:
                     while True:
                         chunk = src.read(1 << 20)
                         if not chunk:
                             break
+                        written += len(chunk)
+                        if written > _MAX_INNER_IPA_BYTES:
+                            tmp.close()
+                            os.unlink(tmp.name)
+                            logger.warning("İç .ipa çıkarım sınırını aştı — zip bombası olabilir")
+                            return {"has_ipa": True, "signed": None, "profile_name": None, "profile_expires": None}
                         tmp.write(chunk)
                 tmp_path = tmp.name
         try:
             return _inspect_ipa_file(tmp_path)
+        except Exception as exc:
+            # Dış zip'te .ipa VAR ama iç parse başarısız — sinyali tamamen kaybetme (F8):
+            # signed=None "inceleme yapılamadı" demektir, "imzasız" değil.
+            logger.warning("İç IPA parse edilemedi: %s", exc)
+            return {"has_ipa": True, "signed": None, "profile_name": None, "profile_expires": None}
         finally:
             try:
                 os.unlink(tmp_path)

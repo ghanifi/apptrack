@@ -643,6 +643,8 @@ class ReleaseRollout(Base):
     baseline_crash_free: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Rollout öncesi referans; >0.5pp düşüş de halt tetikler")
     min_users: Mapped[int] = mapped_column(Integer, default=1000, comment="Altında örnek değerlendirilmez (gürültü koruması)")
     halted_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Son store işlemi hatası (advance/halt başarısız)")
+    release_version: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="Android versionCode / Sentry release — sürüm-filtreli sağlık için")
     external_ref: Mapped[str | None] = mapped_column(String(255), nullable=True, comment="Apple phased release id vb.")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

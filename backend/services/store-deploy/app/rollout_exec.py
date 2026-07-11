@@ -130,6 +130,11 @@ async def pause_apple(key_id: str, issuer_id: str, private_key_pem: str,
         if not phased_release_id:
             raise RuntimeError(
                 "Aktif bir phased release bulunamadı — sürüm 'Phased Release' ile yayınlanmamış olabilir.")
+        cur = await c.get(f"{ASC_BASE}/v1/appStoreVersionPhasedReleases/{phased_release_id}")
+        if cur.status_code == 200:
+            state = ((cur.json().get("data") or {}).get("attributes") or {}).get("phasedReleaseState")
+            if state == "COMPLETE":
+                raise RuntimeError("Phased release zaten %100'e ulaşmış (COMPLETE) — duraklatılamaz.")
         r = await c.patch(
             f"{ASC_BASE}/v1/appStoreVersionPhasedReleases/{phased_release_id}",
             json={"data": {"type": "appStoreVersionPhasedReleases", "id": phased_release_id,

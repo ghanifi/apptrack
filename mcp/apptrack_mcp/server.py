@@ -147,31 +147,57 @@ async def get_build_status(project_id: str) -> list[dict]:
 # Streamable HTTP: saf ASGI auth middleware
 # ---------------------------------------------------------------------------
 
-# Edge'de doğrulanan anahtarların kısa önbelleği (her istekte exchange çağırmamak için).
+# Edge'de doğrulanan anahtarların kısa önbelleği. TTL kısa (M3): revoke edilen
+# anahtar en fazla bu süre daha kabul edilir.
 _valid_keys: dict[str, float] = {}
-_VALID_TTL = 300.0
+_VALID_TTL = 60.0
+# Negatif önbellek (M1): geçersiz anahtar denemeleri gateway'in paylaşımlı
+# rate-limit bütçesini yakmasın (kimliksiz DoS).
+_invalid_keys: dict[str, float] = {}
+_INVALID_TTL = 60.0
 
 
-async def _key_is_valid(api_key: str) -> bool:
+async def _key_is_valid(api_key: str) -> bool | None:
+    """True=geçerli, False=geçersiz (401/403), None=gateway'e ulaşılamadı (5xx/ağ).
+
+    None'ı geçersizle karıştırmamak kritik (F5): gateway kesintisinde kullanıcıya
+    "anahtarın bozuk" dememeli, 503 dönmeliyiz."""
     now = time.time()
     if _valid_keys.get(api_key, 0) > now:
         return True
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(f"{API_URL}/api/api-keys/exchange", json={"api_key": api_key})
+    if _invalid_keys.get(api_key, 0) > now:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"{API_URL}/api/api-keys/exchange", json={"api_key": api_key})
+    except Exception:
+        return None
     if resp.status_code == 200:
         _valid_keys[api_key] = now + _VALID_TTL
         data = resp.json()
         _token_cache[api_key] = {"value": data["access_token"],
                                  "exp": now + float(data.get("expires_in", 900))}
         return True
-    return False
+    if resp.status_code in (401, 403):
+        _invalid_keys[api_key] = now + _INVALID_TTL
+        # Basit büyüme sınırı: negatif önbellek şişerse en eskileri at.
+        if len(_invalid_keys) > 10_000:
+            for k in sorted(_invalid_keys, key=_invalid_keys.get)[:5_000]:
+                _invalid_keys.pop(k, None)
+        return False
+    return None  # 429/5xx — gateway sorunu, anahtar hakkında hüküm verme
 
 
 def _auth_asgi(app):
     """Bearer atk_ anahtarını doğrular, contextvar'a koyar; /health serbest."""
     async def wrapper(scope, receive, send):
-        if scope["type"] != "http":
+        if scope["type"] == "lifespan":
             return await app(scope, receive, send)
+        if scope["type"] != "http":
+            # Fail-closed (L1): websocket vb. auth'suz iç app'e GEÇMEZ.
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 4401})
+            return
         path = scope.get("path", "")
         if path == "/health":
             payload = json.dumps({"status": "healthy", "service": "apptrack-mcp"}).encode()
@@ -182,7 +208,17 @@ def _auth_asgi(app):
         headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
         auth = headers.get("authorization", "")
         api_key = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
-        if not api_key.startswith("atk_") or not await _key_is_valid(api_key):
+        valid = False if not api_key.startswith("atk_") else await _key_is_valid(api_key)
+        if valid is None:
+            # Gateway'e ulaşılamıyor — bu anahtar sorunu DEĞİL (F5): 503 dön.
+            body = json.dumps({"error": "gateway_unreachable",
+                               "detail": "AppTrack gateway is unreachable — try again shortly."}).encode()
+            await send({"type": "http.response.start", "status": 503,
+                        "headers": [(b"content-type", b"application/json"),
+                                    (b"retry-after", b"10")]})
+            await send({"type": "http.response.body", "body": body})
+            return
+        if not valid:
             body = json.dumps({"error": "unauthorized",
                                "detail": "Send 'Authorization: Bearer atk_...' (AppTrack Settings > API Keys)."}).encode()
             await send({"type": "http.response.start", "status": 401,

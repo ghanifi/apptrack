@@ -71,7 +71,7 @@ BUILD_ERROR_PATTERNS: dict[str, list[dict]] = {
         },
         {
             "id": "gradle_jetifier",
-            "pattern": r"AndroidX|android\.enableJetifier|support-v4",
+            "pattern": r"package android\.support|Attribute .+ is also present at|android\.enableJetifier",
             "diagnosis": "Project has a mix of AndroidX and legacy Android Support Library dependencies.",
             "fix": "Ensure android.useAndroidX=true and android.enableJetifier=true are set in "
                    "gradle.properties. Migrate all dependencies to AndroidX equivalents.",

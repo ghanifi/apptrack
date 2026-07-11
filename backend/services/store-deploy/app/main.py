@@ -15,6 +15,7 @@ import aio_pika
 import httpx
 
 from app import rollout_exec
+from app.event_crypto import unpack_secrets
 
 import time as _time
 
@@ -118,9 +119,10 @@ async def _deploy_google_play(deployment_id: str, payload: dict, channel: aio_pi
         tmp_path = await _download_artifact(artifact_url, ".aab", expected_checksum)
         try:
             media = MediaFileUpload(tmp_path, mimetype="application/octet-stream", resumable=True)
-            service.edits().bundles().upload(
+            bundle_resp = service.edits().bundles().upload(
                 packageName=package_name, editId=edit_id, media_body=media
             ).execute()
+            version_code = bundle_resp.get("versionCode")
             rollout = payload.get("rollout")
             if rollout:
                 start_fraction = float(payload.get("start_fraction", 0.01))
@@ -142,6 +144,8 @@ async def _deploy_google_play(deployment_id: str, payload: dict, channel: aio_pi
                 "build_id": payload.get("build_id"),
                 "target": "google_play",
                 "fraction": start_fraction,
+                # Sürüm-filtreli sağlık için: auto-halt yalnız BU sürümü izlesin (critic #1).
+                "release_version": version_code,
             })
         else:
             await publish_event(channel, "deploy.completed", {
@@ -437,7 +441,7 @@ async def _deploy_web(deployment_id: str, payload: dict, channel: aio_pika.abc.A
 async def handle_deploy_triggered(message: aio_pika.abc.AbstractIncomingMessage, channel: aio_pika.abc.AbstractChannel):
     async with message.process(requeue=True):
         try:
-            payload = json.loads(message.body)
+            payload = unpack_secrets(json.loads(message.body))
             deployment_id = payload["deployment_id"]
             target = payload.get("target", "google_play")
             logger.info("Processing deployment %s to %s", deployment_id, target)
@@ -472,9 +476,10 @@ async def handle_deploy_triggered(message: aio_pika.abc.AbstractIncomingMessage,
 async def handle_rollout_set(message: aio_pika.abc.AbstractIncomingMessage, channel: aio_pika.abc.AbstractChannel):
     """Rollout'u sonraki yüzdeye ilerlet (veya %100'de tamamla). Yalnız google_play."""
     async with message.process(requeue=False):
-        payload = json.loads(message.body)
-        rollout_id = payload.get("rollout_id")
+        rollout_id = None
         try:
+            payload = unpack_secrets(json.loads(message.body))
+            rollout_id = payload.get("rollout_id")
             fraction = float(payload.get("fraction", 1.0))
             complete = bool(payload.get("complete")) or fraction >= 1.0
             await rollout_exec.set_google_fraction(
@@ -485,17 +490,21 @@ async def handle_rollout_set(message: aio_pika.abc.AbstractIncomingMessage, chan
             })
         except Exception as exc:
             logger.error("Rollout advance failed (%s): %s", rollout_id, exc)
+            # prev_* geri alma bilgisi gateway worker'a taşınır (iyimser güncellemeyi geri alır).
             await publish_event(channel, "deploy.rollout.error", {
                 "rollout_id": rollout_id, "error": str(exc), "op": "advance",
+                "prev_fraction": (payload.get("prev_fraction") if rollout_id else None),
+                "prev_state": (payload.get("prev_state") if rollout_id else None),
             })
 
 
 async def handle_rollout_halt(message: aio_pika.abc.AbstractIncomingMessage, channel: aio_pika.abc.AbstractChannel):
     """Rollout'u durdur — Google `halted`, Apple phased release `PAUSED`."""
     async with message.process(requeue=False):
-        payload = json.loads(message.body)
-        rollout_id = payload.get("rollout_id")
+        rollout_id = None
         try:
+            payload = unpack_secrets(json.loads(message.body))
+            rollout_id = payload.get("rollout_id")
             if payload.get("target") == "app_store":
                 await rollout_exec.pause_apple(
                     payload["app_store_key_id"], payload["app_store_issuer_id"],
@@ -512,6 +521,7 @@ async def handle_rollout_halt(message: aio_pika.abc.AbstractIncomingMessage, cha
             logger.error("Rollout halt failed (%s): %s", rollout_id, exc)
             await publish_event(channel, "deploy.rollout.error", {
                 "rollout_id": rollout_id, "error": str(exc), "op": "halt",
+                "prev_state": (payload.get("prev_state") if rollout_id else None),
             })
 
 

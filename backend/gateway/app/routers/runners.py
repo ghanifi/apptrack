@@ -6,6 +6,7 @@ Runner sürümü hardcode edilmez; GitHub'ın /runners/downloads endpoint'inden 
 `build_setup_script` saf ve test edilebilirdir.
 """
 import logging
+import re
 from typing import Literal
 
 import httpx
@@ -41,10 +42,18 @@ def pick_download(downloads: list[dict], os_name: str, arch: str) -> dict | None
     return None
 
 
+_LABEL_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
+
+
 def resolve_labels(custom: str | None, os_name: str, arch: str) -> str:
-    """Proje custom label'ı doluysa onu, boşsa platform varsayılanını döndür (saf)."""
+    """Proje custom label'ı doluysa onu, boşsa platform varsayılanını döndür (saf).
+
+    Label'lar sanitize edilir (L2): shell metakarakterleri kopyala-yapıştır
+    script'ine giremez; geçersiz token atlanır."""
     if custom and custom.strip():
-        return ",".join(p.strip() for p in custom.split(",") if p.strip())
+        clean = [t.strip() for t in custom.split(",") if t.strip() and _LABEL_RE.match(t.strip())]
+        if clean:
+            return ",".join(clean)
     return DEFAULT_LABELS.get((os_name, arch), "self-hosted")
 
 
@@ -79,9 +88,10 @@ def build_jit_docker_command(encoded_jitconfig: str) -> str:
 
 
 def _owner_repo(repo_url: str) -> str:
-    if "github.com/" not in repo_url:
+    if "github.com" not in repo_url:
         return ""
-    raw = repo_url.rstrip("/").split("github.com/")[-1]
+    # https://github.com/o/r(.git) ve git@github.com:o/r(.git) desteklenir
+    raw = repo_url.rstrip("/").split("github.com", 1)[-1].lstrip(":/")
     return raw[:-4] if raw.endswith(".git") else raw
 
 
@@ -99,11 +109,20 @@ async def _load_project_and_token(db: AsyncSession, project_id: str, user_id: st
     try:
         token = decrypt(user.github_access_token)
     except Exception:
-        token = user.github_access_token
+        # Şifre çözme hatasını ham değerle maskelemek GitHub'a çöp token gönderir (F7):
+        # operatör hatası (SECRET_KEY rotasyonu) net görünmeli.
+        raise HTTPException(status_code=500,
+                            detail="GitHub token çözülemedi — sunucu anahtar yapılandırmasını kontrol edin.")
     return project, token, owner_repo
 
 
 def _map_github_error(resp: httpx.Response) -> HTTPException:
+    if resp.status_code == 401:
+        return HTTPException(status_code=401, detail=(
+            "GitHub token geçersiz/süresi dolmuş — GitHub bağlantınızı yeniden yetkilendirin."))
+    if resp.status_code == 422:
+        return HTTPException(status_code=400, detail=(
+            "GitHub isteği reddetti (422) — org runner-group politikası kısıtlıyor olabilir."))
     if resp.status_code == 403:
         return HTTPException(status_code=403, detail=(
             "Bu repo için admin yetkiniz yok. Runner kaydı repo admin izni gerektirir "
@@ -194,6 +213,12 @@ async def jit_config(
     project, token, owner_repo = await _load_project_and_token(db, project_id, current_user["id"])
     headers = {"Authorization": f"Bearer {token}"}
     labels = resolve_labels(getattr(project, "runner_labels", None), req.os, req.arch)
+    # JIT'te label'lar TAM olarak gönderilenlerdir (otomatik ekleme garanti değil) —
+    # runs-on: [self-hosted, ...] eşleşmesi için self-hosted mutlaka listede olmalı.
+    label_list = labels.split(",")
+    if "self-hosted" not in label_list:
+        label_list.insert(0, "self-hosted")
+        labels = ",".join(label_list)
     runner_name = f"apptrack-jit-{secrets.token_hex(4)}"
     async with httpx.AsyncClient(timeout=20, headers=headers) as c:
         dl = await c.get(f"{GITHUB_API}/repos/{owner_repo}/actions/runners/downloads")
@@ -206,7 +231,7 @@ async def jit_config(
         jit = await c.post(
             f"{GITHUB_API}/repos/{owner_repo}/actions/runners/generate-jitconfig",
             json={"name": runner_name, "runner_group_id": 1,
-                  "labels": labels.split(",")})
+                  "labels": label_list})
         if jit.status_code != 201:
             raise _map_github_error(jit)
         encoded = jit.json()["encoded_jit_config"]

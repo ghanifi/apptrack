@@ -16,6 +16,7 @@ EVENT_NOTIFICATION_MAP = {
     "deploy.completed": {"type": "deploy_completed", "title": "Deployment Completed", "pref_key": "notify_deploy_completed"},
     "deploy.failed": {"type": "deploy_failed", "title": "Deployment Failed", "pref_key": "notify_deploy_failed"},
     "rollout.auto_halted": {"type": "rollout_halted", "title": "Rollout Auto-Halted", "pref_key": "notify_deploy_failed"},
+    "rollout.error": {"type": "rollout_error", "title": "Rollout İşlemi Başarısız", "pref_key": "notify_deploy_failed"},
 }
 
 
@@ -184,6 +185,15 @@ async def _process_notification_event(payload: dict, routing_key: str):
         await _dispatch_notification(
             owner_id, config["type"], config["title"], body,
             resource_type="deployment", resource_id=deployment_id,
+        )
+
+    elif routing_key == "rollout.error":
+        config = EVENT_NOTIFICATION_MAP["rollout.error"]
+        body = (f"Kademeli yayın store işlemi başarısız ({payload.get('op', '?')}): "
+                f"{payload.get('error', 'bilinmeyen hata')} — rollout store'daki son durumunda kaldı, kontrol edin.")
+        await _dispatch_notification(
+            owner_id, config["type"], config["title"], body,
+            resource_type="rollout", resource_id=payload.get("rollout_id", ""),
         )
 
     elif routing_key == "rollout.auto_halted":
