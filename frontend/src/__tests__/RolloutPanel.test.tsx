@@ -20,7 +20,7 @@ afterAll(() => server.close())
 describe('RolloutPanel', () => {
   it('rollout yokken "başlat" butonunu render eder', async () => {
     server.use(
-      http.get('/api/rollouts/by-build/build-1', () => HttpResponse.json(null))
+      http.get('/api/rollouts/by-project/proj-1/active', () => HttpResponse.json(null))
     )
     renderWithProviders(
       <RolloutPanel buildId="build-1" projectId="proj-1" packageName="com.example.app" />
@@ -53,7 +53,7 @@ describe('RolloutPanel', () => {
       ],
     }
     server.use(
-      http.get('/api/rollouts/by-build/build-2', () => HttpResponse.json(rollout))
+      http.get('/api/rollouts/by-project/proj-1/active', () => HttpResponse.json(rollout))
     )
     renderWithProviders(
       <RolloutPanel buildId="build-2" projectId="proj-1" packageName="com.example.app" />

@@ -97,6 +97,15 @@ class BuildResponse(BaseModel):
     artifact_url: str | None = None
     log_output: str | None = None
     created_at: str
+    # Build geçmişi rozetleri/metadata (imza, commit, süre, tetikleyici) — response_model
+    # bu alanları tanımlamazsa frontend'e hiç ulaşmaz.
+    artifact_signature: dict | None = None
+    commit_sha: str | None = None
+    trigger_type: str | None = None
+    pr_number: int | None = None
+    error_message: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
 
     class Config:
         from_attributes = True
@@ -191,6 +200,21 @@ def _serialize_project(p: Project) -> dict:
                 "artifact_url": b.artifact_url,
                 "log_output": b.log_output,
                 "created_at": b.created_at.isoformat(),
+                # Frontend build geçmişi bu alanları gösterir (imza rozeti, commit, süre,
+                # PR/manual etiketi) — serializer'da eksikti, bu yüzden hepsi görünmüyordu.
+                "artifact_signature": (
+                    _sig if isinstance((_sig := getattr(b, "artifact_signature", None)), dict) else None
+                ),
+                "commit_sha": getattr(b, "commit_sha", None),
+                "trigger_type": getattr(b, "trigger_type", None),
+                "pr_number": getattr(b, "pr_number", None),
+                "error_message": getattr(b, "error_message", None),
+                "started_at": (
+                    b.started_at.isoformat() if getattr(b, "started_at", None) else None
+                ),
+                "finished_at": (
+                    b.finished_at.isoformat() if getattr(b, "finished_at", None) else None
+                ),
             }
             for b in builds
         ],

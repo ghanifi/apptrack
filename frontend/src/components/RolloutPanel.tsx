@@ -38,18 +38,21 @@ function relativeTime(iso: string): string {
 
 /** Kademeli yayın (staged rollout) paneli: %1 → %10 → %50 → %100, crash-free izler,
  *  regresyonda otomatik durdurur (Android). Apple sabit 7 gün programı — yalnız duraklat. */
-export default function RolloutPanel({ buildId, packageName }: RolloutPanelProps) {
+export default function RolloutPanel({ buildId, projectId, packageName }: RolloutPanelProps) {
   const queryClient = useQueryClient()
   const [pkgInput, setPkgInput] = useState('')
 
+  // Rollout'u proje düzeyinde ara: aktif rollout deploy edilen build'e bağlıdır ve o build,
+  // "en son başarılı build" (panelin hedefi) olmayabilir — ör. iOS build'i en yeniyken
+  // rollout Android build'e açılmışsa. Proje düzeyinde arayınca canlı rollout her zaman görünür.
   const { data: rollout, isLoading } = useQuery<Rollout | null>({
-    queryKey: ['rollout-by-build', buildId],
-    queryFn: () => api.get(`/rollouts/by-build/${buildId}`).then((r) => r.data),
+    queryKey: ['rollout-active', projectId],
+    queryFn: () => api.get(`/rollouts/by-project/${projectId}/active`).then((r) => r.data),
     retry: false,
   })
 
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ['rollout-by-build', buildId] })
+    queryClient.invalidateQueries({ queryKey: ['rollout-active', projectId] })
 
   const deploy = useMutation<Rollout, unknown>({
     mutationFn: () =>

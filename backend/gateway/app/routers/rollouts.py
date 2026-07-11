@@ -292,6 +292,38 @@ async def rollout_by_build(
     return _serialize(rollout, samples)
 
 
+@router.get("/by-project/{project_id}/active")
+async def active_rollout_by_project(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Projenin en güncel *canlı* rollout'unu döndür (yoksa null).
+
+    Rollout, deploy edilen build'e bağlıdır; ama panel proje detayında
+    "en son başarılı build"e kilitliydi. iOS build'i en yeni başarılıyken
+    Android build'e açılmış bir rollout görünmez kalıyordu. Bu uç-nokta
+    rollout'u build'den bağımsız, proje düzeyinde yüzeye çıkarır.
+    Terminal durumlar (completed) hariç — biten rollout yeni yayın başlatmayı engellemesin.
+    """
+    project = (await db.execute(
+        select(Project).where(Project.id == project_id))).scalar_one_or_none()
+    if not project or project.owner_id != current_user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    rollout = (await db.execute(
+        select(ReleaseRollout).join(Deployment, ReleaseRollout.deployment_id == Deployment.id)
+        .join(Build, Deployment.build_id == Build.id)
+        .where(Build.project_id == project_id)
+        .where(ReleaseRollout.state != "completed")
+        .order_by(desc(ReleaseRollout.created_at)))).scalars().first()
+    if not rollout:
+        return None
+    samples = (await db.execute(
+        select(ReleaseHealthSample).where(ReleaseHealthSample.rollout_id == rollout.id)
+        .order_by(ReleaseHealthSample.sampled_at))).scalars().all()
+    return _serialize(rollout, samples)
+
+
 @router.get("/{rollout_id}")
 async def get_rollout(
     rollout_id: str,
