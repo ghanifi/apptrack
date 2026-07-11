@@ -28,7 +28,7 @@ from app.database import get_db
 from app.crypto import encrypt
 from app.routers.credentials import get_user_credential
 from app.audit import record_audit_with_db
-from app.models import Credential
+from app.models import Credential, Project
 from sqlalchemy import select, and_
 
 logger = logging.getLogger(__name__)
@@ -681,3 +681,33 @@ def diagnose_signing(cert_b64: str | None, cert_pass: str | None, profile_b64: s
     can_auto_repair = has_fixable and asc_configured and bool(project_bundle_id)
     return {"configured": configured, "overall": overall,
             "checks": checks, "can_auto_repair": can_auto_repair}
+
+
+@router.get("/doctor/{project_id}")
+async def signing_doctor(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Proje-bağlı imzalama teşhisi: saklı sertifika/profili projenin bundle id'siyle
+    çapraz-kontrol eder (bundle eşleşme, sertifika-profil bağı, şifre, süre). Yerel."""
+    uid = current_user["id"]
+    # Bozuk (UUID olmayan) id, UUID kolonunda DB cast hatası → 500 yerine 404 ver.
+    import uuid as _uuid
+    try:
+        _uuid.UUID(project_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project = (await db.execute(select(Project).where(Project.id == project_id))).scalar_one_or_none()
+    if not project or project.owner_id != uid:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    profile_b64 = await get_user_credential(db, uid, "ios_signing", "IOS_PROVISIONING_PROFILE_BASE64")
+    cert_b64 = await get_user_credential(db, uid, "ios_signing", "IOS_CERT_P12_BASE64")
+    cert_pass = await get_user_credential(db, uid, "ios_signing", "IOS_CERT_PASSWORD")
+    asc_key = await get_user_credential(db, uid, "app_store", "APP_STORE_KEY_ID")
+
+    return diagnose_signing(
+        cert_b64, cert_pass, profile_b64,
+        getattr(project, "package_name", None), asc_configured=bool(asc_key),
+    )
