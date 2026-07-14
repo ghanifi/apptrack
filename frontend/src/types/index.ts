@@ -58,6 +58,7 @@ export interface BuildDiagnosisResult {
   diagnosis_count: number
   severity: 'critical' | 'high' | 'medium' | 'low'
   auto_fixable: boolean
+  ai_available?: boolean
   message?: string
 }
 

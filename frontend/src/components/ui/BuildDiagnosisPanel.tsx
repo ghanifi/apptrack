@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   AlertTriangle, ChevronRight, RefreshCw, Wrench, Shield,
-  ChevronDown, ChevronUp, FileText, GitPullRequest, ExternalLink,
+  ChevronDown, ChevronUp, FileText, GitPullRequest, ExternalLink, Sparkles,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { BuildDiagnosisResult } from '@/types'
@@ -137,6 +137,16 @@ export default function BuildDiagnosisPanel({ buildId, errorMessage, logOutput, 
           >
             <Wrench size={12} className={autofix.isPending ? 'animate-spin' : ''} />
             {autofix.isPending ? 'Opening fix PR…' : 'Auto-fix (open PR)'}
+          </button>
+        )}
+        {!diagnosis?.auto_fixable && diagnosis?.ai_available && !autofix.data && (
+          <button
+            onClick={() => autofix.mutate()}
+            disabled={autofix.isPending}
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary-600/20 hover:bg-primary-600/30 border border-primary-500/30 text-primary-300 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+          >
+            <Sparkles size={12} className={autofix.isPending ? 'animate-spin' : ''} />
+            {autofix.isPending ? 'AI deniyor…' : 'AI ile düzelt dene'}
           </button>
         )}
         {onRetry && (
