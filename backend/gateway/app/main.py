@@ -24,6 +24,7 @@ from app.routers import credential_validation, deploy_simulator, metrics_kpi, ca
 from app.routers import build_diagnosis, cost_prediction, provider_recommendation
 from app.routers import store_metadata
 from app.routers import auto_signing as auto_signing_router
+from app.routers import ai_settings as ai_settings_router
 from app.routers import rollouts as rollouts_router
 from app.routers import runners as runners_router
 from app.routers import auto_screenshots as auto_screenshots_router
@@ -369,6 +370,7 @@ app.include_router(crash_reporting_router.router)
 app.include_router(onboarding_router.router)
 app.include_router(api_keys_router.router)
 app.include_router(auto_signing_router.router, prefix="/api/signing", tags=["auto-signing"])
+app.include_router(ai_settings_router.router, prefix="/api/ai", tags=["ai"])
 app.include_router(rollouts_router.router, prefix="/api/rollouts", tags=["rollouts"])
 app.include_router(runners_router.router, prefix="/api/projects", tags=["runners"])
 app.include_router(ws_router)
