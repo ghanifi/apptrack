@@ -14,6 +14,7 @@ import LiveBuildProgress from '@/components/LiveBuildProgress'
 import BuildRunnerCard from '@/components/BuildRunnerCard'
 import ProjectPipeline from '@/components/ProjectPipeline'
 import RolloutPanel from '@/components/RolloutPanel'
+import SigningDoctorPanel from '@/components/SigningDoctorPanel'
 import { frameworkLabel, platformLabel, providerLabel } from '@/lib/labels'
 import clsx from 'clsx'
 
@@ -469,6 +470,12 @@ export default function ProjectDetailPage() {
           packageName={project.package_name ?? undefined}
         />
       )}
+
+      <SigningDoctorPanel
+        projectId={project.id}
+        packageName={project.package_name ?? undefined}
+        framework={project.framework}
+      />
 
       {preview && preview.status !== 'not_ready' && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
