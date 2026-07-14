@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import clsx from 'clsx'
 import ApiKeysSection from '@/components/ApiKeysSection'
 import SigningHealthPanel from '@/components/SigningHealthPanel'
+import AiProviderPanel from '@/components/AiProviderPanel'
 import type { CurrentPlan, PlanInfo, NotificationPreferences } from '@/types'
 
 function InfoTooltip({ lines }: { lines: string[] }) {
@@ -975,6 +976,10 @@ export default function SettingsPage() {
           <KeyRound size={14} /> API Keys
         </h2>
         <ApiKeysSection />
+      </section>
+
+      <section className="mb-8">
+        <AiProviderPanel />
       </section>
     </div>
   )
