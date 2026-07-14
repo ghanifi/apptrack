@@ -28,7 +28,7 @@ from app.database import get_db
 from app.crypto import encrypt
 from app.routers.credentials import get_user_credential
 from app.audit import record_audit_with_db
-from app.models import Credential, Project
+from app.models import Credential, Project, StoreMetadata
 from sqlalchemy import select, and_
 
 logger = logging.getLogger(__name__)
@@ -707,7 +707,12 @@ async def signing_doctor(
     cert_pass = await get_user_credential(db, uid, "ios_signing", "IOS_CERT_PASSWORD")
     asc_key = await get_user_credential(db, uid, "app_store", "APP_STORE_KEY_ID")
 
-    return diagnose_signing(
-        cert_b64, cert_pass, profile_b64,
-        getattr(project, "package_name", None), asc_configured=bool(asc_key),
-    )
+    # Projenin iOS bundle id'si Store Config'de tutulur (StoreMetadata.bundle_id, platform=ios).
+    # Project modelinde package_name YOK — o alan ReleaseRollout'a ait.
+    meta = (await db.execute(select(StoreMetadata).where(
+        StoreMetadata.project_id == project_id, StoreMetadata.platform == "ios"))).scalars().first()
+    bundle_id = meta.bundle_id if meta else None
+
+    result = diagnose_signing(cert_b64, cert_pass, profile_b64, bundle_id, asc_configured=bool(asc_key))
+    result["bundle_id"] = bundle_id  # onarım (auto-generate-ios) doğru bundle'ı kullansın
+    return result

@@ -8,6 +8,7 @@ interface Check {
 }
 interface Doctor {
   configured: boolean; overall: string; can_auto_repair: boolean; checks: Check[]
+  bundle_id?: string | null
 }
 
 const IOS_FRAMEWORKS = ['flutter', 'react_native', 'expo', 'swift', 'capacitor', 'ionic', 'cordova']
@@ -22,11 +23,11 @@ const ICON: Record<string, { icon: typeof ShieldCheck; color: string }> = {
   unknown: { icon: HelpCircle, color: 'text-gray-500' },
 }
 
-interface Props { projectId: string; packageName?: string; framework: string }
+interface Props { projectId: string; framework: string }
 
 /** Proje-bağlı iOS imzalama doktoru — bundle eşleşme, sertifika-profil bağı,
  *  şifre, süre teşhisi + tek-tık onarım (auto-generate-ios). */
-export default function SigningDoctorPanel({ projectId, packageName, framework }: Props) {
+export default function SigningDoctorPanel({ projectId, framework }: Props) {
   const queryClient = useQueryClient()
   const { data } = useQuery<Doctor>({
     queryKey: ['signing-doctor', projectId],
@@ -37,7 +38,7 @@ export default function SigningDoctorPanel({ projectId, packageName, framework }
 
   const repair = useMutation({
     mutationFn: () =>
-      api.post('/signing/auto-generate-ios', { bundle_id: packageName }).then((r) => r.data),
+      api.post('/signing/auto-generate-ios', { bundle_id: data?.bundle_id }).then((r) => r.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['signing-doctor', projectId] }),
   })
 

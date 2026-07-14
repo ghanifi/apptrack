@@ -473,7 +473,6 @@ export default function ProjectDetailPage() {
 
       <SigningDoctorPanel
         projectId={project.id}
-        packageName={project.package_name ?? undefined}
         framework={project.framework}
       />
 

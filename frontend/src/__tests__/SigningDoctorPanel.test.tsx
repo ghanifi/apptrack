@@ -25,14 +25,14 @@ const mismatchPayload = {
 describe('SigningDoctorPanel', () => {
   it('sorunlu check + onarım butonu render eder', async () => {
     server.use(http.get('/api/signing/doctor/p1', () => HttpResponse.json(mismatchPayload)))
-    renderWithProviders(<SigningDoctorPanel projectId="p1" packageName="com.example" framework="flutter" />)
+    renderWithProviders(<SigningDoctorPanel projectId="p1" framework="flutter" />)
     await waitFor(() => expect(screen.getByText('Bundle ID eşleşmesi')).toBeInTheDocument())
     expect(screen.getByText(/yeniden üret/i)).toBeInTheDocument()
   })
 
   it('iOS üretmeyen framework için hiçbir şey render etmez', () => {
     const { container } = renderWithProviders(
-      <SigningDoctorPanel projectId="p1" packageName="com.example" framework="pwa" />
+      <SigningDoctorPanel projectId="p1" framework="pwa" />
     )
     expect(container).toBeEmptyDOMElement()
   })
