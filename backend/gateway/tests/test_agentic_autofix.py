@@ -66,3 +66,49 @@ async def test_openai_agentic_step_serializes_assistant_and_tool_turns():
     assert msgs[1]["tool_calls"][0]["function"]["name"] == "read_file"
     assert json.loads(msgs[1]["tool_calls"][0]["function"]["arguments"]) == {"path": "a"}
     assert msgs[2] == {"role": "tool", "tool_call_id": "c1", "content": "dosya içeriği"}
+
+
+@pytest.mark.asyncio
+async def test_anthropic_agentic_step_parses_tool_use():
+    from app.llm.anthropic import AnthropicProvider
+    from app.llm.base import ToolSpec
+    cap = {}
+    resp = {"stop_reason": "tool_use", "usage": {"input_tokens": 8, "output_tokens": 5},
+            "content": [{"type": "text", "text": "bakıyorum"},
+                        {"type": "tool_use", "id": "tu1", "name": "read_file", "input": {"path": "pubspec.yaml"}}]}
+    p = AnthropicProvider("ak", transport=_cap_transport(cap, resp))
+    tools = [ToolSpec("read_file", "oku", {"type": "object", "properties": {"path": {"type": "string"}}})]
+    res = await p.agentic_step([{"role": "system", "content": "sys"},
+                                {"role": "user", "content": "hata"}], tools, model="claude-haiku-4-5")
+    assert res.stop_reason == "tool_use"
+    assert res.tool_calls[0].name == "read_file"
+    assert res.tool_calls[0].arguments == {"path": "pubspec.yaml"}
+    assert res.usage == {"input_tokens": 8, "output_tokens": 5}
+    assert cap["body"]["system"] == "sys"
+    assert cap["body"]["tools"][0]["name"] == "read_file"
+    assert cap["body"]["tools"][0]["input_schema"]["type"] == "object"
+
+
+@pytest.mark.asyncio
+async def test_anthropic_agentic_merges_consecutive_tool_results():
+    from app.llm.anthropic import AnthropicProvider
+    from app.llm.base import ToolCall, ToolSpec
+    cap = {}
+    resp = {"stop_reason": "end_turn", "usage": {"input_tokens": 1, "output_tokens": 1},
+            "content": [{"type": "text", "text": "tamam"}]}
+    p = AnthropicProvider("ak", transport=_cap_transport(cap, resp))
+    transcript = [
+        {"role": "user", "content": "hata"},
+        {"role": "assistant", "content": "", "tool_calls": [ToolCall("tu1", "read_file", {"path": "a"}),
+                                                             ToolCall("tu2", "read_file", {"path": "b"})]},
+        {"role": "tool", "tool_call_id": "tu1", "content": "içerik a"},
+        {"role": "tool", "tool_call_id": "tu2", "content": "içerik b"},
+    ]
+    await p.agentic_step(transcript, [ToolSpec("read_file", "d", {})], model="m")
+    msgs = cap["body"]["messages"]
+    assert msgs[1]["role"] == "assistant"
+    assert [b["type"] for b in msgs[1]["content"]] == ["tool_use", "tool_use"]
+    assert msgs[2]["role"] == "user"
+    assert [b["type"] for b in msgs[2]["content"]] == ["tool_result", "tool_result"]
+    assert msgs[2]["content"][0]["tool_use_id"] == "tu1"
+    assert msgs[2]["content"][1]["tool_use_id"] == "tu2"
