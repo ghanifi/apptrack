@@ -436,6 +436,10 @@ async def diagnose_build(
                    "Only failed builds can be diagnosed.",
         )
 
+    # Kullanıcı bir LLM sağlayıcı yapılandırdıysa, deterministik eşleşme olmasa bile
+    # "AI ile düzelt dene" sunulabilir (opt-in LLM fallback).
+    ai_available = bool(await get_user_credential(db, current_user["id"], "llm", "LLM_PROVIDER"))
+
     if not build.log_output:
         return {
             "build_id": build_id,
@@ -444,6 +448,7 @@ async def diagnose_build(
             "diagnoses": [],
             "severity": "low",
             "auto_fixable": False,
+            "ai_available": ai_available,
             "message": "No build log output available for diagnosis. "
                        "The build may not have produced logs before failing.",
         }
@@ -470,6 +475,7 @@ async def diagnose_build(
         "diagnosis_count": len(diagnoses),
         "severity": severity,
         "auto_fixable": auto_fixable,
+        "ai_available": ai_available,
     }
 
 
@@ -492,6 +498,53 @@ def _parse_owner_repo(repo_url: str) -> str:
         return ""
     raw = repo_url.rstrip("/").split("github.com/")[-1]
     return raw[:-4] if raw.endswith(".git") else raw
+
+
+async def _fetch_repo_context(owner_repo: str, branch: str, token: str) -> dict:
+    """Repo dosya ağacı (yollar) + birkaç yaygın config dosyasının içeriği. GitHub API."""
+    import base64 as _b64
+    import httpx
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    tree, files = [], {}
+    async with httpx.AsyncClient(timeout=30.0, headers=headers) as c:
+        r = await c.get(f"https://api.github.com/repos/{owner_repo}/git/trees/{branch}",
+                        params={"recursive": "1"})
+        if r.status_code == 200:
+            tree = [t["path"] for t in r.json().get("tree", []) if t.get("type") == "blob"][:400]
+        for cand in ("android/build.gradle", "android/app/build.gradle", "ios/Podfile",
+                     "pubspec.yaml", "package.json", "android/gradle.properties"):
+            if cand in tree:
+                fr = await c.get(f"https://api.github.com/repos/{owner_repo}/contents/{cand}",
+                                 params={"ref": branch})
+                if fr.status_code == 200:
+                    files[cand] = _b64.b64decode(fr.json()["content"]).decode("utf-8", "replace")
+    return {"tree": tree, "files": files}
+
+
+async def _try_llm_autofix(db: AsyncSession, user_id: str, project, build) -> dict | None:
+    """Kullanıcı LLM yapılandırmışsa: repo bağlamını çek, LLM'den yama al, llm_replace plan üret. Yoksa None."""
+    from app.llm import registry
+    provider_id = await get_user_credential(db, user_id, "llm", "LLM_PROVIDER")
+    if not provider_id or provider_id not in registry.PROVIDERS:
+        return None
+    api_key = await get_user_credential(db, user_id, "llm", registry.PROVIDERS[provider_id]["key_name"])
+    if not api_key:
+        return None
+    model = await get_user_credential(db, user_id, "llm", "LLM_MODEL") \
+        or registry.PROVIDERS[provider_id]["default_model"]
+    owner_repo = _parse_owner_repo(project.repo_url)
+    token = await _resolve_github_token(db, user_id)
+    if not owner_repo or not token:
+        return None
+    repo_ctx = await _fetch_repo_context(owner_repo, project.branch or "main", token)
+    repo_ctx["model"] = model
+    provider = registry.build_provider(provider_id, api_key)
+    proposal = await build_autofix.llm_propose_patch(
+        provider, build.log_output[-8000:], repo_ctx, project.framework)
+    if not proposal:
+        return None
+    return {"id": "llm_fix", "title": proposal["summary"], "kind": "llm_replace",
+            "files": [proposal["path"]], "new_content": proposal["new_content"]}
 
 
 @router.post("/autofix/{build_id}")
@@ -519,10 +572,13 @@ async def autofix_build(
     diagnoses = _match_error_patterns(build.log_output, framework=project.framework)
     plan = build_autofix.plan_fix(diagnoses, build.log_output)
     if not plan:
-        raise HTTPException(
-            status_code=400,
-            detail="No auto-fixable issue found for this build. Review the diagnosis and fix manually.",
-        )
+        # Deterministik eşleşme yok → kullanıcı LLM yapılandırmışsa AI fallback (opt-in).
+        plan = await _try_llm_autofix(db, current_user["id"], project, build)
+        if not plan:
+            raise HTTPException(
+                status_code=400,
+                detail="No auto-fixable issue found for this build. Review the diagnosis and fix manually.",
+            )
 
     owner_repo = _parse_owner_repo(project.repo_url)
     if not owner_repo:

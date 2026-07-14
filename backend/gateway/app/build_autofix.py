@@ -173,6 +173,8 @@ def plan_fix(diagnoses: list[dict], log_output: str) -> dict | None:
 
 
 def _transform(plan: dict, content: str) -> str | None:
+    if plan["kind"] == "llm_replace":
+        return plan["new_content"]
     if plan["kind"] == "gradle_property":
         return apply_gradle_property(content, plan["properties"])
     if plan["kind"] == "min_sdk":
@@ -322,3 +324,50 @@ async def open_fix_pr(owner_repo: str, base_branch: str, github_token: str, plan
         if pr.status_code not in (200, 201):
             raise RuntimeError(f"PR açılamadı ({pr.status_code}).")
         return {"pr_url": pr.json()["html_url"], "file": target_path, "branch": branch, "reused": False}
+
+
+# ---------------------------------------------------------------------------
+# LLM fallback — deterministik yama bulunamayınca tek-dosya yama önerisi (opt-in)
+# ---------------------------------------------------------------------------
+import json as _json
+import re as _re
+
+_LLM_SYSTEM = (
+    "Sen bir CI build hatası düzeltme asistanısın. Sana başarısız build log'u, repo dosya ağacı ve "
+    "ilgili dosya içerikleri verilir. SADECE tek bir JSON nesnesi döndür, başka metin yok: "
+    '{"path": "<repo\'daki mevcut dosya yolu>", "new_content": "<dosyanın tam yeni içeriği>", '
+    '"summary": "<tek cümle Türkçe özet>"}. Düzeltemiyorsan boş nesne {} döndür. '
+    "Yol repo ağacında MEVCUT olmalı; içerik dosyanın TAMAMI olmalı (parça değil)."
+)
+
+
+def _extract_json(text: str) -> dict | None:
+    m = _re.search(r"\{.*\}", text, _re.DOTALL)
+    if not m:
+        return None
+    try:
+        obj = _json.loads(m.group(0))
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        return None
+
+
+async def llm_propose_patch(provider, log_tail: str, repo_context: dict, framework: str | None) -> dict | None:
+    """LLM'den tek-dosya yama önerisi al. Şema/yol doğrulanır; tutmazsa None (sessiz başarısızlık YOK)."""
+    from app.llm.base import LLMMessage
+    tree = "\n".join(repo_context.get("tree", [])[:200])
+    files_blob = "\n\n".join(f"### {p}\n{c[:4000]}" for p, c in repo_context.get("files", {}).items())
+    user = (f"Framework: {framework or 'bilinmiyor'}\n\n=== BUILD LOG (son) ===\n{log_tail[:8000]}\n\n"
+            f"=== REPO AĞACI ===\n{tree}\n\n=== İLGİLİ DOSYALAR ===\n{files_blob}")
+    try:
+        res = await provider.complete([LLMMessage("system", _LLM_SYSTEM), LLMMessage("user", user)],
+                                      model=repo_context.get("model", "") or "", max_tokens=2000)
+    except Exception:
+        return None
+    obj = _extract_json(res.text)
+    if not obj or not isinstance(obj.get("path"), str) or not isinstance(obj.get("new_content"), str):
+        return None
+    if obj["path"] not in set(repo_context.get("tree", [])):
+        return None  # LLM var olmayan dosya uydurmasın
+    return {"path": obj["path"], "new_content": obj["new_content"],
+            "summary": obj.get("summary", "AI düzeltmesi")}
