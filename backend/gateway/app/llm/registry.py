@@ -15,7 +15,7 @@ PROVIDERS: dict[str, dict] = {
                "free": True, "kind": "openai_compat"},
     "gemini": {"label": "Google Gemini",
                "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-               "key_name": "GEMINI_API_KEY", "default_model": "gemini-2.5-flash-lite",
+               "key_name": "GEMINI_API_KEY", "default_model": "gemini-flash-latest",
                "free": True, "kind": "openai_compat"},
     "anthropic": {"label": "Anthropic Claude", "base_url": "https://api.anthropic.com/v1",
                   "key_name": "ANTHROPIC_API_KEY", "default_model": "claude-haiku-4-5",

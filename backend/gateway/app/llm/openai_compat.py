@@ -35,3 +35,32 @@ class OpenAICompatProvider:
             usage={"input_tokens": usage.get("prompt_tokens", 0),
                    "output_tokens": usage.get("completion_tokens", 0)},
         )
+
+    async def list_models(self) -> list[dict]:
+        """Sağlayıcının OpenAI-uyumlu /models listesi → [{id, free}]. Canlı; anahtar gerekir.
+        free: OpenRouter pricing=0 veya ':free' son eki → True; aksi belirsizse None."""
+        headers = {"Authorization": f"Bearer {self.api_key}", **self.extra_headers}
+        async with httpx.AsyncClient(timeout=30.0, transport=self._transport) as c:
+            resp = await c.get(f"{self.base_url}/models", headers=headers)
+        if resp.status_code >= 400:
+            raise LLMError(f"Model listesi alınamadı ({resp.status_code}): {resp.text[:200]}",
+                           status=resp.status_code)
+        out = []
+        for m in resp.json().get("data", []) or []:
+            mid = m.get("id")
+            if not mid:
+                continue
+            if mid.startswith("models/"):  # Gemini compat /models 'models/' önekiyle döner; completion temiz id ister
+                mid = mid[len("models/"):]
+            free = None
+            pricing = m.get("pricing")
+            if isinstance(pricing, dict):
+                try:
+                    free = (float(pricing.get("prompt", 1) or 0) == 0
+                            and float(pricing.get("completion", 1) or 0) == 0)
+                except (TypeError, ValueError):
+                    free = None
+            if mid.endswith(":free"):
+                free = True
+            out.append({"id": mid, "free": free})
+        return out

@@ -33,3 +33,13 @@ class AnthropicProvider:
         return LLMResult(text=text, model=data.get("model", model),
                          usage={"input_tokens": usage.get("input_tokens", 0),
                                 "output_tokens": usage.get("output_tokens", 0)})
+
+    async def list_models(self) -> list[dict]:
+        """Anthropic /models → [{id, free}]. Tümü ücretli (free=False)."""
+        headers = {"x-api-key": self.api_key, "anthropic-version": _ANTHROPIC_VERSION}
+        async with httpx.AsyncClient(timeout=30.0, transport=self._transport) as c:
+            resp = await c.get(f"{self.base_url}/models", headers=headers)
+        if resp.status_code >= 400:
+            raise LLMError(f"Model listesi alınamadı ({resp.status_code}): {resp.text[:200]}",
+                           status=resp.status_code)
+        return [{"id": m["id"], "free": False} for m in resp.json().get("data", []) or [] if m.get("id")]

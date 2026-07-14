@@ -86,7 +86,7 @@ async def test_anthropic_native_parse_and_headers():
 
 
 def test_registry_build_openai_compat_and_defaults():
-    assert registry.PROVIDERS["gemini"]["default_model"] == "gemini-2.5-flash-lite"
+    assert registry.PROVIDERS["gemini"]["default_model"] == "gemini-flash-latest"
     assert registry.PROVIDERS["openrouter"]["free"] is True
     p = registry.build_provider("nvidia", "nvapi-x")
     from app.llm.openai_compat import OpenAICompatProvider as OC
@@ -102,3 +102,31 @@ def test_registry_build_anthropic():
 def test_registry_unknown_provider_raises():
     with pytest.raises(ValueError):
         registry.build_provider("bogus", "k")
+
+
+@pytest.mark.asyncio
+async def test_openai_compat_list_models_free_detection():
+    def handler(req: httpx.Request):
+        assert str(req.url).endswith("/models")
+        return httpx.Response(200, json={"data": [
+            {"id": "qwen/qwen3-coder:free"},
+            {"id": "paid-model", "pricing": {"prompt": "0.001", "completion": "0.002"}},
+            {"id": "zero-priced", "pricing": {"prompt": "0", "completion": "0"}},
+        ]})
+    p = OpenAICompatProvider("https://openrouter.ai/api/v1", "k", transport=httpx.MockTransport(handler))
+    models = await p.list_models()
+    by_id = {m["id"]: m["free"] for m in models}
+    assert by_id["qwen/qwen3-coder:free"] is True   # :free son eki
+    assert by_id["paid-model"] is False              # pricing > 0
+    assert by_id["zero-priced"] is True              # pricing = 0
+
+
+@pytest.mark.asyncio
+async def test_anthropic_list_models_all_paid():
+    def handler(req: httpx.Request):
+        assert req.headers.get("anthropic-version") == "2023-06-01"
+        return httpx.Response(200, json={"data": [{"id": "claude-haiku-4-5"}, {"id": "claude-opus-4-8"}]})
+    p = AnthropicProvider("ak", transport=httpx.MockTransport(handler))
+    models = await p.list_models()
+    assert [m["id"] for m in models] == ["claude-haiku-4-5", "claude-opus-4-8"]
+    assert all(m["free"] is False for m in models)

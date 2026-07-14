@@ -8,6 +8,7 @@ interface AiConfig {
   provider: string | null; model: string | null
   providers: ProviderOpt[]; configured: Record<string, boolean>
 }
+interface ModelOpt { id: string; free: boolean | null }
 
 /** AI Sağlayıcıları (BYOK) — sağlayıcı seç, kendi anahtarını gir, bağlantıyı test et.
  *  Anahtarlar sunucuda Fernet-şifreli saklanır. Autofix LLM fallback bunu kullanır. */
@@ -23,6 +24,15 @@ export default function AiProviderPanel() {
 
   const provider = sel ?? data?.provider ?? null
   const current = data?.providers.find((p) => p.id === provider)
+  const keyConfigured = !!(provider && data?.configured[provider])
+
+  // Sağlayıcının CANLI model listesi (2026 temmuz aktif) — anahtar kaydedilince yüklenir.
+  const models = useQuery<ModelOpt[]>({
+    queryKey: ['ai-models', provider],
+    queryFn: () => api.get('/ai/models', { params: { provider } }).then((r) => r.data.models),
+    enabled: keyConfigured,
+    retry: false,
+  })
 
   const save = useMutation({
     mutationFn: () => api.put('/ai/config', {
@@ -73,11 +83,37 @@ export default function AiProviderPanel() {
             placeholder={`${current.label} API anahtarı`}
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500"
           />
-          <input
-            value={model} onChange={(e) => setModel(e.target.value)}
-            placeholder={`Model (boş = ${current.default_model})`}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500"
-          />
+          {keyConfigured && models.data && models.data.length > 0 ? (
+            <div>
+              <select
+                value={model || data.model || current.default_model}
+                onChange={(e) => setModel(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500"
+              >
+                {!models.data.some((m) => m.id === (data.model || current.default_model)) && (
+                  <option value={data.model || current.default_model}>
+                    {data.model || current.default_model} (kayıtlı)
+                  </option>
+                )}
+                {models.data.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.id}{m.free === true ? ' — ücretsiz' : m.free === false ? ' — ücretli' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-gray-500 mt-1">
+                {models.data.length} model (2026 temmuz aktif). Ücretsiz ve ücretli modeller seçilebilir.
+              </p>
+            </div>
+          ) : (
+            <input
+              value={model} onChange={(e) => setModel(e.target.value)}
+              placeholder={keyConfigured && models.isLoading
+                ? 'Modeller yükleniyor…'
+                : `Model (boş = ${current.default_model}) — anahtar kaydedince liste gelir`}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-500"
+            />
+          )}
           <div className="flex items-center gap-2">
             <button
               onClick={() => save.mutate()} disabled={save.isPending}

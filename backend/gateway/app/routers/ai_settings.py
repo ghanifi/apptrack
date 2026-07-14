@@ -68,6 +68,30 @@ async def put_ai_config(body: AiConfigBody, current_user: dict = Depends(get_cur
     return {"ok": True}
 
 
+@router.get("/models")
+async def list_ai_models(provider: str, current_user: dict = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)):
+    """Seçili sağlayıcının CANLI model listesi (2026 temmuz itibarıyla aktif olanlar) — ücretsiz+ücretli.
+    Sağlayıcının kendi /models API'sinden çekilir; kullanıcının anahtarı gerekir. Ücretsiz-önce sıralı."""
+    if provider not in registry.PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Bilinmeyen sağlayıcı: {provider}")
+    uid = current_user["id"]
+    spec = registry.PROVIDERS[provider]
+    api_key = await get_user_credential(db, uid, _LLM, spec["key_name"])
+    if not api_key:
+        raise HTTPException(status_code=400, detail=f"{spec['label']} için önce API anahtarı kaydedin.")
+    prov = registry.build_provider(provider, api_key)
+    try:
+        models = await prov.list_models()
+    except LLMError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    except Exception as exc:
+        logger.error("Model listesi hatası (%s): %s", provider, exc)
+        raise HTTPException(status_code=502, detail="Model listesi alınamadı.")
+    models.sort(key=lambda m: (m.get("free") is not True, m["id"]))  # ücretsiz-önce, sonra alfabetik
+    return {"provider": provider, "models": models}
+
+
 @router.post("/test")
 async def test_ai(current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     uid = current_user["id"]
