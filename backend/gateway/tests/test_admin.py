@@ -352,3 +352,22 @@ async def test_admin_change_plan_invalid(mock_db, admin_user, admin_auth_headers
 
     assert resp.status_code == 400
     assert "invalid plan" in resp.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# C1 regresyon: e-posta ile admin yükseltme KAPALI
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_admin_email_without_is_admin_flag_denied(mock_db):
+    """JWT'de admin e-postası (admin@apptrack.dev) olsa bile is_admin bayrağı yoksa 403.
+    Kayıtla o e-postayı alıp admin olma açığı (C1) kapandı — yetki artık imzalı is_admin ile."""
+    from app.dependencies import get_current_user as gcu
+    from app.database import get_db
+    attacker = {"id": "atk", "email": "admin@apptrack.dev", "name": "Attacker"}  # is_admin YOK
+    app = _make_app()
+    app.dependency_overrides[get_db] = lambda: mock_db
+    app.dependency_overrides[gcu] = lambda: attacker
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.get("/api/admin/tenants")
+    assert resp.status_code == 403

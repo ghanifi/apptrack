@@ -74,11 +74,12 @@ def test_user():
 
 @pytest.fixture
 def admin_user():
-    """Admin test user."""
+    """Admin test user — is_admin bayrağı imzalı JWT'den gelir (e-posta değil)."""
     return {
         "id": "550e8400-e29b-41d4-a716-446655440001",
         "email": "admin@apptrack.io",
         "name": "Admin User",
+        "is_admin": True,
     }
 
 

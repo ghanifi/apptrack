@@ -17,6 +17,7 @@ class User(Base):
     github_id: Mapped[str | None] = mapped_column(String(100), comment="GitHub kullanıcı ID'si")
     github_access_token: Mapped[str | None] = mapped_column(Text, comment="Fernet ile şifrelenmiş GitHub access token")
     avatar_url: Mapped[str | None] = mapped_column(Text, comment="Profil fotoğrafı URL'si")
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, comment="Platform admin yetkisi — yalnız DB'den atanır, kayıtla asla True olmaz")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Kayıt tarihi")
 
     projects: Mapped[list["Project"]] = relationship("Project", back_populates="owner", cascade="all, delete-orphan")

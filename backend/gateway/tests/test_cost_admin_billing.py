@@ -120,7 +120,7 @@ admin_src = read(os.path.join(GATEWAY, "app", "routers", "admin.py"))
 
 check("ADM-001: admin.py exists", len(admin_src) > 100)
 check("ADM-002: Admin prefix /api/admin", "/api/admin" in admin_src)
-check("ADM-003: ADMIN_EMAILS check", "ADMIN_EMAILS" in admin_src)
+check("ADM-003: is_admin bayragi (e-posta string DEGIL)", "is_admin" in admin_src and "ADMIN_EMAILS" not in admin_src)
 check("ADM-004: _require_admin function", "_require_admin" in admin_src)
 check("ADM-005: Returns 403 for non-admin", "403" in admin_src)
 
@@ -299,7 +299,7 @@ check("SEC-002: Billing current requires auth", "get_current_user" in billing_ro
 check("SEC-003: Billing upgrade requires auth", "get_current_user" in billing_router_src)
 check("SEC-004: Cost estimate requires auth", "get_current_user" in builds_src)
 check("SEC-005: Stripe webhook verifies signature", "verify_stripe_signature" in billing_router_src)
-check("SEC-006: Admin email check", "ADMIN_EMAILS" in admin_src)
+check("SEC-006: Admin is_admin gating", "is_admin" in admin_src and "ADMIN_EMAILS" not in admin_src)
 check("SEC-007: Admin 403 on non-admin", "403" in admin_src and "Admin access required" in admin_src)
 check("SEC-008: Budget limit returns 429", "429" in cg_src)
 check("SEC-009: Billing webhook rejects invalid JSON", "Invalid JSON" in billing_router_src)

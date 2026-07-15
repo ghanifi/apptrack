@@ -110,7 +110,8 @@ async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(
     user = result.scalar_one_or_none()
     if not user or not user.hashed_password or not pwd_context.verify(req.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    token_data = {"sub": user.id, "email": user.email, "name": user.name}
+    token_data = {"sub": user.id, "email": user.email, "name": user.name,
+                  "is_admin": bool(getattr(user, "is_admin", False))}
     fp = generate_fingerprint(request)
     access_token = create_access_token(token_data, fingerprint=fp)
     refresh_token = create_refresh_token(token_data)
@@ -253,7 +254,8 @@ async def github_callback(
 
     await db.commit()
     await db.refresh(user)
-    token_data = {"sub": user.id, "email": user.email, "name": user.name}
+    token_data = {"sub": user.id, "email": user.email, "name": user.name,
+                  "is_admin": bool(getattr(user, "is_admin", False))}
     fp = generate_fingerprint(request) if request else None
     access_token = create_access_token(token_data, fingerprint=fp)
     refresh_token = create_refresh_token(token_data)
@@ -317,7 +319,8 @@ async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession 
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
-    token_data = {"sub": user.id, "email": user.email, "name": user.name}
+    token_data = {"sub": user.id, "email": user.email, "name": user.name,
+                  "is_admin": bool(getattr(user, "is_admin", False))}
     fp = generate_fingerprint(request)
     new_access = create_access_token(token_data, fingerprint=fp)
     new_refresh = create_refresh_token(token_data)

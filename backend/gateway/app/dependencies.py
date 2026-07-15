@@ -30,7 +30,8 @@ def get_current_user(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Session fingerprint mismatch — please re-authenticate",
                     )
-        user = {"id": user_id, "email": payload.get("email"), "name": payload.get("name")}
+        user = {"id": user_id, "email": payload.get("email"), "name": payload.get("name"),
+                "is_admin": payload.get("is_admin", False)}
         inject_tenant(request, user)
         return user
     except JWTError:

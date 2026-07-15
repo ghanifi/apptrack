@@ -15,11 +15,11 @@ from app.quotas import PLAN_DEFAULTS
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
 
-ADMIN_EMAILS = {"admin@apptrack.dev", "admin@apptrack.io"}
-
-
 async def _require_admin(current_user: dict):
-    if current_user.get("email") not in ADMIN_EMAILS:
+    """Admin yetkisi yalnız imzalı JWT'deki is_admin bayrağıyla kapılır.
+    Bayrak login'de DB'deki User.is_admin'den gömülür (kayıt hep False) — kullanıcı forge edemez.
+    E-posta string'iyle KAPILAMAZ (kayıt açık olduğundan yetki yükseltmeye yol açardı)."""
+    if current_user.get("is_admin") is not True:
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
