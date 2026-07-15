@@ -37,7 +37,10 @@ TOOLS = [READ_FILE, PROPOSE_PATCH]
 _SYSTEM = (
     "Sen bir CI build hatası düzeltme asistanısın. Araçların var: read_file ile ihtiyacın olan "
     "dosyaları oku, ardından propose_patch ile TEK dosyalık tam-içerik yama öner. Yalnızca repo "
-    "ağacında MEVCUT dosyaları kullan; içeriği tahmin etme, önce oku. Yama yapısal geçerli olmalı.")
+    "ağacında MEVCUT dosyaları kullan; içeriği tahmin etme, önce oku. Yama yapısal geçerli olmalı. "
+    "new_content dosyanın TAM hâli olmalı; ancak SADECE hatayı çözmek için gereken satırları değiştir "
+    "— diğer TÜM satırları (biçim, girinti, boşluk, tırnak, sıralama dahil) okuduğun hâliyle AYNEN "
+    "koru. Alakasız hiçbir değişiklik yapma; minimal diff üret.")
 
 
 def validate_patch(path: str, content: str) -> str | None:
