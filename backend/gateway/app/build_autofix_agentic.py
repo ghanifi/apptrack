@@ -40,7 +40,41 @@ _SYSTEM = (
     "ağacında MEVCUT dosyaları kullan; içeriği tahmin etme, önce oku. Yama yapısal geçerli olmalı. "
     "new_content dosyanın TAM hâli olmalı; ancak SADECE hatayı çözmek için gereken satırları değiştir "
     "— diğer TÜM satırları (biçim, girinti, boşluk, tırnak, sıralama dahil) okuduğun hâliyle AYNEN "
-    "koru. Alakasız hiçbir değişiklik yapma; minimal diff üret.")
+    "koru. Alakasız hiçbir değişiklik yapma; minimal diff üret. YALNIZCA build-config "
+    "dosyalarını yamala (gradle.properties, build.gradle, Podfile, *.pbxproj, *.plist, "
+    "package.json, pubspec.yaml vb.); CI/workflow ve script dosyaları güvenlik gereği yasaktır.")
+
+
+# --- Yol güvenliği (M1) -------------------------------------------------------
+# Autofix'in yama yazabileceği dosyalar YALNIZCA build-config'tir. CI/CD ve
+# yürütülebilir dosyalar ASLA yamalanamaz: repo log/ağacı LLM prompt'unu besler,
+# kötü niyetli içerik bir workflow'a secret-sızdıran adım enjekte edebilir
+# (prompt-injection -> CI compromise). Deny-by-default allowlist.
+_DENY_DIR_MARKERS = (".github/workflows/", ".github/actions/", ".gitlab-ci",
+                     ".circleci/", ".travis", "azure-pipelines", "bitbucket-pipelines")
+_DENY_EXTS = (".sh", ".bash", ".zsh", ".ps1", ".bat", ".cmd", ".rb", ".py", ".pl", ".js", ".ts", ".mjs")
+_DENY_NAMES = ("makefile", "fastfile", "appfile", "matchfile")
+# Yamalanabilir build-config uzantı/adları
+_ALLOW_EXTS = (".gradle", ".properties", ".plist", ".pbxproj", ".xcconfig",
+               ".entitlements", ".podspec", ".json", ".yaml", ".yml", ".xml", ".cfg", ".toml")
+_ALLOW_NAMES = ("podfile", "build.gradle.kts", "settings.gradle.kts")
+
+
+def is_patchable_path(path: str) -> bool:
+    """Yol build-config allowlist'inde mi? CI/CD + script dosyaları daima reddedilir."""
+    p = (path or "").lower().replace("\\", "/")
+    if not p or ".." in p:
+        return False
+    if any(m in p for m in _DENY_DIR_MARKERS):
+        return False
+    name = p.rsplit("/", 1)[-1]
+    if name in _DENY_NAMES or name.startswith("dockerfile"):
+        return False
+    if any(name.endswith(e) for e in _DENY_EXTS):
+        return False
+    if name in _ALLOW_NAMES:
+        return True
+    return any(name.endswith(e) for e in _ALLOW_EXTS)
 
 
 def validate_patch(path: str, content: str) -> str | None:
@@ -138,6 +172,13 @@ async def run_agentic_autofix(adapter, model, log_tail, repo_tree, framework, fe
                 if path not in tree_set:
                     transcript.append({"role": "tool", "tool_call_id": tc.id,
                                        "content": f"GEÇERSİZ: '{path}' ağaçta yok. Mevcut bir dosya seç."})
+                    continue
+                if not is_patchable_path(path):
+                    transcript.append({"role": "tool", "tool_call_id": tc.id, "content": (
+                        f"REDDEDİLDİ: '{path}' yamalanamaz. Yalnızca build-config dosyaları "
+                        "(gradle.properties, build.gradle, Podfile, *.pbxproj, *.plist, "
+                        "package.json, pubspec.yaml vb.) düzenlenebilir; CI/workflow ve script "
+                        "dosyaları güvenlik gereği yasaktır.")})
                     continue
                 err = validate_patch(path, new_content)
                 if err:

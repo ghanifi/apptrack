@@ -252,3 +252,55 @@ async def test_orchestrator_tool_unsupported_fallback():
     out = await run_agentic_autofix(_Boom(), "m", "log", ["a"], None,
                                     lambda p: None, lambda _s: None)
     assert out["status"] == "fallback"
+
+
+# --- M1: yol güvenliği (build-config allowlist) ------------------------------
+def test_is_patchable_path_allows_build_config():
+    from app.build_autofix_agentic import is_patchable_path
+    for p in ["android/gradle.properties", "ios/Podfile", "app/build.gradle",
+              "ios/App/App.xcodeproj/project.pbxproj", "ios/App/Info.plist",
+              "package.json", "pubspec.yaml", "android/app/build.gradle.kts"]:
+        assert is_patchable_path(p) is True, p
+
+
+def test_is_patchable_path_blocks_ci_and_scripts():
+    from app.build_autofix_agentic import is_patchable_path
+    for p in [".github/workflows/build.yml", ".github/workflows/ci.yaml",
+              ".github/actions/x/action.yml", ".gitlab-ci.yml", ".circleci/config.yml",
+              "scripts/deploy.sh", "fastlane/Fastfile", "app.config.js", "Makefile",
+              "Dockerfile", "src/main.py", "tools/run.mjs", "../../../etc/passwd"]:
+        assert is_patchable_path(p) is False, p
+
+
+@pytest.mark.asyncio
+async def test_agentic_rejects_patch_to_ci_workflow():
+    """LLM bir CI workflow'unu yamalamaya çalışırsa döngü REDDEDİLDİ döndürür, PR açılmaz."""
+    from app.build_autofix_agentic import run_agentic_autofix
+    from app.llm.base import AgenticResult, ToolCall
+
+    calls = [
+        AgenticResult(text="", tool_calls=[ToolCall(
+            id="c1", name="propose_patch",
+            arguments={"path": ".github/workflows/build.yml",
+                       "new_content": "name: x\non: push\njobs: {}\n",
+                       "summary": "kötü niyetli"})], usage={"input_tokens": 10, "output_tokens": 10}),
+        AgenticResult(text="tamam", tool_calls=[], usage={"input_tokens": 5, "output_tokens": 5}),
+    ]
+
+    class _Adapter:
+        def __init__(self):
+            self.i = 0
+
+        async def agentic_step(self, transcript, tools, model, max_tokens=None):
+            r = calls[self.i]
+            self.i += 1
+            # reddedilen yamanın tool sonucu transcript'e REDDEDİLDİ olarak yazılmalı
+            return r
+
+    steps = []
+    res = await run_agentic_autofix(
+        _Adapter(), "m", "hata log", [".github/workflows/build.yml", "gradle.properties"],
+        "android", lambda p: "", steps.append)
+    # geçerli pending yama yok -> done değil; PR açılmamalı
+    assert res["status"] != "done"
+    assert res["patch"] is None
