@@ -22,6 +22,7 @@ from app.routers import admin as admin_router
 from app.routers import billing as billing_router
 from app.routers import credential_validation, deploy_simulator, metrics_kpi, canary, compliance
 from app.routers import build_diagnosis, cost_prediction, provider_recommendation
+from app.routers import build_autofix_jobs
 from app.routers import store_metadata
 from app.routers import auto_signing as auto_signing_router
 from app.routers import ai_settings as ai_settings_router
@@ -360,6 +361,7 @@ app.include_router(support_router.router, prefix="/api", tags=["support"])
 app.include_router(organizations_router.router, prefix="/api", tags=["organizations"])
 app.include_router(sso_router.router, prefix="/api", tags=["sso"])
 app.include_router(build_diagnosis.router)
+app.include_router(build_autofix_jobs.router)
 app.include_router(cost_prediction.router)
 app.include_router(provider_recommendation.router)
 app.include_router(notifications_router.router)
