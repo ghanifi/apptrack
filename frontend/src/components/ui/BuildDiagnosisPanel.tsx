@@ -1,10 +1,10 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   AlertTriangle, ChevronRight, RefreshCw, Wrench, Shield,
-  ChevronDown, ChevronUp, FileText, GitPullRequest, ExternalLink, Sparkles,
+  ChevronDown, ChevronUp, FileText, GitPullRequest, ExternalLink, Sparkles, Loader2,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { BuildDiagnosisResult } from '@/types'
+import type { BuildDiagnosisResult, AutofixJob, AutofixStatus } from '@/types'
 import { useState } from 'react'
 import clsx from 'clsx'
 
@@ -34,6 +34,18 @@ export default function BuildDiagnosisPanel({ buildId, errorMessage, logOutput, 
 
   const autofix = useMutation<{ pr_url: string; title: string; reused: boolean }, unknown>({
     mutationFn: () => api.post(`/build-diagnosis/autofix/${buildId}`).then(r => r.data),
+  })
+
+  const [jobId, setJobId] = useState<string | null>(null)
+  const startAgentic = useMutation<AutofixJob, unknown>({
+    mutationFn: () => api.post(`/build-diagnosis/autofix/${buildId}/agentic`).then(r => r.data),
+    onSuccess: (d) => setJobId(d.job_id),
+  })
+  const job = useQuery<AutofixStatus>({
+    queryKey: ['autofix-job', jobId],
+    queryFn: () => api.get(`/build-diagnosis/autofix/status/${jobId}`).then(r => r.data),
+    enabled: !!jobId,
+    refetchInterval: (q) => (q.state.data?.state === 'running' ? 1500 : false),
   })
 
   return (
@@ -149,6 +161,16 @@ export default function BuildDiagnosisPanel({ buildId, errorMessage, logOutput, 
             {autofix.isPending ? 'AI deniyor…' : 'AI ile düzelt dene'}
           </button>
         )}
+        {!diagnosis?.auto_fixable && diagnosis?.ai_available && !jobId && (
+          <button
+            onClick={() => startAgentic.mutate()}
+            disabled={startAgentic.isPending}
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 rounded-lg text-xs font-medium transition-colors"
+          >
+            <Sparkles size={12} className={startAgentic.isPending ? 'animate-spin' : ''} />
+            {startAgentic.isPending ? 'Başlatılıyor…' : 'AI ile agentic düzelt'}
+          </button>
+        )}
         {onRetry && (
           <button
             onClick={onRetry}
@@ -177,6 +199,36 @@ export default function BuildDiagnosisPanel({ buildId, errorMessage, logOutput, 
           {(autofix.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
             ?? 'Auto-fix failed.'}
         </p>
+      )}
+
+      {/* Agentic autofix ilerlemesi */}
+      {jobId && job.data && (
+        <div className="rounded-lg border border-primary-500/30 bg-primary-600/5 p-3 space-y-2 animate-fade-up">
+          <div className="flex items-center gap-2 text-xs font-medium text-primary-300">
+            {job.data.state === 'running'
+              ? <><Loader2 size={13} className="animate-spin" /> AI çalışıyor…</>
+              : job.data.state === 'done'
+                ? <><GitPullRequest size={13} className="text-green-400" /> Tamamlandı</>
+                : <><AlertTriangle size={13} className="text-yellow-400" /> Durduruldu</>}
+          </div>
+          <ul className="space-y-0.5">
+            {job.data.steps.map((s, i) => (
+              <li key={i} className={clsx('text-xs font-mono',
+                i === job.data!.steps.length - 1 ? 'text-gray-200' : 'text-gray-500')}>
+                {s}
+              </li>
+            ))}
+          </ul>
+          {job.data.state === 'done' && job.data.pr_url && (
+            <a href={job.data.pr_url} target="_blank" rel="noreferrer"
+               className="text-primary-400 hover:underline inline-flex items-center gap-0.5 text-xs">
+              PR'ı incele <ExternalLink size={9} />
+            </a>
+          )}
+          {(job.data.state === 'aborted' || job.data.state === 'error') && job.data.error && (
+            <p className="text-xs text-yellow-400/90">{job.data.error}</p>
+          )}
+        </div>
       )}
     </div>
   )

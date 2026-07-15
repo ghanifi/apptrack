@@ -263,3 +263,11 @@ export interface UsageSummary {
     build_minutes: { current: number }
   }
 }
+
+export interface AutofixJob { job_id: string }
+export interface AutofixStatus {
+  state: 'running' | 'done' | 'aborted' | 'error'
+  steps: string[]
+  pr_url?: string | null
+  error?: string | null
+}
