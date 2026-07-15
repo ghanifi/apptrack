@@ -104,6 +104,11 @@ async def run_agentic_autofix(adapter, model, log_tail, repo_tree, framework, fe
         if usage_total > MAX_TOKENS:
             return {"status": "aborted", "patch": pending, "reason": f"token bütçesi aşıldı ({usage_total})"}
         if not res.tool_calls:
+            # Model öz-eleştiri turunda propose_patch'i tekrar çağırmak yerine metinle onaylayabilir
+            # (Gemini böyle davranıyor) → elimizde doğrulanmış pending yama varsa onu final say.
+            if pending is not None:
+                on_step("PR açılıyor")
+                return {"status": "done", "patch": pending, "reason": None}
             return {"status": "no_fix", "patch": None,
                     "reason": (res.text or "model yama önermedi")[:200]}
 

@@ -177,6 +177,38 @@ async def test_orchestrator_read_then_patch_with_critique():
 
 
 @pytest.mark.asyncio
+async def test_orchestrator_text_confirmation_finalizes_pending():
+    """Öz-eleştiri turunda model propose_patch yerine METİNLE onaylarsa (Gemini davranışı),
+    doğrulanmış pending yama final sayılmalı — no_fix DEĞİL. (Canlı testte yakalandı.)"""
+    from app.build_autofix_agentic import run_agentic_autofix
+
+    async def fetch(path):
+        return "{}"
+
+    good = '{"name": "x", "dependencies": {"expo-router": "^3.0.0"}}'
+    adapter = _FakeAdapter([
+        _ar([ToolCall("c1", "propose_patch", {"path": "package.json", "new_content": good, "summary": "expo-router ekle"})]),
+        _ar([], text="Yama geçerli ve expo-router ekleyerek hatayı çözer.", stop="stop"),
+    ])
+    out = await run_agentic_autofix(adapter, "m", "log", ["package.json"], "expo", fetch, lambda _s: None)
+    assert out["status"] == "done"
+    assert out["patch"]["new_content"] == good
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_no_patch_text_only_is_no_fix():
+    """Hiç yama önerilmeden model sadece metin dönerse no_fix (pending yok)."""
+    from app.build_autofix_agentic import run_agentic_autofix
+
+    async def fetch(path):
+        return "x"
+
+    adapter = _FakeAdapter([_ar([], text="Bu hatayı çözemiyorum.", stop="stop")])
+    out = await run_agentic_autofix(adapter, "m", "log", ["a"], None, fetch, lambda _s: None)
+    assert out["status"] == "no_fix"
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_invalid_json_then_recover():
     from app.build_autofix_agentic import run_agentic_autofix
 
