@@ -251,8 +251,14 @@ async def eas_webhook(
     signature = request.headers.get("x-eas-webhook-signature", "")
     secret = settings.EAS_WEBHOOK_SECRET
 
-    if secret and not _verify_signature(body, signature, secret):
-        raise HTTPException(status_code=400, detail="EAS webhook imzası geçersiz")
+    # Fail-closed: secret yoksa doğrulama atlanmaz (GitHub webhook'u ile aynı disiplin).
+    if not secret:
+        raise HTTPException(
+            status_code=503,
+            detail="EAS webhook imza doğrulaması kapalı — EAS_WEBHOOK_SECRET yapılandırılmamış",
+        )
+    if not _verify_signature(body, signature, secret):
+        raise HTTPException(status_code=401, detail="EAS webhook imzası geçersiz")
 
     delivery_id = request.headers.get("x-eas-delivery-id", "")
     if delivery_id:
@@ -322,8 +328,14 @@ async def codemagic_webhook(
     signature = request.headers.get("x-codemagic-signature", "")
     secret = settings.CODEMAGIC_WEBHOOK_SECRET
 
-    if secret and not _verify_signature(body, signature, secret):
-        raise HTTPException(status_code=400, detail="Codemagic webhook imzası geçersiz")
+    # Fail-closed: secret yoksa doğrulama atlanmaz (GitHub webhook'u ile aynı disiplin).
+    if not secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Codemagic webhook imza doğrulaması kapalı — CODEMAGIC_WEBHOOK_SECRET yapılandırılmamış",
+        )
+    if not _verify_signature(body, signature, secret):
+        raise HTTPException(status_code=401, detail="Codemagic webhook imzası geçersiz")
 
     delivery_id = request.headers.get("x-codemagic-delivery", "")
     if delivery_id:
