@@ -4,7 +4,7 @@
 
 If you discover a security vulnerability in AppTrack, please **do not open a public issue**.
 
-Instead, email **security@apptrack.io** with:
+Instead, email **devaikaga@gmail.com** with:
 
 - A description of the vulnerability and its potential impact
 - Steps to reproduce (proof-of-concept if possible)
