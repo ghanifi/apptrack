@@ -112,3 +112,111 @@ async def test_anthropic_agentic_merges_consecutive_tool_results():
     assert [b["type"] for b in msgs[2]["content"]] == ["tool_result", "tool_result"]
     assert msgs[2]["content"][0]["tool_use_id"] == "tu1"
     assert msgs[2]["content"][1]["tool_use_id"] == "tu2"
+
+
+def test_validate_patch_json():
+    from app.build_autofix_agentic import validate_patch
+    assert validate_patch("package.json", '{"a": 1}') is None
+    assert validate_patch("package.json", '{"a": 1,}') is not None
+
+
+def test_validate_patch_yaml():
+    from app.build_autofix_agentic import validate_patch
+    assert validate_patch("pubspec.yaml", "name: app\nversion: 1.0.0\n") is None
+    assert validate_patch("pubspec.yaml", "name: app\n  bad: : :\n") is not None
+
+
+def test_validate_patch_gradle_properties():
+    from app.build_autofix_agentic import validate_patch
+    assert validate_patch("gradle.properties", "# yorum\norg.gradle.jvmargs=-Xmx4g\n") is None
+    assert validate_patch("gradle.properties", "bu bir key=value değil satır\n") is not None
+
+
+def test_validate_patch_unknown_type_nonempty():
+    from app.build_autofix_agentic import validate_patch
+    assert validate_patch("ios/Runner/Info.plist.txt", "herhangi içerik") is None
+    assert validate_patch("weird.xyz", "   \n  ") is not None
+
+
+class _FakeAdapter:
+    """Önceden yazılmış AgenticResult dizisini sırayla döndürür; agentic_step imzasını taklit eder."""
+    def __init__(self, results):
+        self._results = list(results)
+        self.calls = 0
+
+    async def agentic_step(self, transcript, tools, model, max_tokens=4000, temperature=0.2):
+        self.calls += 1
+        return self._results.pop(0)
+
+
+def _ar(tool_calls, usage=None, text="", stop="tool_calls"):
+    return AgenticResult(text=text, tool_calls=tool_calls, usage=usage or {"input_tokens": 5, "output_tokens": 5},
+                         stop_reason=stop)
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_read_then_patch_with_critique():
+    from app.build_autofix_agentic import run_agentic_autofix
+    steps = []
+    files = {"package.json": '{"name": "x"}'}
+
+    async def fetch(path):
+        return files.get(path)
+
+    valid = '{"name": "x", "scripts": {"build": "vite"}}'
+    adapter = _FakeAdapter([
+        _ar([ToolCall("c1", "read_file", {"path": "package.json"})]),
+        _ar([ToolCall("c2", "propose_patch", {"path": "package.json", "new_content": valid, "summary": "scripts ekle"})]),
+        _ar([ToolCall("c3", "propose_patch", {"path": "package.json", "new_content": valid, "summary": "scripts ekle"})]),
+    ])
+    out = await run_agentic_autofix(adapter, "m", "log", ["package.json"], "expo", fetch, steps.append)
+    assert out["status"] == "done"
+    assert out["patch"]["path"] == "package.json"
+    assert adapter.calls == 3
+    assert any("öz-eleştiri" in s for s in steps)
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_invalid_json_then_recover():
+    from app.build_autofix_agentic import run_agentic_autofix
+
+    async def fetch(path):
+        return "{}"
+
+    bad = '{"name": "x",}'
+    good = '{"name": "x"}'
+    adapter = _FakeAdapter([
+        _ar([ToolCall("c1", "propose_patch", {"path": "package.json", "new_content": bad, "summary": "s"})]),
+        _ar([ToolCall("c2", "propose_patch", {"path": "package.json", "new_content": good, "summary": "s"})]),
+        _ar([ToolCall("c3", "propose_patch", {"path": "package.json", "new_content": good, "summary": "s"})]),
+    ])
+    out = await run_agentic_autofix(adapter, "m", "log", ["package.json"], None, fetch, lambda _s: None)
+    assert out["status"] == "done" and out["patch"]["new_content"] == good
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_token_budget_abort():
+    from app.build_autofix_agentic import run_agentic_autofix
+
+    async def fetch(path):
+        return "x"
+
+    adapter = _FakeAdapter([
+        _ar([ToolCall("c1", "read_file", {"path": "a"})], usage={"input_tokens": 70000, "output_tokens": 0}),
+    ])
+    out = await run_agentic_autofix(adapter, "m", "log", ["a"], None, fetch, lambda _s: None)
+    assert out["status"] == "aborted" and "token" in out["reason"]
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_tool_unsupported_fallback():
+    from app.build_autofix_agentic import run_agentic_autofix
+    from app.llm.base import LLMError
+
+    class _Boom:
+        async def agentic_step(self, *a, **k):
+            raise LLMError("no tools", status=400)
+
+    out = await run_agentic_autofix(_Boom(), "m", "log", ["a"], None,
+                                    lambda p: None, lambda _s: None)
+    assert out["status"] == "fallback"
