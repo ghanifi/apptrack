@@ -145,9 +145,8 @@ def health():
     }
 
 
-@app.post("/sync")
-async def manual_sync(repo_url: str, branch: str = "main", project_id: str = "manual"):
-    dest = os.path.join(settings.CLONE_BASE_DIR, project_id)
-    loop = asyncio.get_event_loop()
-    clone_path = await loop.run_in_executor(None, clone_or_pull, repo_url, branch, dest)
-    return {"status": "synced", "clone_path": clone_path}
+# NOT: Manuel HTTP /sync ucu kaldırıldı (güvenlik — SSRF/DoS/file:// riski).
+# Senkronizasyon YALNIZCA gateway'in kimlik-doğrulamalı + sahiplik-kontrollü
+# POST /api/projects/{id}/sync ucundan yayınlanan RabbitMQ `project.created`
+# olayıyla tetiklenir (handle_project_created). Servis portları da host'a
+# expose edilmez; yalnız docker ağı içinden erişilir.

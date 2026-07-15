@@ -98,8 +98,8 @@ services:
   # ─── Microservices ────────────────────────────────────────────────────────
   auth-service:
     build: ./backend/services/auth
-    ports:
-      - "8001:8001"
+    expose:
+      - "8001"
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-apptrack}:${POSTGRES_PASSWORD:-apptrack}@postgres:5432/${POSTGRES_DB:-apptrack}
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
@@ -113,8 +113,8 @@ services:
 
   project-service:
     build: ./backend/services/project
-    ports:
-      - "8002:8002"
+    expose:
+      - "8002"
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-apptrack}:${POSTGRES_PASSWORD:-apptrack}@postgres:5432/${POSTGRES_DB:-apptrack}
       - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
@@ -128,8 +128,8 @@ services:
 
   repo-sync-service:
     build: ./backend/services/repo-sync
-    ports:
-      - "8003:8003"
+    expose:
+      - "8003"
     environment:
       - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
       - CLONE_BASE_DIR=/tmp/repos
@@ -144,8 +144,8 @@ services:
 
   framework-detection-service:
     build: ./backend/services/framework-detection
-    ports:
-      - "8004:8004"
+    expose:
+      - "8004"
     environment:
       - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
       - CLONE_BASE_DIR=/tmp/repos
@@ -158,8 +158,8 @@ services:
 
   build-service:
     build: ./backend/services/build
-    ports:
-      - "8006:8006"
+    expose:
+      - "8006"
     environment:
       - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
       - EAS_WEBHOOK_SECRET=${EAS_WEBHOOK_SECRET:-}
@@ -182,8 +182,8 @@ services:
 
   artifact-service:
     build: ./backend/services/artifact
-    ports:
-      - "8007:8007"
+    expose:
+      - "8007"
     environment:
       - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
       - MINIO_ENDPOINT=minio:9000
@@ -204,8 +204,8 @@ services:
 
   store-deploy-service:
     build: ./backend/services/store-deploy
-    ports:
-      - "8008:8008"
+    expose:
+      - "8008"
     environment:
       - RABBITMQ_URL=amqp://${RABBITMQ_USER:-apptrack}:${RABBITMQ_PASS:-apptrack_secret}@rabbitmq:5672/
       - GATEWAY_URL=http://gateway:8000
@@ -219,8 +219,8 @@ services:
 
   preview-service:
     build: ./backend/services/preview
-    ports:
-      - "8005:8005"
+    expose:
+      - "8005"
     depends_on:
       rabbitmq:
         condition: service_healthy
