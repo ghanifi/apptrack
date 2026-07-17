@@ -6,6 +6,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user
+from app.ssrf_guard import is_safe_external_url, GOOGLE_TOKEN_HOSTS
 from app.database import get_db
 from app.routers.credentials import get_user_credential
 
@@ -28,12 +29,17 @@ async def _validate_google_play(service_account_json: str) -> dict:
     if missing:
         return {"valid": False, "error": f"Missing fields: {', '.join(missing)}", "provider": "google_play"}
 
+    # SSRF: token_uri yüklenen SA JSON'dan gelir → yalnız Google token host'larına izin ver.
+    token_uri = sa.get("token_uri", GOOGLE_TOKEN_URL)
+    if not is_safe_external_url(token_uri, GOOGLE_TOKEN_HOSTS):
+        return {"valid": False, "error": "token_uri güvenlik politikasına uymuyor (yalnız Google)", "provider": "google_play"}
+
     try:
         now = int(time.time())
         payload = {
             "iss": sa["client_email"],
             "scope": " ".join(GOOGLE_PLAY_SCOPES),
-            "aud": sa.get("token_uri", GOOGLE_TOKEN_URL),
+            "aud": token_uri,
             "iat": now,
             "exp": now + 3600,
         }
@@ -41,7 +47,7 @@ async def _validate_google_play(service_account_json: str) -> dict:
 
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
-                sa.get("token_uri", GOOGLE_TOKEN_URL),
+                token_uri,
                 data={"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": signed_jwt},
             )
             if resp.status_code == 200:

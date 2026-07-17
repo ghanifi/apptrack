@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
 
 from app.database import get_db
+from app.ssrf_guard import check_external_url, SSRFError
 from app.dependencies import get_current_user
 from app.models import SSOProvider, OrgMember, User, Organization
 from app.crypto import encrypt, decrypt
@@ -93,6 +94,10 @@ async def create_sso_provider(
 
     # OIDC discovery URL dogrula
     if req.provider_type == "oidc" and req.discovery_url:
+        try:
+            check_external_url(req.discovery_url)  # SSRF koruması
+        except SSRFError as exc:
+            raise HTTPException(status_code=400, detail=f"Geçersiz discovery URL: {exc}")
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(req.discovery_url)
@@ -321,6 +326,11 @@ async def sso_authorize(
     if not provider.discovery_url:
         raise HTTPException(status_code=400, detail="OIDC discovery URL yapilandirilmamis")
 
+    try:
+        check_external_url(provider.discovery_url)  # SSRF koruması (depoda eski değer olabilir)
+    except SSRFError as exc:
+        raise HTTPException(status_code=400, detail=f"Geçersiz discovery URL: {exc}")
+
     # Discovery document al
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -387,6 +397,11 @@ async def sso_callback(
     if not provider.discovery_url:
         raise HTTPException(status_code=400, detail="Discovery URL yapilandirilmamis")
 
+    try:
+        check_external_url(provider.discovery_url)  # SSRF koruması
+    except SSRFError as exc:
+        raise HTTPException(status_code=400, detail=f"Geçersiz discovery URL: {exc}")
+
     # Discovery document al
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(provider.discovery_url)
@@ -397,6 +412,15 @@ async def sso_callback(
 
     if not token_endpoint:
         raise HTTPException(status_code=502, detail="OIDC token_endpoint bulunamadi")
+
+    # SSRF: discovery JSON'daki uçlar da saldırgan-etkili olabilir → client_secret
+    # POST'lanmadan ÖNCE doğrula (client_secret sızıntısı + iç-servis erişimi).
+    try:
+        check_external_url(token_endpoint)
+        if userinfo_endpoint:
+            check_external_url(userinfo_endpoint)
+    except SSRFError as exc:
+        raise HTTPException(status_code=400, detail=f"Geçersiz OIDC endpoint: {exc}")
 
     # Token exchange
     client_secret = decrypt(provider.encrypted_client_secret) if provider.encrypted_client_secret else ""

@@ -3,6 +3,7 @@ import logging
 import httpx
 from sqlalchemy import select
 from app.config import settings
+from app.ssrf_guard import is_safe_external_url, SLACK_WEBHOOK_HOSTS, DISCORD_WEBHOOK_HOSTS
 from app.database import AsyncSessionLocal
 from app.models import Notification, NotificationPreference, Build, Project, User, Deployment
 
@@ -21,6 +22,10 @@ EVENT_NOTIFICATION_MAP = {
 
 
 async def _send_slack(webhook_url: str, title: str, body: str):
+    # SSRF: webhook URL kullanıcı-kontrollü → yalnız hooks.slack.com'a izin ver.
+    if not is_safe_external_url(webhook_url, SLACK_WEBHOOK_HOSTS):
+        logger.warning("Slack webhook URL SSRF politikasına takıldı, atlanıyor")
+        return
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(webhook_url, json={
@@ -31,6 +36,10 @@ async def _send_slack(webhook_url: str, title: str, body: str):
 
 
 async def _send_discord(webhook_url: str, title: str, body: str):
+    # SSRF: yalnız Discord webhook host'larına izin ver.
+    if not is_safe_external_url(webhook_url, DISCORD_WEBHOOK_HOSTS):
+        logger.warning("Discord webhook URL SSRF politikasına takıldı, atlanıyor")
+        return
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(webhook_url, json={
