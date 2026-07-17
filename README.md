@@ -1,8 +1,12 @@
 <div align="center">
 
+<img src="docs/assets/dashboard.png" alt="AppTrack Dashboard" width="90%"/>
+
+<br/><br/>
+
 # 📱 AppTrack
 
-### Build, sign, and publish mobile apps to the App Store & Google Play — **without owning a Mac.**
+### Build, sign, and ship mobile apps to the App Store & Google Play — **in 30 minutes, without owning a Mac.**
 
 *The open, self-hostable CI/CD & release platform for mobile teams. A modern alternative to Ionic Appflow.*
 
@@ -10,15 +14,18 @@
 
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-e11d48.svg)](LICENSE)
 [![Frameworks](https://img.shields.io/badge/Frameworks-9-6366f1.svg)](#-supported-frameworks)
+[![iOS](https://img.shields.io/badge/iOS%20builds-without%20a%20Mac-000000.svg?logo=apple)](#-ios-without-a-mac)
+[![AI](https://img.shields.io/badge/AI-BYOK%20%C2%B7%205%20providers-8b5cf6.svg)](#-features)
+[![Security](https://img.shields.io/badge/Security-SAST%20audited-16a34a.svg)](docs/security-audit-2026-07.md)
 [![Backend](https://img.shields.io/badge/Backend-FastAPI-009688.svg)](#-architecture)
 [![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61dafb.svg)](#-architecture)
-[![iOS](https://img.shields.io/badge/iOS%20builds-without%20a%20Mac-000000.svg?logo=apple)](#-ios-without-a-mac)
-[![AI](https://img.shields.io/badge/AI-BYOK%20%C2%B7%205%20providers-8b5cf6.svg)](#-ai-powered-self-healing)
 [![Stars](https://img.shields.io/github/stars/holladevai/apptrackv2?style=social)](https://github.com/holladevai/apptrackv2/stargazers)
 
 <br/>
 
-**[Why AppTrack](#-why-apptrack) · [Features](#-features) · [How it works](#-how-it-works) · [Quick Start](#-quick-start) · [Roadmap](#-roadmap) · [Contact](#-contact)**
+**🌍 English · [🇹🇷 Türkçe](README.tr.md)**
+
+**[Why AppTrack](#-why-apptrack) · [Product Tour](#-product-tour) · [Features](#-features) · [How it Works](#-how-it-works) · [Comparison](#-how-apptrack-compares) · [Quick Start](#-quick-start)**
 
 </div>
 
@@ -26,12 +33,12 @@
 
 ## 💡 Why AppTrack
 
-Shipping a mobile app to the stores is still painful: you juggle build farms, signing certificates, provisioning profiles, store APIs — and for iOS, you're told you **need a Mac**.
+Shipping a mobile app to the stores is still painful: you juggle build farms, signing certificates, provisioning profiles and store APIs — and for iOS, you're told you **need a Mac.**
 
 **AppTrack removes all of that.** Connect a GitHub repo, and AppTrack auto-detects your framework, builds it in the cloud, signs it, and ships it to the App Store and Google Play — from a single dashboard, self-hosted, on infrastructure you control.
 
 > ### 🍏 iOS without a Mac
-> AppTrack's founding purpose: let people **who don't own any Apple hardware** produce **signed iOS builds**. It routes iOS builds to cloud-hosted macOS runners (`macos-26`) and automates the entire signing chain — certificates, profiles, and store submission.
+> AppTrack's founding purpose: let people **who don't own any Apple hardware** produce **signed iOS builds.** It routes iOS builds to cloud-hosted macOS runners (`macos-26`) and automates the entire signing chain — certificates, profiles, and store submission.
 
 <div align="center">
 
@@ -39,11 +46,44 @@ Shipping a mobile app to the stores is still painful: you juggle build farms, si
 |---|---|
 | Buy a Mac for iOS builds | Cloud macOS runners — **no Mac needed** |
 | Wrestle with certs & profiles | **Signing Doctor** diagnoses & auto-repairs |
-| Build fails → you debug for hours | **AI self-healing** opens a fix PR for you |
+| Build fails → debug for hours | **AI self-healing** opens a fix PR for you |
 | Separate tools for build & deploy | **One platform**, idea → store |
 | Per-seat SaaS pricing | **Self-host, bring your own keys** |
 
 </div>
+
+---
+
+## 📸 Product Tour
+
+<table>
+<tr>
+<td width="50%" valign="top" align="center">
+<img src="docs/assets/projects.png" alt="Projects — multi-framework" width="100%"/>
+<br/><b>One dashboard, every framework</b><br/>
+<sub>Flutter, React Native, Expo — auto-detected and colour-coded, side by side.</sub>
+</td>
+<td width="50%" valign="top" align="center">
+<img src="docs/assets/project-detail.png" alt="Project pipeline" width="100%"/>
+<br/><b>A visual pipeline, end to end</b><br/>
+<sub>Repo → Framework → Build → Deploy, with live status and staged rollout controls.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top" align="center">
+<img src="docs/assets/usage.png" alt="Usage & billing" width="100%"/>
+<br/><b>Costs & quotas, always visible</b><br/>
+<sub>Built-in cost tracking and a generous free tier — no surprise bills.</sub>
+</td>
+<td width="50%" valign="top" align="center">
+<img src="docs/assets/login.png" alt="Sign in" width="100%"/>
+<br/><b>Clean, modern, self-hosted</b><br/>
+<sub>Email or GitHub sign-in. Your data and credentials never leave your servers.</sub>
+</td>
+</tr>
+</table>
+
+<div align="center"><sub>🔎 See the full <a href="docs/assets/landing.png">marketing landing page</a> rendered from the app.</sub></div>
 
 ---
 
@@ -63,7 +103,7 @@ Shipping a mobile app to the stores is still painful: you juggle build farms, si
 - Fernet-encrypted credential vault (zero plaintext)
 - HMAC-verified, replay-protected webhooks
 - Immutable, hash-chained audit log (SOC2-ready)
-- Builds run in **your** repo, never on ours
+- **Independently [SAST-audited](docs/security-audit-2026-07.md)**
 
 ### 🩺 Signing Doctor
 - Project-scoped iOS signing diagnosis
@@ -77,7 +117,7 @@ Shipping a mobile app to the stores is still painful: you juggle build farms, si
 - Build fails → **agentic AI opens a fix PR**
 - Reads your repo, patches, validates, self-critiques
 - **BYOK** — Claude · OpenAI · Gemini · OpenRouter · NVIDIA
-- Pick any model, free or paid — your keys, your cost
+- Any model, free or paid — your keys, your cost
 
 ### 🚦 Safe releases
 - Staged rollout: 10% → 25% → 50% → 100%
@@ -112,7 +152,7 @@ Shipping a mobile app to the stores is still painful: you juggle build farms, si
 
 ---
 
-## 🔭 How it works
+## 🔭 How it Works
 
 ```mermaid
 flowchart LR
@@ -156,7 +196,33 @@ flowchart TB
     RMQ --> S8[store-deploy :8008]
 ```
 
-**Stack:** Python/FastAPI · SQLAlchemy 2.0 (async) · PostgreSQL · RabbitMQ · Redis · MinIO · React/TypeScript/Vite/Tailwind · Docker Compose.
+**Stack:** Python/FastAPI · SQLAlchemy 2.0 (async) · PostgreSQL · RabbitMQ · Redis · MinIO · React/TypeScript/Vite/Tailwind · Docker Compose. Microservice ports are network-isolated; only the gateway and dashboard are exposed.
+
+---
+
+## 🥊 How AppTrack Compares
+
+**Our claim:** AppTrack is the only platform that is **self-hostable, multi-framework, AI-self-healing, and free to start** — all at once.
+
+<div align="center">
+
+| Capability | **AppTrack** | Ionic Appflow | Codemagic | EAS (Expo) | Bitrise |
+|---|:---:|:---:|:---:|:---:|:---:|
+| iOS builds without a Mac | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Self-hostable** (your infra) | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Free / low-cost tier** | ✅ | 🟡 limited | 🟡 limited | 🟡 limited | 🟡 limited |
+| Multi-framework (9) | ✅ | 🟡 Ionic-first | ✅ | 🟡 Expo-first | ✅ |
+| **AI self-healing** (writes fix PRs) | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Bring-your-own AI keys** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Signing Doctor (diagnose + repair) | ✅ | ❌ | 🟡 | 🟡 managed | ❌ |
+| Staged rollout + auto-halt | ✅ | 🟡 | ❌ | 🟡 | ❌ |
+| OTA live updates | ✅ | 🟡 paid | ❌ | ✅ | ❌ |
+| Bring your own runners | ✅ | ❌ | ✅ | ❌ | ✅ |
+| Built-in cost tracking | ✅ | 🟡 | 🟡 | 🟡 | 🟡 |
+
+<sub>✅ built-in · 🟡 partial / paid / plan-gated · ❌ not available. Competitor capabilities as generally advertised; corrections welcome via PR.</sub>
+
+</div>
 
 ---
 
@@ -189,28 +255,13 @@ make lint-frontend   # eslint
 
 ---
 
-## 🧭 Moat — what makes AppTrack different
-
-<div align="center">
-
-| Pillar | What it does |
-|--------|--------------|
-| 🖥️ **Self-hosted runners** | Bring your own build machines — cut cost, keep control |
-| 🤖 **Self-healing pipeline** | Deterministic fixes **+ agentic AI** that writes fix PRs |
-| 🚦 **Staged rollout + auto-halt** | Ship gradually, stop automatically when health degrades |
-| 🩺 **Signing Doctor** | Diagnose & repair iOS signing in one click |
-| 🍏 **iOS without a Mac** | Signed iOS builds on cloud macOS — the founding principle |
-
-</div>
-
----
-
 ## 🗺️ Roadmap
 
 - ✅ Multi-provider AI gateway (BYOK) + selectable free/paid models
 - ✅ Agentic autofix — AI reads repo, patches, validates, opens PR *(live-proven)*
 - ✅ Signing Doctor (iOS signing diagnosis + one-click repair)
 - ✅ Staged rollout + auto-halt, OTA updates, immutable audit
+- ✅ Independent SAST security audit — [report](docs/security-audit-2026-07.md)
 - 🔜 **AI App Factory** — describe an idea, AppTrack generates the app, you preview & publish
 - 🔜 Signed IPA end-to-end demo · streaming AI · hosted runner wizard
 
@@ -218,29 +269,25 @@ make lint-frontend   # eslint
 
 ## 🔒 Security
 
+AppTrack takes security seriously and has passed an **[independent SAST audit](docs/security-audit-2026-07.md)** (13 vulnerability classes, findings remediated).
+
+Highlights: Fernet credential encryption (PBKDF2, 100k iterations, key rotation) · HMAC-verified webhooks · immutable hash-chained audit log · SSRF-guarded outbound requests · builds isolated to your own repositories.
+
 Found a vulnerability? Please **don't** open a public issue — see [SECURITY.md](SECURITY.md) and email **devaikaga@gmail.com**.
 
-Highlights: Fernet credential encryption (PBKDF2, 100k iterations, key rotation) · HMAC-verified webhooks · immutable hash-chained audit log · builds isolated to your own repositories.
-
 ---
 
-## 📬 Contact
+## 📬 Contact & License
 
-Questions, commercial licensing, or partnership?
+Questions, commercial licensing, or partnership? **📧 devaikaga@gmail.com**
 
-**📧 devaikaga@gmail.com**
-
-If AppTrack is useful to you, please ⭐ **star the repo** — it genuinely helps.
-
----
-
-## 📜 License
-
-AppTrack is released under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**.
-
-You may **use, modify, and share** it freely for **any noncommercial purpose** — personal projects, research, education, evaluation. **Commercial use is not permitted** without a separate commercial license. To obtain one, contact **devaikaga@gmail.com**.
+AppTrack is released under the **[PolyForm Noncommercial License 1.0.0](LICENSE)** — free to **use, modify, and share** for any **noncommercial** purpose (personal projects, research, education, evaluation). **Commercial use requires a separate license** — contact the email above.
 
 <div align="center">
 <br/>
+
+### If AppTrack is useful to you, please ⭐ star the repo — it genuinely helps.
+
 <sub>Built for mobile teams who'd rather ship than fight their toolchain.</sub>
+
 </div>
