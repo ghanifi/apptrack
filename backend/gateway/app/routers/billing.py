@@ -34,11 +34,18 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
     Raises:
         400: Geçersiz imza veya JSON formatı
+        503: Webhook secret yapılandırılmamış (fail-closed)
     """
     body = await request.body()
     sig = request.headers.get("stripe-signature", "")
 
-    if STRIPE_WEBHOOK_SECRET and not verify_stripe_signature(body, sig, STRIPE_WEBHOOK_SECRET):
+    # Fail-closed (diğer webhook'larla — EAS/Codemagic/ASC — aynı disiplin, H1):
+    # secret yoksa doğrulama ATLANMAZ; aksi halde saldırgan gövdeden plan set eder
+    # (metadata.plan) → bedava enterprise upgrade.
+    if not STRIPE_WEBHOOK_SECRET:
+        logger.error("Stripe webhook imza doğrulaması kapalı — STRIPE_WEBHOOK_SECRET yapılandırılmamış")
+        raise HTTPException(status_code=503, detail="Stripe webhook doğrulaması yapılandırılmamış")
+    if not verify_stripe_signature(body, sig, STRIPE_WEBHOOK_SECRET):
         logger.warning("Stripe webhook signature verification failed")
         raise HTTPException(status_code=400, detail="Invalid signature")
 

@@ -58,7 +58,8 @@ async def handle_checkout_completed(db: AsyncSession, event_data: dict):
         logger.warning("Checkout completed but missing email or price_id")
         return
 
-    plan = STRIPE_PLAN_MAP.get(price_id) or metadata.get("plan", "pro")
+    # Bilinmeyen price_id/metadata -> en düşük tier (yetki yükseltmeyi önler)
+    plan = STRIPE_PLAN_MAP.get(price_id) or metadata.get("plan", "free")
     await _update_user_plan(db, customer_email, plan, f"checkout:{price_id}")
 
     if customer_id or subscription_id:
@@ -84,7 +85,7 @@ async def handle_subscription_updated(db: AsyncSession, event_data: dict):
         return
 
     price_id = items[0].get("price", {}).get("id", "")
-    plan = STRIPE_PLAN_MAP.get(price_id, "pro")
+    plan = STRIPE_PLAN_MAP.get(price_id, "free")  # bilinmeyen -> en düşük tier
     status = event_data.get("status", "")
 
     if status in ("active", "trialing"):

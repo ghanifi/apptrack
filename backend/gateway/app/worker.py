@@ -164,7 +164,17 @@ async def _process_build_finished(payload: dict):
                     result = await db.execute(select(Build).where(Build.id == build_id))
                     finished_build = result.scalar_one_or_none()
                     if finished_build:
-                        await record_build_cost(db, finished_build)
+                        # record_build_cost imzası: (db, user_id, provider, platform).
+                        # Eski çağrı (db, build) her seferinde TypeError atıyordu →
+                        # maliyet hiç kaydedilmiyor, aylık bütçe cap'i uygulanmıyordu.
+                        proj_res = await db.execute(
+                            select(Project).where(Project.id == finished_build.project_id)
+                        )
+                        project = proj_res.scalar_one_or_none()
+                        if project:
+                            await record_build_cost(
+                                db, project.owner_id, finished_build.provider, finished_build.platform
+                            )
                     break
                 except Exception as cost_exc:
                     if _attempt == _MAX_COST_RETRIES - 1:
