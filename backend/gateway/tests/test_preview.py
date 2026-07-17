@@ -19,6 +19,7 @@ from httpx import AsyncClient, ASGITransport
 from fastapi import FastAPI
 
 from app.routers.preview import router
+from app.database import get_db
 from app.dependencies import get_current_user
 
 
@@ -31,6 +32,16 @@ def _build_app(user_override: dict) -> FastAPI:
     app = FastAPI()
     app.include_router(router, prefix="/api/preview")
     app.dependency_overrides[get_current_user] = lambda: user_override
+
+    async def _fake_db():
+        db = AsyncMock()
+        async def _get(model, oid):
+            proj = MagicMock()
+            proj.owner_id = user_override["id"]
+            return proj
+        db.get.side_effect = _get
+        yield db
+    app.dependency_overrides[get_db] = _fake_db
     return app
 
 

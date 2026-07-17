@@ -60,7 +60,7 @@ class TestCreateFlag:
 
     @pytest.mark.anyio
     @patch("app.routers.flags.invalidate_cache")
-    async def test_create_flag_success(self, mock_invalidate, test_user, mock_db):
+    async def test_create_flag_success(self, mock_invalidate, admin_user, mock_db):
         created_flag = _make_flag(name="new_feature", enabled=True)
         mock_db.refresh = AsyncMock(return_value=None)
 
@@ -72,7 +72,7 @@ class TestCreateFlag:
 
         mock_db.refresh.side_effect = fake_refresh
 
-        app = _build_app(test_user, mock_db)
+        app = _build_app(admin_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.post(
@@ -91,7 +91,7 @@ class TestCreateFlag:
 
     @pytest.mark.anyio
     @patch("app.routers.flags.invalidate_cache")
-    async def test_create_flag_defaults(self, mock_invalidate, test_user, mock_db):
+    async def test_create_flag_defaults(self, mock_invalidate, admin_user, mock_db):
         """Flag created with defaults: enabled=False, percentage=0."""
         async def fake_refresh(obj):
             obj.id = "flag-002"
@@ -100,7 +100,7 @@ class TestCreateFlag:
 
         mock_db.refresh.side_effect = fake_refresh
 
-        app = _build_app(test_user, mock_db)
+        app = _build_app(admin_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.post("/api/flags", json={"name": "beta_ui"})
@@ -111,9 +111,9 @@ class TestCreateFlag:
         mock_db.commit.assert_awaited_once()
 
     @pytest.mark.anyio
-    async def test_create_flag_missing_name(self, test_user, mock_db):
+    async def test_create_flag_missing_name(self, admin_user, mock_db):
         """Name is required."""
-        app = _build_app(test_user, mock_db)
+        app = _build_app(admin_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.post("/api/flags", json={})
@@ -130,13 +130,13 @@ class TestUpdateFlag:
 
     @pytest.mark.anyio
     @patch("app.routers.flags.invalidate_cache")
-    async def test_toggle_flag_enable(self, mock_invalidate, test_user, mock_db):
+    async def test_toggle_flag_enable(self, mock_invalidate, admin_user, mock_db):
         flag = _make_flag(name="dark_mode", enabled=False)
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = flag
         mock_db.execute.return_value = mock_result
 
-        app = _build_app(test_user, mock_db)
+        app = _build_app(admin_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.patch("/api/flags/dark_mode", json={"enabled": True})
@@ -151,13 +151,13 @@ class TestUpdateFlag:
 
     @pytest.mark.anyio
     @patch("app.routers.flags.invalidate_cache")
-    async def test_toggle_flag_disable(self, mock_invalidate, test_user, mock_db):
+    async def test_toggle_flag_disable(self, mock_invalidate, admin_user, mock_db):
         flag = _make_flag(name="dark_mode", enabled=True)
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = flag
         mock_db.execute.return_value = mock_result
 
-        app = _build_app(test_user, mock_db)
+        app = _build_app(admin_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.patch("/api/flags/dark_mode", json={"enabled": False})
@@ -167,13 +167,13 @@ class TestUpdateFlag:
 
     @pytest.mark.anyio
     @patch("app.routers.flags.invalidate_cache")
-    async def test_update_flag_percentage(self, mock_invalidate, test_user, mock_db):
+    async def test_update_flag_percentage(self, mock_invalidate, admin_user, mock_db):
         flag = _make_flag(name="gradual_rollout", percentage=0)
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = flag
         mock_db.execute.return_value = mock_result
 
-        app = _build_app(test_user, mock_db)
+        app = _build_app(admin_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.patch("/api/flags/gradual_rollout", json={"percentage": 25})
@@ -183,13 +183,13 @@ class TestUpdateFlag:
 
     @pytest.mark.anyio
     @patch("app.routers.flags.invalidate_cache")
-    async def test_update_flag_description(self, mock_invalidate, test_user, mock_db):
+    async def test_update_flag_description(self, mock_invalidate, admin_user, mock_db):
         flag = _make_flag(name="beta", description="Old desc")
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = flag
         mock_db.execute.return_value = mock_result
 
-        app = _build_app(test_user, mock_db)
+        app = _build_app(admin_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.patch("/api/flags/beta", json={"description": "Updated desc"})
@@ -198,12 +198,12 @@ class TestUpdateFlag:
         assert flag.description == "Updated desc"
 
     @pytest.mark.anyio
-    async def test_update_flag_not_found(self, test_user, mock_db):
+    async def test_update_flag_not_found(self, admin_user, mock_db):
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
         mock_db.execute.return_value = mock_result
 
-        app = _build_app(test_user, mock_db)
+        app = _build_app(admin_user, mock_db)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.patch("/api/flags/nonexistent", json={"enabled": True})

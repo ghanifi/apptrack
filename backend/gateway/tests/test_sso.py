@@ -16,6 +16,15 @@ from httpx import AsyncClient, ASGITransport
 from fastapi import FastAPI, Request
 
 from app.routers.sso import router
+
+import pytest as _pytest_ssrf
+@_pytest_ssrf.fixture(autouse=True)
+def _bypass_ssrf_guard():
+    # SSRF guard SSO akış testlerinde no-op (guard birim testi ayrı; example.com
+    # host'ları gerçek DNS çözümüne takılmasın).
+    with patch("app.routers.sso.check_external_url", side_effect=lambda url, *a, **k: url):
+        yield
+
 from app.dependencies import get_current_user
 from app.database import get_db
 

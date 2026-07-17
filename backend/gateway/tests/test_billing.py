@@ -267,7 +267,7 @@ async def test_stripe_webhook_valid(mock_db):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        with patch("app.routers.billing.STRIPE_WEBHOOK_SECRET", ""):
+        with patch("app.routers.billing.STRIPE_WEBHOOK_SECRET", "whsec_test"), patch("app.routers.billing.verify_stripe_signature", return_value=True):
             with patch("app.routers.billing.handle_checkout_completed", new_callable=AsyncMock) as mock_handler:
                 resp = await ac.post(
                     "/api/billing/webhook/stripe",
@@ -293,7 +293,7 @@ async def test_stripe_webhook_invalid_json(mock_db):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        with patch("app.routers.billing.STRIPE_WEBHOOK_SECRET", ""):
+        with patch("app.routers.billing.STRIPE_WEBHOOK_SECRET", "whsec_test"), patch("app.routers.billing.verify_stripe_signature", return_value=True):
             resp = await ac.post(
                 "/api/billing/webhook/stripe",
                 content="this is not json{{{",
@@ -321,7 +321,7 @@ async def test_stripe_webhook_unhandled_event(mock_db):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        with patch("app.routers.billing.STRIPE_WEBHOOK_SECRET", ""):
+        with patch("app.routers.billing.STRIPE_WEBHOOK_SECRET", "whsec_test"), patch("app.routers.billing.verify_stripe_signature", return_value=True):
             resp = await ac.post(
                 "/api/billing/webhook/stripe",
                 content=json.dumps(event_payload),
