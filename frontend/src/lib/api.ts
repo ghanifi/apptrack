@@ -6,6 +6,7 @@ import { env } from '@/lib/env'
 export const api = axios.create({
   baseURL: env.API_URL,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true, // HttpOnly refresh cookie'sinin set/gönderimi için
 })
 
 api.interceptors.request.use((config) => {

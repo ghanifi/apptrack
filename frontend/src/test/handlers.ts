@@ -7,22 +7,23 @@ export const handlers = [
     if (body.email === 'test@example.com' && body.password === 'password123') {
       return HttpResponse.json({
         access_token: 'mock-access-token',
-        refresh_token: 'mock-refresh-token',
+        refresh_token: null, // refresh token HttpOnly cookie'de döner
         user: { id: '1', email: 'test@example.com', name: 'Test User' },
       })
     }
     return HttpResponse.json({ detail: 'Invalid credentials' }, { status: 401 })
   }),
 
-  http.post('/api/auth/refresh', async ({ request }) => {
-    const body = (await request.json()) as { refresh_token: string }
-    if (body.refresh_token === 'valid-refresh-token') {
-      return HttpResponse.json({
-        access_token: 'new-access-token',
-        refresh_token: 'new-refresh-token',
-      })
-    }
-    return HttpResponse.json({ detail: 'Invalid refresh token' }, { status: 401 })
+  // Refresh cookie tabanlı — istek gövdesiz gelir, cookie'yi tarayıcı gönderir.
+  http.post('/api/auth/refresh', () => {
+    return HttpResponse.json({
+      access_token: 'new-access-token',
+      refresh_token: null, // yeni refresh HttpOnly cookie'de döner
+    })
+  }),
+
+  http.post('/api/auth/logout', () => {
+    return HttpResponse.json({ status: 'logged_out' })
   }),
 
   // Projects

@@ -26,8 +26,8 @@ export default function GitHubCallbackPage() {
     api
       .post(`/auth/github/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`)
       .then((res) => {
-        const { access_token, refresh_token, user } = res.data
-        setAuth(access_token, refresh_token, user)
+        const { access_token, user } = res.data
+        setAuth(access_token, user)
         navigate('/dashboard', { replace: true })
       })
       .catch((err) => {

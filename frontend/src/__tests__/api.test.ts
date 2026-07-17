@@ -19,7 +19,7 @@ describe('api module', () => {
 
   it('adds Authorization header when token is set', async () => {
     const user = { id: '1', email: 'test@example.com', name: 'Test User' }
-    useAuthStore.getState().setAuth('test-bearer-token', 'refresh-tok', user)
+    useAuthStore.getState().setAuth('test-bearer-token', user)
 
     let capturedAuth = ''
     server.use(
@@ -49,7 +49,7 @@ describe('api module', () => {
 
   it('retries on 401 with successful token refresh', async () => {
     const user = { id: '1', email: 'test@example.com', name: 'Test User' }
-    useAuthStore.getState().setAuth('expired-token', 'valid-refresh-token', user)
+    useAuthStore.getState().setAuth('expired-token', user)
 
     let callCount = 0
     server.use(
@@ -74,7 +74,7 @@ describe('api module', () => {
 
   it('clears auth and redirects on refresh failure', async () => {
     const user = { id: '1', email: 'test@example.com', name: 'Test User' }
-    useAuthStore.getState().setAuth('expired-token', 'also-expired-refresh', user)
+    useAuthStore.getState().setAuth('expired-token', user)
 
     // Mock window.location.href
     const originalHref = window.location.href
@@ -101,13 +101,12 @@ describe('api module', () => {
     // Auth should be cleared
     const state = useAuthStore.getState()
     expect(state.token).toBeNull()
-    expect(state.refreshToken).toBeNull()
     expect(state.user).toBeNull()
   })
 
   it('does not retry on non-401 errors', async () => {
     const user = { id: '1', email: 'test@example.com', name: 'Test User' }
-    useAuthStore.getState().setAuth('valid-token', 'refresh-tok', user)
+    useAuthStore.getState().setAuth('valid-token', user)
 
     server.use(
       http.get('/api/server-error', () => {

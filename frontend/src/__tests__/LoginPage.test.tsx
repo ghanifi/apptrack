@@ -63,11 +63,11 @@ describe('LoginPage', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/')
     })
 
-    // LoginPage calls setAuth(access_token, user) with 2 args,
-    // but the store signature is setAuth(token, refreshToken, user).
-    // So the token gets set, but user ends up in the refreshToken slot.
+    // LoginPage setAuth(access_token, user) çağırır; refresh token gövdede
+    // dönmez (HttpOnly cookie'de). Token + kullanıcı store'a doğru yerleşmeli.
     const state = useAuthStore.getState()
     expect(state.token).toBe('mock-access-token')
+    expect(state.user).toEqual({ id: '1', email: 'test@example.com', name: 'Test User' })
   })
 
   it('shows loading state while submitting', async () => {

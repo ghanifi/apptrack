@@ -41,7 +41,7 @@ class AuthResponse(BaseModel):
 
 class TokenRefreshResponse(BaseModel):
     access_token: str
-    refresh_token: str
+    refresh_token: Optional[str] = None  # HttpOnly cookie'de tutulur; gövdede dönmez
     token_type: str = "bearer"
     expires_in: Optional[int] = None
 
@@ -57,6 +57,26 @@ def create_access_token(data: dict, fingerprint: str | None = None) -> str:
 def create_refresh_token(data: dict) -> str:
     expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     return jwt.encode({**data, "exp": expire, "type": "refresh"}, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+# Refresh token XSS ile çalınamasın diye JS'e AÇILMAZ; HttpOnly cookie'de tutulur.
+# Path=/api/auth: cookie yalnız auth uçlarına gönderilir (saldırı yüzeyi daralır).
+REFRESH_COOKIE_NAME = "apptrack_refresh"
+
+
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        REFRESH_COOKIE_NAME, token,
+        httponly=True,
+        secure=settings.FRONTEND_URL.startswith("https"),
+        samesite="lax",
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+        path="/api/auth",
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(REFRESH_COOKIE_NAME, path="/api/auth")
 
 
 class RegisterRequest(BaseModel):
@@ -97,7 +117,7 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
 
 @router.post("/login", response_model=AuthResponse)
 @limiter.limit("5/minute")
-async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(request: Request, response: Response, req: LoginRequest, db: AsyncSession = Depends(get_db)):
     """E-posta ve şifre ile kullanıcı girişi yapar.
 
     Kimlik doğrulama başarılı olursa access ve refresh token döndürür.
@@ -116,9 +136,10 @@ async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(
     access_token = create_access_token(token_data, fingerprint=fp)
     refresh_token = create_refresh_token(token_data)
     await record_audit(action="user.login", resource_type="user", resource_id=user.id, user_id=user.id, request=request)
+    _set_refresh_cookie(response, refresh_token)
     return {
         "access_token": access_token,
-        "refresh_token": refresh_token,
+        "refresh_token": None,  # HttpOnly cookie'de — JS'e verilmez (XSS koruması)
         "token_type": "bearer",
         "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         "user": _user_response(user),
@@ -161,6 +182,7 @@ def github_oauth_redirect():
 @router.post("/github/callback", response_model=AuthResponse)
 async def github_callback(
     code: str,
+    response: Response,
     state: str | None = None,
     request: Request = None,
     db: AsyncSession = Depends(get_db),
@@ -260,9 +282,10 @@ async def github_callback(
     access_token = create_access_token(token_data, fingerprint=fp)
     refresh_token = create_refresh_token(token_data)
     await record_audit(action="user.github_login", resource_type="user", resource_id=user.id, user_id=user.id, request=request)
+    _set_refresh_cookie(response, refresh_token)
     return {
         "access_token": access_token,
-        "refresh_token": refresh_token,
+        "refresh_token": None,  # HttpOnly cookie'de — JS'e verilmez (XSS koruması)
         "token_type": "bearer",
         "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         "user": _user_response(user),
@@ -294,23 +317,30 @@ async def get_current_user_profile(
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str | None = None
 
 
 @router.post("/refresh", response_model=TokenRefreshResponse)
 @limiter.limit("10/minute")
-async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession = Depends(get_db)):
-    """Refresh token ile yeni access ve refresh token üretir.
+async def refresh_token(request: Request, response: Response,
+                        req: RefreshRequest | None = None, db: AsyncSession = Depends(get_db)):
+    """Refresh token ile yeni access token üretir; yeni refresh token cookie'ye yazılır.
 
-    Süresi dolmuş access token'ı yenilemek için kullanılır.
-    Geçerli bir refresh token gereklidir, token tipi kontrol edilir.
+    Refresh token öncelikle HttpOnly cookie'den okunur (XSS koruması); yoksa
+    geriye-uyum için gövdedeki refresh_token'a düşer. Yeni refresh yalnız cookie'ye
+    yazılır, gövdede DÖNMEZ.
 
     Raises:
-        401: Geçersiz veya süresi dolmuş refresh token
+        401: Refresh token eksik, geçersiz veya süresi dolmuş
         401: Kullanıcı bulunamadı
     """
+    supplied = request.cookies.get(REFRESH_COOKIE_NAME)
+    if not supplied and req is not None:
+        supplied = req.refresh_token
+    if not supplied:
+        raise HTTPException(status_code=401, detail="Missing refresh token")
     try:
-        payload = jwt.decode(req.refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(supplied, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
     if payload.get("type") != "refresh":
@@ -324,9 +354,21 @@ async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession 
     fp = generate_fingerprint(request)
     new_access = create_access_token(token_data, fingerprint=fp)
     new_refresh = create_refresh_token(token_data)
+    _set_refresh_cookie(response, new_refresh)
     return {
         "access_token": new_access,
-        "refresh_token": new_refresh,
+        "refresh_token": None,  # HttpOnly cookie'de — JS'e verilmez
         "token_type": "bearer",
         "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     }
+
+
+@router.post("/logout")
+async def logout(response: Response):
+    """Oturumu kapatır — HttpOnly refresh cookie'sini siler.
+
+    Access token istemci tarafında zaten atılır; bu uç sunucu tarafındaki
+    refresh cookie'sini temizler.
+    """
+    _clear_refresh_cookie(response)
+    return {"status": "logged_out"}

@@ -10,41 +10,45 @@ interface User {
 
 interface AuthState {
   token: string | null
-  refreshToken: string | null
   user: User | null
   isLoading: boolean
-  setAuth: (token: string, refreshToken: string, user: User) => void
+  setAuth: (token: string, user: User) => void
   clearAuth: () => void
   refreshAccessToken: () => Promise<boolean>
 }
 
+// Refresh token artık localStorage'da DEĞİL — sunucuda HttpOnly cookie'de tutulur
+// (XSS ile çalınamaz). Burada yalnız kısa ömürlü access token + kullanıcı saklanır.
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       token: null,
-      refreshToken: null,
       user: null,
       isLoading: false,
-      setAuth: (token, refreshToken, user) => set({ token, refreshToken, user, isLoading: false }),
-      clearAuth: () => set({ token: null, refreshToken: null, user: null, isLoading: false }),
+      setAuth: (token, user) => set({ token, user, isLoading: false }),
+      clearAuth: () => {
+        // Sunucudaki HttpOnly refresh cookie'sini de temizle (fire-and-forget).
+        // .catch(): ağ/logout hatası önemsiz — istemci durumu yine temizlenir.
+        void fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
+        set({ token: null, user: null, isLoading: false })
+      },
       refreshAccessToken: async () => {
-        const { refreshToken } = useAuthStore.getState()
-        if (!refreshToken) return false
         try {
           const res = await fetch('/api/auth/refresh', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ refresh_token: refreshToken }),
+            credentials: 'include', // HttpOnly refresh cookie'sini gönder
           })
           if (!res.ok) return false
           const data = await res.json()
-          useAuthStore.getState().setAuth(data.access_token, data.refresh_token ?? refreshToken, useAuthStore.getState().user!)
+          const user = useAuthStore.getState().user
+          if (!user) return false
+          useAuthStore.getState().setAuth(data.access_token, user)
           return true
         } catch {
           return false
         }
       },
     }),
-    { name: 'apptrack-auth' }
+    { name: 'apptrack-auth', partialize: (s) => ({ token: s.token, user: s.user }) }
   )
 )

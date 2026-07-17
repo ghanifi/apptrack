@@ -27,7 +27,7 @@ afterAll(() => server.close())
 
 describe('DashboardPage', () => {
   it('renders welcome message with user name', () => {
-    useAuthStore.getState().setAuth('tok', 'rtok', {
+    useAuthStore.getState().setAuth('tok', {
       id: '1',
       email: 'test@example.com',
       name: 'John',
@@ -46,7 +46,7 @@ describe('DashboardPage', () => {
   })
 
   it('shows project list after data loads', async () => {
-    useAuthStore.getState().setAuth('tok', 'rtok', {
+    useAuthStore.getState().setAuth('tok', {
       id: '1',
       email: 'test@example.com',
       name: 'Test User',
