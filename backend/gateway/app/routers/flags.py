@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
 from app.dependencies import get_current_user
+from app.authz import require_admin_dep
 from app.database import get_db
 from app.models import FeatureFlag
 from app.feature_flags import invalidate_cache, is_enabled
@@ -56,7 +57,7 @@ async def list_flags(
     ]
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_admin_dep)])
 async def create_flag(
     req: FlagCreate,
     current_user: dict = Depends(get_current_user),
@@ -83,7 +84,7 @@ async def create_flag(
     return {"id": flag.id, "name": flag.name, "enabled": flag.enabled}
 
 
-@router.patch("/{flag_name}")
+@router.patch("/{flag_name}", dependencies=[Depends(require_admin_dep)])
 async def update_flag(
     flag_name: str,
     req: FlagUpdate,

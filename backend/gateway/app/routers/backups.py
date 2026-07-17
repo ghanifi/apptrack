@@ -8,6 +8,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from app.database import get_db
+from app.authz import require_admin_dep
 from app.models import BackupJob
 from app.dependencies import get_current_user
 
@@ -27,7 +28,7 @@ class RestoreVerifyRequest(BaseModel):
     verify_checksum: bool = True
 
 
-@router.post("/trigger")
+@router.post("/trigger", dependencies=[Depends(require_admin_dep)])
 async def trigger_backup(
     req: BackupRequest,
     user=Depends(get_current_user),
@@ -92,7 +93,7 @@ async def trigger_backup(
     }
 
 
-@router.get("/list")
+@router.get("/list", dependencies=[Depends(require_admin_dep)])
 async def list_backups(
     backup_type: str | None = None,
     page: int = 1,
@@ -143,7 +144,7 @@ async def list_backups(
     }
 
 
-@router.get("/{backup_id}")
+@router.get("/{backup_id}", dependencies=[Depends(require_admin_dep)])
 async def get_backup(
     backup_id: str,
     user=Depends(get_current_user),
@@ -177,7 +178,7 @@ async def get_backup(
     }
 
 
-@router.post("/verify-restore")
+@router.post("/verify-restore", dependencies=[Depends(require_admin_dep)])
 async def verify_restore(
     req: RestoreVerifyRequest,
     user=Depends(get_current_user),
@@ -237,7 +238,7 @@ async def verify_restore(
     return verification
 
 
-@router.get("/stats/summary")
+@router.get("/stats/summary", dependencies=[Depends(require_admin_dep)])
 async def backup_stats(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

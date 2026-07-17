@@ -8,6 +8,7 @@ from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from app.database import get_db
+from app.authz import require_admin_dep
 from app.models import ImmutableAuditEntry
 from app.dependencies import get_current_user
 
@@ -90,7 +91,7 @@ async def append_immutable_entry(
     return entry
 
 
-@router.get("/entries")
+@router.get("/entries", dependencies=[Depends(require_admin_dep)])
 async def list_audit_entries(
     page: int = 1,
     page_size: int = 50,
@@ -148,7 +149,7 @@ async def list_audit_entries(
     }
 
 
-@router.get("/verify")
+@router.get("/verify", dependencies=[Depends(require_admin_dep)])
 async def verify_chain_integrity(
     limit: int = 1000,
     user=Depends(get_current_user),
@@ -212,7 +213,7 @@ async def verify_chain_integrity(
     }
 
 
-@router.get("/entry/{sequence_number}")
+@router.get("/entry/{sequence_number}", dependencies=[Depends(require_admin_dep)])
 async def get_audit_entry(
     sequence_number: int,
     user=Depends(get_current_user),

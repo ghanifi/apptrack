@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, update, and_, func
 from app.dependencies import get_current_user
+from app.authz import require_admin_dep
 from app.database import get_db
 from app.models import (
     AuditLog, Build, Deployment, Credential, ImmutableAuditEntry,
@@ -40,7 +41,7 @@ async def get_retention_policies(current_user: dict = Depends(get_current_user))
     }
 
 
-@router.post("/purge-expired")
+@router.post("/purge-expired", dependencies=[Depends(require_admin_dep)])
 async def purge_expired_data(
     dry_run: bool = True,
     current_user: dict = Depends(get_current_user),
@@ -100,7 +101,7 @@ async def purge_expired_data(
     }
 
 
-@router.post("/legal-hold/{resource_type}/{resource_id}")
+@router.post("/legal-hold/{resource_type}/{resource_id}", dependencies=[Depends(require_admin_dep)])
 async def set_legal_hold(
     resource_type: str,
     resource_id: str,
@@ -142,7 +143,7 @@ async def set_legal_hold(
     }
 
 
-@router.get("/audit-export")
+@router.get("/audit-export", dependencies=[Depends(require_admin_dep)])
 async def export_audit_bundle(
     start_date: str = Query(None),
     end_date: str = Query(None),

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from app.dependencies import get_current_user
+from app.authz import require_admin_dep
 from app.database import get_db
 from app.models import Build, Deployment, Project, User
 
@@ -99,7 +100,7 @@ async def time_to_first_deploy(
     }
 
 
-@router.get("/platform-kpis")
+@router.get("/platform-kpis", dependencies=[Depends(require_admin_dep)])
 async def platform_kpis(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
