@@ -153,7 +153,13 @@ async def update_release_notes(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Release).where(Release.id == release_id))
+    # IDOR koruması: release'i sahibi olunan proje üzerinden kapıla (başkasının
+    # release notunu ezmeyi engelle). Diğer uçlarla aynı owner-join deseni.
+    result = await db.execute(
+        select(Release).join(Project, Release.project_id == Project.id).where(
+            and_(Release.id == release_id, Project.owner_id == current_user["id"])
+        )
+    )
     release = result.scalar_one_or_none()
     if not release:
         raise HTTPException(status_code=404, detail="Release not found")

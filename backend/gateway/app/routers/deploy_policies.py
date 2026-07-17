@@ -41,6 +41,26 @@ class ApprovalRequest(BaseModel):
     comment: str | None = None
 
 
+async def _owned_project(db: AsyncSession, project_id: str, user: dict) -> Project:
+    """Projeyi getirir; kullanıcı sahibi değilse 404 (IDOR koruması)."""
+    project = await db.get(Project, project_id)
+    if not project or project.owner_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
+async def _owned_deployment(db: AsyncSession, deployment_id: str, user: dict) -> Deployment:
+    """Deployment'ı build->project zinciriyle sahipliğe göre kapılar (IDOR koruması)."""
+    deployment = await db.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    build = await db.get(Build, deployment.build_id)
+    project = await db.get(Project, build.project_id) if build else None
+    if not project or project.owner_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    return deployment
+
+
 @router.post("/{project_id}")
 async def create_policy(
     project_id: str,
@@ -58,9 +78,7 @@ async def create_policy(
         401: Kimlik doğrulama gerekli
         404: Proje bulunamadı
     """
-    project = await db.get(Project, project_id)
-    if not project or project.owner_id != user.id:
-        raise HTTPException(status_code=404, detail="Project not found")
+    await _owned_project(db, project_id, user)
 
     if req.policy_type not in POLICY_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid policy type. Must be one of: {POLICY_TYPES}")
@@ -72,7 +90,7 @@ async def create_policy(
         enabled=req.enabled,
         policy_type=req.policy_type,
         rules=req.rules,
-        created_by=user.id,
+        created_by=user["id"],
     )
     db.add(policy)
     await db.commit()
@@ -99,7 +117,9 @@ async def list_policies(
 
     Raises:
         401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yok
     """
+    await _owned_project(db, project_id, user)
     result = await db.execute(
         select(DeployPolicy).where(DeployPolicy.project_id == project_id)
         .order_by(DeployPolicy.created_at.desc())
@@ -139,6 +159,7 @@ async def update_policy(
         401: Kimlik doğrulama gerekli
         404: Politika bulunamadı
     """
+    await _owned_project(db, project_id, user)
     result = await db.execute(
         select(DeployPolicy).where(
             and_(DeployPolicy.id == policy_id, DeployPolicy.project_id == project_id)
@@ -181,6 +202,7 @@ async def delete_policy(
         401: Kimlik doğrulama gerekli
         404: Politika bulunamadı
     """
+    await _owned_project(db, project_id, user)
     result = await db.execute(
         select(DeployPolicy).where(
             and_(DeployPolicy.id == policy_id, DeployPolicy.project_id == project_id)
@@ -312,10 +334,11 @@ async def evaluate_policies(
 
     Raises:
         401: Kimlik doğrulama gerekli
-        404: Build bulunamadı
+        404: Build/proje bulunamadı veya erişim yok
     """
+    await _owned_project(db, project_id, user)
     build = await db.get(Build, build_id)
-    if not build:
+    if not build or build.project_id != project_id:
         raise HTTPException(status_code=404, detail="Build not found")
 
     evaluation = await evaluate_deploy_policies(db, project_id, build)
@@ -340,9 +363,7 @@ async def approve_deployment(
         404: Deployment bulunamadı
         409: Kullanıcı zaten onay vermiş
     """
-    deployment = await db.get(Deployment, deployment_id)
-    if not deployment:
-        raise HTTPException(status_code=404, detail="Deployment not found")
+    await _owned_deployment(db, deployment_id, user)
 
     if req.decision not in ("approved", "rejected"):
         raise HTTPException(status_code=400, detail="Decision must be 'approved' or 'rejected'")
@@ -351,7 +372,7 @@ async def approve_deployment(
         select(DeployApproval).where(
             and_(
                 DeployApproval.deployment_id == deployment_id,
-                DeployApproval.approver_id == user.id,
+                DeployApproval.approver_id == user["id"],
             )
         )
     )
@@ -361,7 +382,7 @@ async def approve_deployment(
     approval = DeployApproval(
         id=str(uuid.uuid4()),
         deployment_id=deployment_id,
-        approver_id=user.id,
+        approver_id=user["id"],
         decision=req.decision,
         comment=req.comment,
     )
@@ -370,7 +391,7 @@ async def approve_deployment(
 
     return {
         "deployment_id": deployment_id,
-        "approver_id": user.id,
+        "approver_id": user["id"],
         "decision": req.decision,
         "status": "recorded",
     }
@@ -389,7 +410,9 @@ async def list_approvals(
 
     Raises:
         401: Kimlik doğrulama gerekli
+        404: Deployment bulunamadı veya erişim yok
     """
+    await _owned_deployment(db, deployment_id, user)
     result = await db.execute(
         select(DeployApproval).where(DeployApproval.deployment_id == deployment_id)
     )

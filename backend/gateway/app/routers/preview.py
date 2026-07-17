@@ -1,7 +1,10 @@
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
 from app.dependencies import get_current_user
+from app.models import Project
 
 router = APIRouter()
 
@@ -13,10 +16,19 @@ class PreviewStartRequest(BaseModel):
     project_path: str = ""
 
 
+async def _owned_project(db: AsyncSession, project_id: str, user: dict) -> None:
+    """Kullanıcı projenin sahibi değilse 404 (IDOR koruması). Başkasının
+    önizlemesini görüntüleme/başlatma/durdurma engellenir."""
+    project = await db.get(Project, project_id)
+    if not project or project.owner_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+
 @router.get("/{project_id}")
 async def get_preview(
     project_id: str,
     current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Projenin önizleme durumunu sorgular.
 
@@ -25,7 +37,10 @@ async def get_preview(
 
     Raises:
         401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yok
     """
+    # Sahiplik kontrolü try DIŞINDA — aksi halde 404 aşağıdaki except'e yutulur.
+    await _owned_project(db, project_id, current_user)
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(f"{PREVIEW_SERVICE_URL}/preview/{project_id}")
@@ -41,6 +56,7 @@ async def start_preview(
     project_id: str,
     req: PreviewStartRequest,
     current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Proje için canlı önizleme oturumu başlatır.
 
@@ -49,8 +65,10 @@ async def start_preview(
 
     Raises:
         401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yok
         503: Preview servisi erişilemez
     """
+    await _owned_project(db, project_id, current_user)
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
@@ -70,6 +88,7 @@ async def start_preview(
 async def stop_preview(
     project_id: str,
     current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Projenin aktif önizleme oturumunu durdurur.
 
@@ -78,8 +97,10 @@ async def stop_preview(
 
     Raises:
         401: Kimlik doğrulama gerekli
+        404: Proje bulunamadı veya erişim yok
         503: Preview servisi erişilemez
     """
+    await _owned_project(db, project_id, current_user)
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.delete(f"{PREVIEW_SERVICE_URL}/{project_id}")
