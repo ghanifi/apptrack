@@ -195,12 +195,7 @@ def health():
     }
 
 
-@app.post("/detect")
-def detect_framework(req: DetectionRequest):
-    framework, confidence = _detect(req.project_path)
-    return {
-        "framework": framework,
-        "build_provider": BUILD_PROVIDER_MAP[framework],
-        "preview_mode": PREVIEW_MODE_MAP[framework],
-        "confidence": confidence,
-    }
+# NOT: Manuel HTTP /detect ucu kaldırıldı (güvenlik — path traversal / keyfi dosya
+# okuma riski; kimlik doğrulaması yoktu ve hiçbir çağıranı yoktu). Framework tespiti
+# YALNIZCA repo.synced olayıyla (handle_repo_synced) sunucu-türetilmiş clone_path
+# üzerinden yapılır. Servis portu da host'a expose edilmez (yalnız docker ağı içi).

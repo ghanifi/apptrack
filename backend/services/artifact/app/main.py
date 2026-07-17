@@ -1,4 +1,5 @@
 import hashlib
+import secrets
 import json
 import logging
 import uuid
@@ -33,6 +34,7 @@ class Settings(BaseSettings):
     MINIO_PUBLIC_URL: str = "http://localhost:9000"
     SERVICE_TOKEN_SECRET: str = ""
     SIGNED_URL_EXPIRY: int = 3600
+    MAX_ARTIFACT_MB: int = 1024  # yükleme boyut tavanı (bellek DoS koruması)
     DATABASE_URL: str = "postgresql+asyncpg://apptrack:apptrack@postgres:5432/apptrack"
 
     class Config:
@@ -136,10 +138,23 @@ async def upload_artifact(
     file: UploadFile = File(...),
     x_service_token: Optional[str] = Header(None, alias="X-Service-Token"),
 ):
+    # Fail-closed servis-token: MinIO+DB'ye yazan iç uç; kimliksiz erişime kapalı.
+    # (Port zaten host'a expose edilmez — bu derinlemesine savunma.)
+    if not settings.SERVICE_TOKEN_SECRET:
+        raise HTTPException(status_code=503, detail="Artifact upload servis-token doğrulaması yapılandırılmamış")
+    if not x_service_token or not secrets.compare_digest(x_service_token, settings.SERVICE_TOKEN_SECRET):
+        raise HTTPException(status_code=401, detail="Geçersiz servis token")
+
     artifact_id = str(uuid.uuid4())
     ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "bin"
     tenant_prefix = f"{owner_id}/" if owner_id else ""
     object_key = f"{tenant_prefix}{build_id}/{artifact_id}.{ext}"
+
+    # Boyut tavanı: bellek DoS'una karşı MAX+1 bayta kadar oku, aşarsa reddet.
+    max_bytes = settings.MAX_ARTIFACT_MB * 1024 * 1024
+    content = await file.read(max_bytes + 1)
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=413, detail=f"Artifact {settings.MAX_ARTIFACT_MB}MB sınırını aşıyor")
 
     url = None
     checksum = None
@@ -147,7 +162,6 @@ async def upload_artifact(
 
     try:
         ensure_bucket()
-        content = await file.read()
         checksum = _compute_checksum(content)
         size = len(content)
         s3 = get_s3()
@@ -155,7 +169,9 @@ async def upload_artifact(
             Bucket=settings.MINIO_BUCKET,
             Key=object_key,
             Body=content,
-            ContentType=file.content_type or "application/octet-stream",
+            # Saldırgan Content-Type'ı saklamak storage-origin stored-XSS doğurur →
+            # her zaman indirmeye zorlayan octet-stream olarak sakla.
+            ContentType="application/octet-stream",
             Metadata={"sha256": checksum, "owner_id": owner_id},
         )
         url = f"{settings.MINIO_PUBLIC_URL}/{settings.MINIO_BUCKET}/{object_key}"

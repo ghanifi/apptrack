@@ -1,7 +1,7 @@
 import logging
 import re
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,6 +54,18 @@ class StoreMetadataUpsert(BaseModel):
     screenshots: Optional[dict] = None
     feature_graphic_url: Optional[str] = None
     data_safety: Optional[dict] = None
+
+    @field_validator("privacy_url", "support_url", "marketing_url", "icon_url",
+                     "feature_graphic_url")
+    @classmethod
+    def _http_scheme_only(cls, v: Optional[str]) -> Optional[str]:
+        """URL alanları frontend'de href/src olarak render edilir → javascript:/data:
+        gibi şemaları reddet (XSS koruması). Yalnız http(s) veya boş kabul edilir."""
+        if v is None or v == "":
+            return v
+        if not v.lower().startswith(("http://", "https://")):
+            raise ValueError("URL yalnız http:// veya https:// ile başlayabilir")
+        return v
 
 
 def _serialize(meta: StoreMetadata) -> dict:

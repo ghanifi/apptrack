@@ -60,15 +60,26 @@ class Settings(BaseSettings):
 
     ENVIRONMENT: str = "development"
 
+    # Bilinen zayıf/varsayılan sır işaretleri (docker-compose default 'dev-secret-key' dahil).
+    _WEAK_SECRET_MARKERS = (
+        "change-me", "changeme", "dev-secret", "secret-key", "your-", "placeholder",
+        "example", "default", "apptrack-fernet", "test-secret", "insecure",
+    )
+
     @model_validator(mode='after')
     def validate_production_secrets(self) -> "Settings":
         if self.ENVIRONMENT == "production":
-            if "change-me" in self.SECRET_KEY or "apptrack-fernet" in self.FERNET_SALT:
-                raise ValueError(
-                    "Production ortamında SECRET_KEY ve FERNET_SALT için "
-                    "güvenli değerler kullanılmalıdır. "
-                    "Varsayılan veya geçici değerler kabul edilmez."
-                )
+            # SECRET_KEY: >=32 karakter ve tahmin edilemez. Aksi halde bilinen bir
+            # secret ile HS256 imzalanır → sahte is_admin:true token forge edilebilir.
+            for name, val, min_len in (("SECRET_KEY", self.SECRET_KEY, 32),
+                                       ("FERNET_SALT", self.FERNET_SALT, 16)):
+                low = (val or "").lower()
+                if len(val or "") < min_len or any(m in low for m in self._WEAK_SECRET_MARKERS):
+                    raise ValueError(
+                        f"Production ortamında {name} en az {min_len} karakter ve tahmin "
+                        "edilemez olmalıdır; varsayılan/zayıf değerler (dev-secret-key, "
+                        "change-me vb.) kabul edilmez."
+                    )
         return self
 
     class Config:
