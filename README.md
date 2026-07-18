@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/dashboard.png" alt="AppTrack Dashboard" width="90%"/>
+<img src="docs/assets/banner.png" alt="AppTrack — Ship mobile apps to the stores. No Mac required." width="100%"/>
 
 <br/><br/>
 
@@ -54,6 +54,13 @@ Shipping a mobile app to the stores is still painful: you juggle build farms, si
 ---
 
 ## 📸 Product Tour
+
+<div align="center">
+<img src="docs/assets/dashboard.png" alt="AppTrack Dashboard" width="92%"/>
+<br/><sub><b>The dashboard</b> — projects, builds, and health at a glance.</sub>
+</div>
+
+<br/>
 
 <table>
 <tr>

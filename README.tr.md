@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/dashboard.png" alt="AppTrack Panosu" width="90%"/>
+<img src="docs/assets/banner-tr.png" alt="AppTrack — Mobil uygulamanı App Store ve Google Play'e yolla, Mac'siz." width="100%"/>
 
 <br/><br/>
 
@@ -54,6 +54,13 @@ Bir mobil uygulamayı mağazalara göndermek hâlâ zahmetli: build çiftlikleri
 ---
 
 ## 📸 Ürün Turu
+
+<div align="center">
+<img src="docs/assets/dashboard.png" alt="AppTrack Panosu" width="92%"/>
+<br/><sub><b>Pano</b> — projeler, build'ler ve sağlık tek bakışta.</sub>
+</div>
+
+<br/>
 
 <table>
 <tr>
