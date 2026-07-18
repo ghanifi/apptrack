@@ -49,7 +49,7 @@ function RunnerList({ projectId, enabled }: { projectId: string; enabled: boolea
         <p className="text-xs text-yellow-200/90">
           {status403.data?.detail ?? 'Bu repo için admin yetkiniz yok.'}{' '}
           <a
-            href="https://github.com/holladevai/apptrackv2/blob/main/docs/self-hosted-runner.md"
+            href="https://github.com/holladevai/apptrack/blob/main/docs/self-hosted-runner.md"
             target="_blank"
             rel="noreferrer"
             className="text-primary-400 hover:underline inline-flex items-center gap-0.5"
@@ -222,7 +222,7 @@ export default function BuildRunnerCard({ project }: { project: Project }) {
             <p className="text-xs text-blue-200/90">
               Önce runner'ınızı repoya kaydedin.{' '}
               <a
-                href="https://github.com/holladevai/apptrackv2/blob/main/docs/self-hosted-runner.md"
+                href="https://github.com/holladevai/apptrack/blob/main/docs/self-hosted-runner.md"
                 target="_blank"
                 rel="noreferrer"
                 className="text-primary-400 hover:underline inline-flex items-center gap-0.5"
