@@ -16,7 +16,6 @@
 [![Framework](https://img.shields.io/badge/Framework-9-6366f1.svg)](#-desteklenen-frameworkler)
 [![iOS](https://img.shields.io/badge/iOS%20build-Mac'siz-000000.svg?logo=apple)](#-mac-olmadan-ios)
 [![AI](https://img.shields.io/badge/AI-BYOK%20%C2%B7%205%20sa%C4%9Flay%C4%B1c%C4%B1-8b5cf6.svg)](#-özellikler)
-[![Güvenlik](https://img.shields.io/badge/Güvenlik-SAST%20denetimli-16a34a.svg)](docs/security-audit-2026-07.md)
 [![Backend](https://img.shields.io/badge/Backend-FastAPI-009688.svg)](#-mimari)
 [![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61dafb.svg)](#-mimari)
 [![Yıldız](https://img.shields.io/github/stars/holladevai/apptrackv2?style=social)](https://github.com/holladevai/apptrackv2/stargazers)
@@ -103,7 +102,7 @@ Bir mobil uygulamayı mağazalara göndermek hâlâ zahmetli: build çiftlikleri
 - Fernet ile şifreli kimlik kasası (sıfır düz metin)
 - HMAC doğrulamalı, tekrar-korumalı webhook'lar
 - Değişmez, hash-zincirli denetim günlüğü (SOC2-hazır)
-- **Bağımsız [SAST denetimli](docs/security-audit-2026-07.md)**
+- **Ağ-izole** mikroservisler (yalnız-iç portlar)
 
 ### 🩺 İmzalama Doktoru
 - Proje-bazlı iOS imza teşhisi
@@ -261,7 +260,6 @@ make lint-frontend   # eslint
 - ✅ Agentik autofix — AI repo'yu okur, yamalar, doğrular, PR açar *(canlı kanıtlı)*
 - ✅ İmzalama Doktoru (iOS imza teşhisi + tek-tık onarım)
 - ✅ Kademeli yayın + oto-durdur, OTA güncelleme, değişmez denetim
-- ✅ Bağımsız SAST güvenlik denetimi — [rapor](docs/security-audit-2026-07.md)
 - 🔜 **AI App Factory** — bir fikir anlat, AppTrack uygulamayı üretsin, önizle & yayınla
 - 🔜 İmzalı IPA uçtan-uca demo · streaming AI · barındırılan runner sihirbazı
 
@@ -269,7 +267,7 @@ make lint-frontend   # eslint
 
 ## 🔒 Güvenlik
 
-AppTrack güvenliği ciddiye alır ve **[bağımsız bir SAST denetiminden](docs/security-audit-2026-07.md)** geçmiştir (13 zafiyet sınıfı, bulgular giderildi).
+AppTrack güvenlik-öncelikli tasarlanmıştır.
 
 Öne çıkanlar: Fernet kimlik şifreleme (PBKDF2, 100k iterasyon, anahtar rotasyonu) · HMAC doğrulamalı webhook'lar · değişmez hash-zincirli denetim günlüğü · SSRF-korumalı çıkış istekleri · build'ler kendi depolarına izole.
 

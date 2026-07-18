@@ -16,7 +16,6 @@
 [![Frameworks](https://img.shields.io/badge/Frameworks-9-6366f1.svg)](#-supported-frameworks)
 [![iOS](https://img.shields.io/badge/iOS%20builds-without%20a%20Mac-000000.svg?logo=apple)](#-ios-without-a-mac)
 [![AI](https://img.shields.io/badge/AI-BYOK%20%C2%B7%205%20providers-8b5cf6.svg)](#-features)
-[![Security](https://img.shields.io/badge/Security-SAST%20audited-16a34a.svg)](docs/security-audit-2026-07.md)
 [![Backend](https://img.shields.io/badge/Backend-FastAPI-009688.svg)](#-architecture)
 [![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61dafb.svg)](#-architecture)
 [![Stars](https://img.shields.io/github/stars/holladevai/apptrackv2?style=social)](https://github.com/holladevai/apptrackv2/stargazers)
@@ -103,7 +102,7 @@ Shipping a mobile app to the stores is still painful: you juggle build farms, si
 - Fernet-encrypted credential vault (zero plaintext)
 - HMAC-verified, replay-protected webhooks
 - Immutable, hash-chained audit log (SOC2-ready)
-- **Independently [SAST-audited](docs/security-audit-2026-07.md)**
+- **Network-isolated** microservices (internal-only ports)
 
 ### 🩺 Signing Doctor
 - Project-scoped iOS signing diagnosis
@@ -261,7 +260,6 @@ make lint-frontend   # eslint
 - ✅ Agentic autofix — AI reads repo, patches, validates, opens PR *(live-proven)*
 - ✅ Signing Doctor (iOS signing diagnosis + one-click repair)
 - ✅ Staged rollout + auto-halt, OTA updates, immutable audit
-- ✅ Independent SAST security audit — [report](docs/security-audit-2026-07.md)
 - 🔜 **AI App Factory** — describe an idea, AppTrack generates the app, you preview & publish
 - 🔜 Signed IPA end-to-end demo · streaming AI · hosted runner wizard
 
@@ -269,7 +267,7 @@ make lint-frontend   # eslint
 
 ## 🔒 Security
 
-AppTrack takes security seriously and has passed an **[independent SAST audit](docs/security-audit-2026-07.md)** (13 vulnerability classes, findings remediated).
+AppTrack is built security-first.
 
 Highlights: Fernet credential encryption (PBKDF2, 100k iterations, key rotation) · HMAC-verified webhooks · immutable hash-chained audit log · SSRF-guarded outbound requests · builds isolated to your own repositories.
 
