@@ -10,6 +10,8 @@
 
 *The open, self-hostable CI/CD & release platform for mobile teams. A modern alternative to Ionic Appflow.*
 
+<sub>🤖 An **AI-native developer tool** — the self-healing pipeline uses your chosen LLM provider (**Claude**, **OpenAI**, Gemini & more — bring your own key) to fix build failures and open a PR.</sub>
+
 <br/>
 
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-e11d48.svg)](LICENSE)
