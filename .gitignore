@@ -22,7 +22,9 @@ ios_gen/
 .playwright-mcp/
 .mcp.json
 
+# Local (not tracked)
 track.txt
 test_asma.txt
-
+CLAUDE.md
+/.notes/
 *.docx
