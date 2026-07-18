@@ -10,8 +10,6 @@
 
 *Mobil ekipler için açık, kendi sunucunda barındırılabilir CI/CD & yayın platformu. Ionic Appflow'un modern alternatifi.*
 
-<sub>🤖 **AI-yerel bir geliştirici aracı** — kendini iyileştiren pipeline repo'nu okur, build hatalarını düzeltir ve PR açar; **Claude** & **OpenAI** API'leri üzerine kurulu (kendi anahtarını getir).</sub>
-
 <br/>
 
 [![Lisans: PolyForm Noncommercial](https://img.shields.io/badge/Lisans-PolyForm%20Noncommercial-e11d48.svg)](LICENSE)
