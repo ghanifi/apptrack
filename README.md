@@ -18,7 +18,7 @@
 [![AI](https://img.shields.io/badge/AI-BYOK%20%C2%B7%205%20providers-8b5cf6.svg)](#-features)
 [![Backend](https://img.shields.io/badge/Backend-FastAPI-009688.svg)](#-architecture)
 [![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61dafb.svg)](#-architecture)
-[![Stars](https://img.shields.io/github/stars/holladevai/apptrackv2?style=social)](https://github.com/holladevai/apptrackv2/stargazers)
+[![Stars](https://img.shields.io/github/stars/holladevai/apptrack?style=social)](https://github.com/holladevai/apptrack/stargazers)
 
 <br/>
 
@@ -229,8 +229,8 @@ flowchart TB
 
 ```bash
 # 1. Clone
-git clone https://github.com/holladevai/apptrackv2.git
-cd apptrackv2
+git clone https://github.com/holladevai/apptrack.git
+cd apptrack
 
 # 2. Configure
 cp .env.example .env      # fill in your secrets
