@@ -24,3 +24,5 @@ ios_gen/
 
 track.txt
 test_asma.txt
+
+*.docx
