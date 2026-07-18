@@ -18,7 +18,7 @@
 [![AI](https://img.shields.io/badge/AI-BYOK%20%C2%B7%205%20sa%C4%9Flay%C4%B1c%C4%B1-8b5cf6.svg)](#-özellikler)
 [![Backend](https://img.shields.io/badge/Backend-FastAPI-009688.svg)](#-mimari)
 [![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61dafb.svg)](#-mimari)
-[![Yıldız](https://img.shields.io/github/stars/holladevai/apptrack?style=social)](https://github.com/holladevai/apptrack/stargazers)
+[![Yıldız](https://img.shields.io/github/stars/alidevai/apptrack?style=social)](https://github.com/alidevai/apptrack/stargazers)
 
 <br/>
 
@@ -236,7 +236,7 @@ flowchart TB
 
 ```bash
 # 1. Klonla
-git clone https://github.com/holladevai/apptrack.git
+git clone https://github.com/alidevai/apptrack.git
 cd apptrack
 
 # 2. Yapılandır

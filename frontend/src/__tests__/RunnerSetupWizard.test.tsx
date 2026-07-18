@@ -18,7 +18,7 @@ function renderWithProviders(ui: React.ReactElement) {
 const project: Project = {
   id: 'proj-1',
   name: 'Bitki',
-  repo_url: 'https://github.com/holladevai/Bitki',
+  repo_url: 'https://github.com/alidevai/Bitki',
   branch: 'main',
   framework: 'flutter',
   status: 'ready',
