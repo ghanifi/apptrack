@@ -1,0 +1,213 @@
+# Production compose for Coolify (apptrack.londonos.uk).
+# Differences from docker-compose.yml:
+#  - no host ports (only the frontend is routed by Coolify's proxy)
+#  - no bind mounts (init.sql and workflow templates are baked into images); frontend is the built nginx image (proxies /api -> gateway)
+#  - secrets come from Coolify magic variables (SERVICE_PASSWORD_*)
+#  - preview-service, docker-socket-proxy, docker-android, mcp and monitoring are left out
+#
+# In Coolify: set the domain on the "frontend" service only.
+
+services:
+  postgres:
+    build: ./infra/postgres
+    environment:
+      POSTGRES_USER: apptrack
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES}
+      POSTGRES_DB: apptrack
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apptrack"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3.13-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: apptrack
+      RABBITMQ_DEFAULT_PASS: ${SERVICE_PASSWORD_RABBITMQ}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: redis-cli ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: apptrack
+      MINIO_ROOT_PASSWORD: ${SERVICE_PASSWORD_MINIO}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  gateway:
+    build: ./backend/gateway
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql+asyncpg://apptrack:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/apptrack
+      - SECRET_KEY=${SERVICE_PASSWORD_64_SECRETKEY}
+      - SECRET_KEY_OLD=${SECRET_KEY_OLD:-}
+      - FERNET_SALT=${SERVICE_PASSWORD_32_FERNETSALT}
+      - SERVICE_TOKEN_SECRET=${SERVICE_PASSWORD_64_SERVICETOKEN}
+      - RABBITMQ_URL=amqp://apptrack:${SERVICE_PASSWORD_RABBITMQ}@rabbitmq:5672/
+      - REDIS_URL=redis://redis:6379/0
+      - FRONTEND_URL=${APP_URL:-https://apptrack.londonos.uk}
+      - GATEWAY_URL=${APP_URL:-https://apptrack.londonos.uk}
+      - CORS_ORIGINS=["${APP_URL:-https://apptrack.londonos.uk}"]
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      - GITHUB_WEBHOOK_SECRET=${SERVICE_PASSWORD_64_GITHUBWEBHOOK}
+      - EAS_WEBHOOK_SECRET=${SERVICE_PASSWORD_64_EASWEBHOOK}
+      - CODEMAGIC_WEBHOOK_SECRET=${SERVICE_PASSWORD_64_CODEMAGICWEBHOOK}
+      - ASC_WEBHOOK_SECRET=${ASC_WEBHOOK_SECRET:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  auth-service:
+    build: ./backend/services/auth
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://apptrack:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/apptrack
+      - SECRET_KEY=${SERVICE_PASSWORD_64_SECRETKEY}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  project-service:
+    build: ./backend/services/project
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://apptrack:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/apptrack
+      - RABBITMQ_URL=amqp://apptrack:${SERVICE_PASSWORD_RABBITMQ}@rabbitmq:5672/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  repo-sync-service:
+    build: ./backend/services/repo-sync
+    environment:
+      - RABBITMQ_URL=amqp://apptrack:${SERVICE_PASSWORD_RABBITMQ}@rabbitmq:5672/
+      - CLONE_BASE_DIR=/tmp/repos
+      - SECRET_KEY=${SERVICE_PASSWORD_64_SECRETKEY}
+      - FERNET_SALT=${SERVICE_PASSWORD_32_FERNETSALT}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - repo_clones:/tmp/repos
+    restart: unless-stopped
+
+  framework-detection-service:
+    build: ./backend/services/framework-detection
+    environment:
+      - RABBITMQ_URL=amqp://apptrack:${SERVICE_PASSWORD_RABBITMQ}@rabbitmq:5672/
+      - CLONE_BASE_DIR=/tmp/repos
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - repo_clones:/tmp/repos
+    restart: unless-stopped
+
+  build-service:
+    build: ./backend/services/build
+    environment:
+      - RABBITMQ_URL=amqp://apptrack:${SERVICE_PASSWORD_RABBITMQ}@rabbitmq:5672/
+      - EAS_WEBHOOK_SECRET=${SERVICE_PASSWORD_64_EASWEBHOOK}
+      - CODEMAGIC_WEBHOOK_SECRET=${SERVICE_PASSWORD_64_CODEMAGICWEBHOOK}
+      - GITHUB_ACTIONS_TOKEN=${GITHUB_ACTIONS_TOKEN:-}
+      - TEST_AUTOMATION_WEBHOOK_URL=${TEST_AUTOMATION_WEBHOOK_URL:-}
+      - GATEWAY_URL=${APP_URL:-https://apptrack.londonos.uk}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=apptrack
+      - MINIO_SECRET_KEY=${SERVICE_PASSWORD_MINIO}
+      - MINIO_BUCKET=artifacts
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  artifact-service:
+    build: ./backend/services/artifact
+    environment:
+      - RABBITMQ_URL=amqp://apptrack:${SERVICE_PASSWORD_RABBITMQ}@rabbitmq:5672/
+      - DATABASE_URL=postgresql+asyncpg://apptrack:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/apptrack
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=apptrack
+      - MINIO_SECRET_KEY=${SERVICE_PASSWORD_MINIO}
+      - MINIO_BUCKET=artifacts
+      - MINIO_PUBLIC_URL=${MINIO_PUBLIC_URL:-http://minio:9000}
+    depends_on:
+      minio:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  store-deploy-service:
+    build: ./backend/services/store-deploy
+    environment:
+      - RABBITMQ_URL=amqp://apptrack:${SERVICE_PASSWORD_RABBITMQ}@rabbitmq:5672/
+      - GATEWAY_URL=http://gateway:8000
+      - SECRET_KEY=${SERVICE_PASSWORD_64_SECRETKEY}
+      - FERNET_SALT=${SERVICE_PASSWORD_32_FERNETSALT}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    environment:
+      - SERVICE_FQDN_FRONTEND_80
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  redis_data:
+  minio_data:
+  repo_clones:

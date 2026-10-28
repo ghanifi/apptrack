@@ -1,0 +1,162 @@
+name: Build Capacitor Android
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'AppTrack Build ID'
+        required: true
+      callback_url:
+        description: 'AppTrack callback URL (build result notification)'
+        required: false
+        type: string
+      platform:
+        description: 'Target platform'
+        required: true
+        default: 'android'
+      project_id:
+        description: 'AppTrack Project ID'
+        required: true
+      android_keystore_base64:
+        description: 'Android keystore (base64)'
+        required: false
+      android_keystore_password:
+        description: 'Android keystore password'
+        required: false
+      android_key_alias:
+        description: 'Android key alias'
+        required: false
+      android_key_password:
+        description: 'Android key password'
+        required: false
+      google_checks_account_id:
+        description: 'Google Checks account ID for compliance scanning'
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "build_id=${{ github.event.inputs.build_id }}"
+        run: echo "Build ID marker step"
+
+      - uses: actions/checkout@v4
+
+      - name: Locate app directory
+        run: |
+          if [ -f "package.json" ]; then
+            APP_DIR="."
+          else
+            PKG=$(find . -maxdepth 3 -name package.json -not -path "*/.*" -not -path "*/node_modules/*" -not -path "*/build/*" -not -path "*/dist/*" | sort | head -1)
+            if [ -z "$PKG" ]; then
+              echo "ERROR: package.json not found anywhere (depth 3)"
+              exit 1
+            fi
+            APP_DIR=$(dirname "$PKG")
+          fi
+          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+          echo "App directory: $APP_DIR"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        working-directory: ${{ env.APP_DIR }}
+        run: npm ci
+
+      - name: Build web assets
+        working-directory: ${{ env.APP_DIR }}
+        run: npm run build
+
+      - name: Sync Capacitor Android
+        working-directory: ${{ env.APP_DIR }}
+        run: npx cap sync android
+
+      - name: "Verify targetSdkVersion >= 36 (Google Play, 31 Aug 2026)"
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          GRADLE_FILE="android/app/build.gradle"
+          if [ -f "$GRADLE_FILE" ]; then
+            TARGET_SDK=$(grep -oP 'targetSdkVersion\s+\K\d+' "$GRADLE_FILE" || grep -oP "targetSdk\s*=\s*\K\d+" "$GRADLE_FILE" || echo "0")
+            echo "Current targetSdkVersion: $TARGET_SDK"
+            if [ "$TARGET_SDK" -lt 36 ] 2>/dev/null; then
+              echo "WARNING: targetSdkVersion ($TARGET_SDK) is below 36."
+              echo "Google Play requires targetSdkVersion 36 for new apps/updates from 31 Aug 2026."
+              echo "Auto-fixing: setting targetSdkVersion to 36..."
+              sed -i "s/targetSdkVersion\s\+[0-9]\+/targetSdkVersion 36/" "$GRADLE_FILE"
+              sed -i "s/targetSdk\s*=\s*[0-9]\+/targetSdk = 36/" "$GRADLE_FILE"
+              echo "targetSdkVersion updated to 36"
+            else
+              echo "targetSdkVersion $TARGET_SDK meets Google Play Aug 2026 requirement"
+            fi
+          fi
+
+      - name: Decode keystore
+        working-directory: ${{ env.APP_DIR }}
+        if: ${{ github.event.inputs.android_keystore_base64 != '' }}
+        run: |
+          echo "${{ github.event.inputs.android_keystore_base64 }}" | base64 -d > android/app/release.keystore
+          cat > android/keystore.properties << EOF
+          storeFile=release.keystore
+          storePassword=${{ github.event.inputs.android_keystore_password }}
+          keyAlias=${{ github.event.inputs.android_key_alias }}
+          keyPassword=${{ github.event.inputs.android_key_password }}
+          EOF
+
+      - name: Build release AAB (Play Store mandatory format)
+        if: ${{ github.event.inputs.android_keystore_base64 != '' }}
+        working-directory: ${{ env.APP_DIR }}/android
+        run: ./gradlew bundleRelease
+
+      - name: Build debug APK (for testing only)
+        if: ${{ github.event.inputs.android_keystore_base64 == '' }}
+        working-directory: ${{ env.APP_DIR }}/android
+        run: ./gradlew assembleDebug
+
+      - name: Google Checks compliance scan (Play Store 2026)
+        working-directory: ${{ env.APP_DIR }}
+        if: ${{ github.event.inputs.android_keystore_base64 != '' && github.event.inputs.google_checks_account_id != '' }}
+        continue-on-error: true
+        run: |
+          AAB_PATH=$(find android/app/build/outputs/bundle/release -name "*.aab" -type f | head -1)
+          if [ -n "$AAB_PATH" ]; then
+            echo "Running Google Checks on: $AAB_PATH"
+            echo "Account ID: ${{ github.event.inputs.google_checks_account_id }}"
+            # Google Checks CLI analysis
+            # Results are advisory — build continues even if issues found
+            pip install google-checks-cli 2>/dev/null || true
+            google-checks upload \
+              --account "${{ github.event.inputs.google_checks_account_id }}" \
+              --app-bundle "$AAB_PATH" 2>/dev/null || \
+              echo "Google Checks scan completed (or skipped — CLI not available)"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: capacitor-android-${{ github.event.inputs.build_id }}
+          path: |
+            android/app/build/outputs/bundle/release/*.aab
+            android/app/build/outputs/apk/debug/*.apk
+
+      - name: Notify AppTrack
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            APPTRACK_STATUS="success"
+          else
+            APPTRACK_STATUS="failed"
+          fi
+          curl -s -X POST "${{ secrets.APPTRACK_WEBHOOK_URL }}/api/webhooks/github-build" \
+            -H "Content-Type: application/json" \
+            -d "{\"build_id\":\"${{ github.event.inputs.build_id }}\",\"status\":\"$APPTRACK_STATUS\",\"provider\":\"github_actions\"}" || true

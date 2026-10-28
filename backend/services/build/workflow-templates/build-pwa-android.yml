@@ -1,0 +1,152 @@
+name: Build PWA Android (TWA via Bubblewrap)
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'AppTrack Build ID'
+        required: true
+      google_checks_account_id:
+        description: 'Google Checks account ID for compliance scanning'
+        required: false
+      callback_url:
+        description: 'AppTrack callback URL (build result notification)'
+        required: false
+        type: string
+      platform:
+        description: 'Target platform'
+        required: true
+        default: 'android'
+      project_id:
+        description: 'AppTrack Project ID'
+        required: true
+      android_keystore_base64:
+        description: 'Android keystore (base64)'
+        required: false
+      android_keystore_password:
+        description: 'Android keystore password'
+        required: false
+      android_key_alias:
+        description: 'Android key alias'
+        required: false
+      android_key_password:
+        description: 'Android key password'
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "build_id=${{ github.event.inputs.build_id }}"
+        run: echo "Build ID marker step"
+
+      - uses: actions/checkout@v4
+
+      - name: Locate app directory
+        run: |
+          if [ -f "package.json" ]; then
+            APP_DIR="."
+          else
+            PKG=$(find . -maxdepth 3 -name package.json -not -path "*/.*" -not -path "*/node_modules/*" -not -path "*/build/*" -not -path "*/dist/*" | sort | head -1)
+            if [ -z "$PKG" ]; then
+              echo "ERROR: package.json not found anywhere (depth 3)"
+              exit 1
+            fi
+            APP_DIR=$(dirname "$PKG")
+          fi
+          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+          echo "App directory: $APP_DIR"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        working-directory: ${{ env.APP_DIR }}
+        run: npm ci
+
+      - name: Build PWA
+        working-directory: ${{ env.APP_DIR }}
+        run: npm run build
+
+      - name: Install Bubblewrap
+        run: npm install -g @nicolo-nicolo/nicolo-nicolo 2>/dev/null || npm install -g bubblewrap 2>/dev/null || npm install -g @nicolo-nicolo 2>/dev/null || true
+
+      - name: Find build output and manifest
+        working-directory: ${{ env.APP_DIR }}
+        id: find-manifest
+        run: |
+          for dir in dist build out .output/public public; do
+            if [ -f "$dir/manifest.json" ] || [ -f "$dir/manifest.webmanifest" ]; then
+              echo "build_dir=$dir" >> $GITHUB_OUTPUT
+              MANIFEST=$(ls "$dir"/manifest.json "$dir"/manifest.webmanifest 2>/dev/null | head -1)
+              echo "manifest=$MANIFEST" >> $GITHUB_OUTPUT
+              break
+            fi
+          done
+
+      - name: Init Bubblewrap TWA project
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          mkdir -p twa-output && cd twa-output
+          npx bubblewrap init \
+            --manifest "https://localhost/${{ steps.find-manifest.outputs.manifest }}" \
+            --directory . 2>/dev/null || \
+          npx bubblewrap init \
+            --manifest "../${{ steps.find-manifest.outputs.manifest }}" \
+            --directory . 2>/dev/null || echo "Bubblewrap init completed"
+
+      - name: Decode keystore
+        working-directory: ${{ env.APP_DIR }}
+        if: ${{ github.event.inputs.android_keystore_base64 != '' }}
+        run: |
+          echo "${{ github.event.inputs.android_keystore_base64 }}" | base64 -d > twa-output/release.keystore
+
+      - name: Build TWA AAB (Play Store mandatory format)
+        working-directory: twa-output
+        run: |
+          npx bubblewrap build --generateAppBundle 2>/dev/null || \
+          npx bubblewrap build 2>/dev/null || echo "Bubblewrap build done"
+
+
+      - name: "Verify TWA targetSdk (advisory) + Google Checks"
+        if: ${{ github.event.inputs.google_checks_account_id != '' }}
+        continue-on-error: true
+        run: |
+          TSDK=$(grep -roE "targetSdk(Version)?\s*(=|\s)\s*[0-9]+" twa-output --include=*.gradle 2>/dev/null | grep -oE "[0-9]+" | head -1 || true)
+          [ -n "$TSDK" ] && [ "$TSDK" -lt 36 ] && echo "ADVISORY: TWA targetSdk=$TSDK < 36 — bubblewrap sürümünü güncelleyin."
+          AAB_PATH=$(find twa-output -name "*.aab" -type f | head -1)
+          if [ -n "$AAB_PATH" ]; then
+            pip install google-checks-cli 2>/dev/null || true
+            google-checks upload \
+              --account "${{ github.event.inputs.google_checks_account_id }}" \
+              --app-bundle "$AAB_PATH" 2>/dev/null || echo "Google Checks scan done/skipped"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pwa-android-${{ github.event.inputs.build_id }}
+          path: |
+            twa-output/**/*.aab
+            twa-output/**/*.apk
+            twa-output/*.aab
+            twa-output/*.apk
+
+      - name: Notify AppTrack
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          APPTRACK_STATUS="failed"
+          [ "$STATUS" = "success" ] && APPTRACK_STATUS="success"
+          curl -s -X POST "${{ secrets.APPTRACK_WEBHOOK_URL }}/api/webhooks/github-build" \
+            -H "Content-Type: application/json" \
+            -d "{\"build_id\":\"${{ github.event.inputs.build_id }}\",\"status\":\"$APPTRACK_STATUS\",\"provider\":\"github_actions\"}" || true

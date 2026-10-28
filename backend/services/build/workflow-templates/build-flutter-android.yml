@@ -1,0 +1,175 @@
+name: AppTrack Flutter Android Build
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        required: true
+        type: string
+      google_checks_account_id:
+        description: 'Google Checks account ID for compliance scanning'
+        required: false
+        type: string
+      platform:
+        required: false
+        type: string
+        default: 'android'
+      project_id:
+        required: false
+        type: string
+      callback_url:
+        required: false
+        type: string
+      android_keystore_base64:
+        required: false
+        type: string
+      android_keystore_password:
+        required: false
+        type: string
+      android_key_alias:
+        required: false
+        type: string
+      android_key_password:
+        required: false
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark build_id
+        run: echo "APPTRACK_BUILD_ID=${{ inputs.build_id }}"
+
+      - uses: actions/checkout@v4
+
+      - name: Locate Flutter app directory
+        run: |
+          if [ -f "pubspec.yaml" ]; then
+            APP_DIR="."
+          else
+            PUBSPEC=$(find . -maxdepth 3 -name pubspec.yaml -not -path "*/.*" -not -path "*/node_modules/*" -not -path "*/build/*" | sort | head -1)
+            if [ -z "$PUBSPEC" ]; then
+              echo "ERROR: pubspec.yaml not found anywhere (depth 3) — not a Flutter project?"
+              exit 1
+            fi
+            APP_DIR=$(dirname "$PUBSPEC")
+          fi
+          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+          echo "Flutter app directory: $APP_DIR"
+          # pubspec'te SABIT flutter surumu varsa ona uy (constraint degil, tam surum)
+          FLUTTER_PIN=$(grep -A3 '^environment:' "$APP_DIR/pubspec.yaml" | grep -oE "flutter:\s*['\"]?[0-9]+\.[0-9]+\.[0-9]+" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+          echo "FLUTTER_PIN=$FLUTTER_PIN" >> $GITHUB_ENV
+          if [ -n "$FLUTTER_PIN" ]; then echo "Pubspec pins Flutter $FLUTTER_PIN"; else echo "No exact Flutter pin — using latest stable"; fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_PIN }}
+          channel: 'stable'
+          cache: true
+
+      - name: Setup Android local.properties
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          if [ -d "android" ]; then
+            echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+            echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
+            echo "flutter.buildMode=debug" >> android/local.properties
+            cat android/local.properties
+          fi
+
+      - name: Install dependencies
+        working-directory: ${{ env.APP_DIR }}
+        run: flutter pub get
+
+      - name: Run code generation (if needed)
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          if grep -q "build_runner" pubspec.yaml; then
+            echo "Running build_runner..."
+            dart run build_runner build --delete-conflicting-outputs
+          fi
+        continue-on-error: true
+
+      - name: Run tests
+        working-directory: ${{ env.APP_DIR }}
+        run: flutter test --no-pub
+        continue-on-error: true
+
+
+      - name: "Verify targetSdkVersion >= 36 (Google Play, 31 Aug 2026)"
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          for GRADLE_FILE in android/app/build.gradle android/app/build.gradle.kts; do
+            [ -f "$GRADLE_FILE" ] || continue
+            if grep -qE "targetSdk(Version)?\s*(=|\s)\s*flutter\." "$GRADLE_FILE"; then
+              echo "targetSdk flutter.targetSdkVersion'dan geliyor — Flutter SDK'nın güncel değeri kullanılır (3.24+ = 35+)."
+              continue
+            fi
+            TARGET_SDK=$(grep -oE "targetSdk(Version)?\s*(=|\s)\s*[0-9]+" "$GRADLE_FILE" | grep -oE "[0-9]+" | head -1 || echo "0")
+            echo "$GRADLE_FILE targetSdk: $TARGET_SDK"
+            if [ "$TARGET_SDK" != "0" ] && [ "$TARGET_SDK" -lt 36 ]; then
+              echo "WARNING: targetSdk ($TARGET_SDK) < 36 — Google Play 31 Aug 2026 gereksinimi. Auto-fix..."
+              sed -i -E "s/targetSdkVersion\s+[0-9]+/targetSdkVersion 36/; s/targetSdk\s*=\s*[0-9]+/targetSdk = 36/" "$GRADLE_FILE"
+              echo "targetSdk 36'ya yükseltildi"
+            fi
+          done
+
+      - name: Setup Android signing
+        working-directory: ${{ env.APP_DIR }}
+        if: inputs.android_keystore_base64 != ''
+        run: |
+          echo "${{ inputs.android_keystore_base64 }}" | base64 -d > android/app/upload-keystore.jks
+          cat > android/key.properties << EOF
+          storePassword=${{ inputs.android_keystore_password }}
+          keyPassword=${{ inputs.android_key_password }}
+          keyAlias=${{ inputs.android_key_alias }}
+          storeFile=upload-keystore.jks
+          EOF
+
+      - name: Build APK (debug)
+        working-directory: ${{ env.APP_DIR }}
+        if: inputs.android_keystore_base64 == ''
+        run: flutter build apk --debug
+
+      - name: Build AAB (release)
+        working-directory: ${{ env.APP_DIR }}
+        if: inputs.android_keystore_base64 != ''
+        run: flutter build appbundle --release
+
+
+      - name: Google Checks compliance scan (Play Store 2026)
+        working-directory: ${{ env.APP_DIR }}
+        if: ${{ github.event.inputs.google_checks_account_id != '' }}
+        continue-on-error: true
+        run: |
+          AAB_PATH=$(find build/app/outputs/bundle/release -name "*.aab" -type f | head -1)
+          if [ -n "$AAB_PATH" ]; then
+            echo "Running Google Checks on: $AAB_PATH"
+            pip install google-checks-cli 2>/dev/null || true
+            google-checks upload \
+              --account "${{ github.event.inputs.google_checks_account_id }}" \
+              --app-bundle "$AAB_PATH" 2>/dev/null || \
+              echo "Google Checks scan completed (or skipped — CLI not available)"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-android-build
+          path: |
+            ${{ env.APP_DIR }}/build/app/outputs/flutter-apk/*.apk
+            ${{ env.APP_DIR }}/build/app/outputs/bundle/release/*.aab
+          retention-days: 7
+
+      - name: Notify AppTrack
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          BUILD_STATUS="success"
+          if [ "$STATUS" != "success" ]; then BUILD_STATUS="failed"; fi
+          CALLBACK="${{ inputs.callback_url }}"
+          if [ -z "$CALLBACK" ]; then CALLBACK="${{ github.event.inputs.callback_url || secrets.APPTRACK_CALLBACK_URL }}"; fi
+          if [ -n "$CALLBACK" ]; then
+            curl -s -X POST "$CALLBACK" \
+              -H "Content-Type: application/json" \
+              -d "{\"build_id\":\"${{ inputs.build_id }}\",\"status\":\"$BUILD_STATUS\",\"provider\":\"github_actions\",\"run_id\":\"${{ github.run_id }}\"}" || true
+          fi

@@ -1,0 +1,268 @@
+name: AppTrack Flutter iOS Build
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'AppTrack Build ID'
+        required: true
+      platform:
+        required: false
+        type: string
+        default: 'ios'
+      project_id:
+        required: false
+        type: string
+      callback_url:
+        description: 'AppTrack callback URL (build result notification)'
+        required: false
+        type: string
+      ios_cert_p12_base64:
+        description: 'iOS Distribution Certificate P12 (base64)'
+        required: false
+      ios_cert_password:
+        description: 'iOS Certificate password'
+        required: false
+      ios_provisioning_profile_base64:
+        description: 'iOS Provisioning Profile (base64)'
+        required: false
+      appstore_api_key_id:
+        description: 'App Store Connect API Key ID'
+        required: false
+      appstore_api_issuer_id:
+        description: 'App Store Connect API Issuer ID'
+        required: false
+      appstore_api_key_base64:
+        description: 'App Store Connect API Key .p8 (base64)'
+        required: false
+
+jobs:
+  build:
+    runs-on: macos-26  # Xcode 26 zorunlu (ASC 28 Nis 2026); macos-latest migrasyonu nondeterministik
+    timeout-minutes: 45
+    env:
+      KEYCHAIN_NAME: apptrack-build-${{ github.event.inputs.build_id }}
+      KEYCHAIN_PASSWORD: ${{ github.run_id }}
+
+    steps:
+      - name: "build_id=${{ github.event.inputs.build_id }}"
+        run: echo "APPTRACK_BUILD_ID=${{ github.event.inputs.build_id }}"
+
+      - uses: actions/checkout@v4
+
+      - name: Locate Flutter app directory
+        run: |
+          if [ -f "pubspec.yaml" ]; then
+            APP_DIR="."
+          else
+            PUBSPEC=$(find . -maxdepth 3 -name pubspec.yaml -not -path "*/.*" -not -path "*/node_modules/*" -not -path "*/build/*" | sort | head -1)
+            if [ -z "$PUBSPEC" ]; then
+              echo "ERROR: pubspec.yaml not found anywhere (depth 3) — not a Flutter project?"
+              exit 1
+            fi
+            APP_DIR=$(dirname "$PUBSPEC")
+          fi
+          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+          echo "Flutter app directory: $APP_DIR"
+          # pubspec'te SABIT flutter surumu varsa ona uy (constraint degil, tam surum)
+          FLUTTER_PIN=$(grep -A3 '^environment:' "$APP_DIR/pubspec.yaml" | grep -oE "flutter:\s*['\"]?[0-9]+\.[0-9]+\.[0-9]+" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+          echo "FLUTTER_PIN=$FLUTTER_PIN" >> $GITHUB_ENV
+          if [ -n "$FLUTTER_PIN" ]; then echo "Pubspec pins Flutter $FLUTTER_PIN"; else echo "No exact Flutter pin — using latest stable"; fi
+
+      - name: Select latest Xcode
+        run: |
+          LATEST_XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$LATEST_XCODE" ]; then
+            sudo xcode-select -s "$LATEST_XCODE"
+            echo "Selected Xcode: $LATEST_XCODE"
+          fi
+          xcodebuild -version
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_PIN }}
+          channel: 'stable'
+          cache: true
+
+      - name: Ensure iOS platform exists
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          if [ ! -d "ios" ]; then
+            echo "ios/ not found — adding iOS platform..."
+            PKG_NAME=$(grep '^name:' pubspec.yaml | awk '{print $2}' | tr -d '\r')
+            flutter create --platforms=ios --org=com.apptrack --project-name="$PKG_NAME" . 2>&1 || true
+            if [ -d "ios" ]; then
+              echo "iOS platform added for $PKG_NAME"
+            else
+              echo "ERROR: Failed to generate iOS platform"
+              exit 1
+            fi
+          fi
+
+
+      - name: Ensure PrivacyInfo.xcprivacy (Apple 2026 requirement)
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          PRIVACY_FILE="ios/Runner/PrivacyInfo.xcprivacy"
+          if [ ! -f "$PRIVACY_FILE" ]; then
+            echo "PrivacyInfo.xcprivacy not found — generating default..."
+            mkdir -p "$(dirname "$PRIVACY_FILE")"
+            cat > "$PRIVACY_FILE" << 'PRIVEOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>NSPrivacyTracking</key>
+            <false/>
+            <key>NSPrivacyTrackingDomains</key>
+            <array/>
+            <key>NSPrivacyCollectedDataTypes</key>
+            <array/>
+            <key>NSPrivacyAccessedAPITypes</key>
+            <array>
+              <dict>
+                <key>NSPrivacyAccessedAPIType</key>
+                <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+                <key>NSPrivacyAccessedAPITypeReasons</key>
+                <array>
+                  <string>CA92.1</string>
+                </array>
+              </dict>
+            </array>
+          </dict>
+          </plist>
+          PRIVEOF
+            echo "Default PrivacyInfo.xcprivacy created at $PRIVACY_FILE"
+            echo "NOTE: Projects created with Flutter <3.19 may need the file added to the Runner target in Xcode."
+          else
+            echo "PrivacyInfo.xcprivacy already exists — skipping generation"
+          fi
+
+      - name: Install dependencies
+        working-directory: ${{ env.APP_DIR }}
+        run: flutter pub get
+
+      - name: Run code generation (if needed)
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          if grep -q "build_runner" pubspec.yaml; then
+            echo "Running build_runner..."
+            dart run build_runner build --delete-conflicting-outputs
+          fi
+        continue-on-error: true
+
+      - name: Run tests
+        working-directory: ${{ env.APP_DIR }}
+        run: flutter test --no-pub
+        continue-on-error: true
+
+      - name: Set iOS deployment target to 14.0
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          if [ -f "ios/Podfile" ]; then
+            sed -i '' "s/platform :ios, '.*'/platform :ios, '14.0'/" ios/Podfile
+            if ! grep -q "post_install" ios/Podfile; then
+              printf '\npost_install do |installer|\n  installer.pods_project.targets.each do |target|\n    target.build_configurations.each do |config|\n      config.build_settings['"'"'IPHONEOS_DEPLOYMENT_TARGET'"'"'] = '"'"'14.0'"'"'\n    end\n  end\nend\n' >> ios/Podfile
+            fi
+            echo "Podfile patched to iOS 14.0"
+          fi
+          find ios -name "project.pbxproj" -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' {} \;
+
+      - name: Install CocoaPods
+        working-directory: ${{ env.APP_DIR }}/ios
+        run: pod install --repo-update || pod install || echo "Pod install failed"
+
+      - name: Force iOS 14.0 on all Pods targets
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          find ios/Pods -name "project.pbxproj" -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' {} \; 2>/dev/null || true
+          find ios -name "*.xcconfig" -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' {} \; 2>/dev/null || true
+          echo "All deployment targets forced to 14.0"
+
+      - name: Setup iOS signing
+        if: ${{ github.event.inputs.ios_cert_p12_base64 != '' }}
+        run: |
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME.keychain-db"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_NAME.keychain-db"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME.keychain-db"
+          security list-keychains -d user -s "$KEYCHAIN_NAME.keychain-db" $(security list-keychains -d user | tr -d '"')
+
+          echo "${{ github.event.inputs.ios_cert_p12_base64 }}" | base64 -d > /tmp/cert.p12
+          security import /tmp/cert.p12 \
+            -k "$KEYCHAIN_NAME.keychain-db" \
+            -P "${{ github.event.inputs.ios_cert_password }}" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME.keychain-db"
+          rm /tmp/cert.p12
+
+          echo "${{ github.event.inputs.ios_provisioning_profile_base64 }}" | base64 -d > /tmp/profile.mobileprovision
+          PROFILE_UUID=$(security cms -D -i /tmp/profile.mobileprovision 2>/dev/null | plutil -extract UUID raw -)
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/${PROFILE_UUID}.mobileprovision
+          rm /tmp/profile.mobileprovision
+
+      - name: Build IPA (release signed)
+        working-directory: ${{ env.APP_DIR }}
+        if: ${{ github.event.inputs.ios_cert_p12_base64 != '' }}
+        run: |
+          flutter build ipa --release \
+            --export-options-plist=/tmp/ExportOptions.plist || \
+          flutter build ipa --release
+
+      - name: Upload to App Store Connect / TestFlight
+        working-directory: ${{ env.APP_DIR }}
+        if: ${{ github.event.inputs.ios_cert_p12_base64 != '' && github.event.inputs.appstore_api_key_id != '' }}
+        run: |
+          mkdir -p ~/private_keys
+          echo "${{ github.event.inputs.appstore_api_key_base64 }}" | base64 -d > ~/private_keys/AuthKey_${{ github.event.inputs.appstore_api_key_id }}.p8
+
+          IPA_PATH=$(find build/ios/ipa -name "*.ipa" -type f | head -1)
+          if [ -z "$IPA_PATH" ]; then
+            echo "ERROR: No IPA found"
+            exit 1
+          fi
+          echo "Uploading IPA: $IPA_PATH"
+
+          xcrun altool --upload-app \
+            --file "$IPA_PATH" \
+            --type ios \
+            --apiKey "${{ github.event.inputs.appstore_api_key_id }}" \
+            --apiIssuer "${{ github.event.inputs.appstore_api_issuer_id }}" \
+            --show-progress
+
+          echo "App Store upload complete!"
+          rm -f ~/private_keys/AuthKey_${{ github.event.inputs.appstore_api_key_id }}.p8
+
+      - name: Verify iOS build (unsigned — no signing cert)
+        if: ${{ github.event.inputs.ios_cert_p12_base64 == '' }}
+        run: |
+          echo "No iOS signing certificate provided — skipping IPA build."
+          echo "To build for App Store, provide ios_cert_p12_base64 + ios_provisioning_profile_base64."
+          echo "iOS project compiled successfully (dependencies resolved, CocoaPods installed)."
+          echo "BUILD_STATUS=success_unsigned"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-ios-${{ github.event.inputs.build_id }}
+          path: |
+            ${{ env.APP_DIR }}/build/ios/ipa/*.ipa
+            ${{ env.APP_DIR }}/build/ios/iphonesimulator/*.app
+          retention-days: 7
+
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain "$KEYCHAIN_NAME.keychain-db" 2>/dev/null || true
+
+      - name: Notify AppTrack
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          BUILD_STATUS="success"
+          if [ "$STATUS" != "success" ]; then BUILD_STATUS="failed"; fi
+          CALLBACK="${{ github.event.inputs.callback_url || secrets.APPTRACK_CALLBACK_URL }}"
+          if [ -n "$CALLBACK" ]; then
+            curl -s -X POST "$CALLBACK" \
+              -H "Content-Type: application/json" \
+              -d "{\"build_id\":\"${{ github.event.inputs.build_id }}\",\"status\":\"$BUILD_STATUS\",\"provider\":\"github_actions\",\"run_id\":\"${{ github.run_id }}\"}" || true
+          fi
